@@ -1,0 +1,6 @@
+[Object]
+Name=Ball
+Image1=C:\Users\aleks\FIA\NAO\VRD\FIA\WIN_20251011_12_58_09_Pro.jpg
+Image2=C:\Users\aleks\FIA\NAO\VRD\FIA\WIN_20251011_12_58_16_Pro.jpg
+Image3=C:\Users\aleks\FIA\NAO\VRD\FIA\WIN_20251011_12_58_24_Pro.jpg
+Image4=C:\Users\aleks\FIA\NAO\VRD\FIA\WIN_20251011_12_58_32_Pro.jpg

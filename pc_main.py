@@ -1,6 +1,5 @@
 import socket
 import json
-import time
 
 
 HOST = '127.0.0.1'
@@ -18,29 +17,22 @@ def send_message(message):
       is sent with appropiate keys
     """
 
-    data = None
-
-    if message == "q" or message == "quit":
+    if message == "q":
         data = json.dumps({'command': 'quit'})
     elif message == "sit":
         data = json.dumps({'command': 'sit'})
     elif message == "stand":
         data = json.dumps({'command': 'stand'})
 
-    if data != None:
-        try:
-            s.sendall(data.encode())
-        except socket.error as e:
-            print("Socket error:", e)
+    try:
+        s.sendall(data.encode())
+    except socket.error as e:
+        print("Socket error:", e)
 
+while True:
 
-if __name__ == "__main__":
-    print("pc_main.py running, ready for input.")
-
-    while True:
-        message = input()
-        send_message(message)
-        
-        if message == "q" or message == "quit":
-            s.close()
-            break
+    message = input()
+    send_message(message)
+    if message == "q":
+        s.close()
+        break

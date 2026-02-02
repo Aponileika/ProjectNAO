@@ -3,7 +3,6 @@ import json
 import socket
 import time
 import threading
-import math
 from custom_moves import *
 
 #Add SDK
@@ -26,7 +25,7 @@ class Nao(object):
         self.posture = ALProxy("ALRobotPosture", IP, PORT) 
         self.memory  = ALProxy("ALMemory", IP, PORT)
 
-        self.motion.wbEnable(False)
+        self.motion.wbEnable(True)
         self.motion.wakeUp()
         self.posture.goToPosture("StandInit", 0.75)
         
@@ -69,12 +68,6 @@ class Nao(object):
         #Safely shuts down robot
         print("\nShutting down\n")
 
-        #Set safe resting posture
-        self.posture.goToPosture("Crouch", 0.5)
-        time.sleep(2)
-        self.motion.rest()
-
-        
         #Close connection, try since connection might not exist
         try:
             self.conn.close()
@@ -82,6 +75,11 @@ class Nao(object):
             pass
 
         self.running_threads = False
+
+        #Set safe resting posture
+        self.posture.goToPosture("Crouch", 0.5)
+        time.sleep(2)
+        self.motion.rest()
          
 
     def comm_init(self):
@@ -105,20 +103,8 @@ class Nao(object):
         print("Balance thread started")
 
         while self.running_threads:
-            pitch = self.memory.getData("Device/SubDeviceList/InertialSensor/AngleX/Sensor/Value")
-            roll = self.memory.getData("Device/SubDeviceList/InertialSensor/AngleY/Sensor/Value")
-
-            pitch_vel = self.memory.getData("Device/SubDeviceList/InertialSensor/GyroscopeX/Sensor/Value")
-            roll_vel = self.memory.getData("Device/SubDeviceList/InertialSensor/GyroscopeY/Sensor/Value")
-
-            lean_threshold = 45 * 3.1415 / 180 # How much the robot is allowed to lean, at max.
-            angular_velocity_threshold = 2.5 # Rotation speed, rad/s
-
-            # The "robotHasFallen" event triggers when the C.O.M. is outside the support surface, meaning it can
-            # trigger during some movements, even if not falling. Therefore, the robot lean is taken into account
-            if (math.sqrt(pitch**2 + roll**2) > lean_threshold or 
-                math.sqrt(pitch_vel**2 + roll_vel**2) > angular_velocity_threshold):
-                
+            break
+            if self.memory.getData("robotHasFallen"):
                 print("ROBOT HAS FALLEN")
                 self.balance_event.clear()
                 self.posture.goToPosture("StandInit", 1)
@@ -127,6 +113,7 @@ class Nao(object):
                 self.balance_event.set()
             
             time.sleep(0.05)
+
 
         print("balance_return")
         return
@@ -165,10 +152,10 @@ class Nao(object):
                 self.motion.moveToward(y1, -x1, x2)
 
             elif self.message["command"] == "sit":
-                self.posture.goToPosture("Sit", 0.75)
+                self.posture.goToPosture("Sit", 0.5)
 
             elif self.message["command"] == "stand":
-                self.posture.goToPosture("StandInit", 0.75)
+                self.posture.goToPosture("StandInit", 0.5)
 
             #EXAMPLE, NOT REAL
             elif self.message["command"] == "kick":
