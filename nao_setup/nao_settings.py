@@ -448,20 +448,34 @@ class NaoSettingsApp(object):
         self._ctrl_thread  = None
 
         # Safety: hard velocity clamps (absolute maximums)
-        self._MAX_FORWARD = 0.35
-        self._MAX_ROTATE  = 0.25
+        self._MAX_FORWARD = 0.30
+        self._MAX_ROTATE  = 0.14
 
         # Smoothing factor  (low = smoother, less jerky)
-        # 0.08 means only 8% of new target blended per tick
-        self._SMOOTHING = 0.08
+        # 0.10 means 10% of new target blended per tick
+        self._SMOOTHING = 0.10
+
+        # Reduce turning authority while moving forward to avoid yaw wobble
+        self._ROTATE_WHILE_FORWARD_FACTOR = 0.45
+
+        # Conservative NAO gait config for better straight-line stability
+        self._WALK_CONFIG = [
+            ["Frequency", 0.80],
+            ["MaxStepX", 0.045],
+            ["MaxStepY", 0.010],
+            ["MaxStepTheta", 0.16],
+            ["StepHeight", 0.010],
+            ["TorsoWy", 0.01],
+        ]
 
         # Gyro tilt thresholds (radians)
-        self._TILT_WARN   = 0.15   # ~8.6 deg  -> begin reducing speed
-        self._TILT_DANGER = 0.25   # ~14.3 deg -> emergency stop
+        self._TILT_WARN   = 0.20   # ~11.5 deg -> begin reducing speed
+        self._TILT_DANGER = 0.32   # ~18.3 deg -> emergency stop
 
         # Current smoothed outputs
         self._cur_fwd = 0.0
         self._cur_rot = 0.0
+        self._btn_busy = False  # prevents overlapping button actions
 
     # =================================================================
     #  Status helpers
@@ -664,6 +678,8 @@ class NaoSettingsApp(object):
             self.ctrl_indicator.config(fg=ERROR)
             self._set_status("pygame not available", False)
             return
+        # Full quit and reinit so pygame rescans for newly connected controllers
+        pygame.quit()
         pygame.init()
         pygame.joystick.init()
         if pygame.joystick.get_count() == 0:
@@ -689,6 +705,27 @@ class NaoSettingsApp(object):
             return
         if self._ctrl_running:
             return
+
+        try:
+            self.motion.wakeUp()
+            self.motion.setStiffnesses("Body", 1.0)
+            self.motion.setFallManagerEnabled(True)
+            self.motion.setMoveArmsEnabled(True, True)
+            self.motion.setMotionConfig([
+                ["ENABLE_FOOT_CONTACT_PROTECTION", True],
+            ])
+        except Exception:
+            pass
+
+        if not self._stand_safely():
+            self._set_status("Could not reach stable standing posture", False)
+            return
+
+        try:
+            self.motion.moveInit()
+        except Exception:
+            pass
+
         self._ctrl_running = True
         self._ctrl_thread = threading.Thread(target=self._controller_loop)
         self._ctrl_thread.daemon = True
@@ -751,34 +788,102 @@ class NaoSettingsApp(object):
         except Exception:
             return False
 
+    def _stand_safely(self):
+        if not self.motion or not self.posture:
+            return False
+
+        try:
+            self.motion.wakeUp()
+        except Exception:
+            pass
+        try:
+            self.motion.setStiffnesses("Body", 1.0)
+        except Exception:
+            pass
+        try:
+            self.motion.setFallManagerEnabled(True)
+        except Exception:
+            pass
+        try:
+            self.motion.setMoveArmsEnabled(True, True)
+        except Exception:
+            pass
+
+        poses = ("StandInit", "Stand")
+        for _ in range(2):
+            for pose in poses:
+                try:
+                    ok = self.posture.goToPosture(pose, 1.0)
+                except Exception:
+                    ok = False
+                time.sleep(0.5)
+                if ok and self._is_robot_standing():
+                    return True
+        return False
+
     def _controller_loop(self):
         js = self._joystick
+        print("[DEBUG] Controller loop started, buttons=%d axes=%d" % (
+            js.get_numbuttons(), js.get_numaxes()))
 
         while self._ctrl_running:
             try:
                 pygame.event.pump()
 
-                # ---- Button actions (ALWAYS processed, regardless of tilt) ----
+                # ---- Show which buttons are pressed (debug) ----
+                pressed = []
+                for bi in range(js.get_numbuttons()):
+                    if js.get_button(bi):
+                        pressed.append(str(bi))
+                if pressed:
+                    print("[DEBUG] Buttons: %s" % ", ".join(pressed))
+                    self._set_status("Buttons pressed: %s" % ", ".join(pressed))
+
+                # ---- Button actions (run in threads so they don't block the loop) ----
                 try:
-                    if js.get_button(0):       # Cross  -> StandInit
+                    if js.get_button(0) and not self._btn_busy:  # Cross -> StandInit
                         if self.posture:
-                            self._set_status("StandInit via controller...")
-                            self.posture.goToPosture("StandInit", 0.8)
-                            self._set_status("StandInit complete")
+                            self._btn_busy = True
+                            def _do_stand():
+                                try:
+                                    self._set_status("Standing up safely...")
+                                    if self._stand_safely():
+                                        self._set_status("Stand complete")
+                                    else:
+                                        self._set_status("Stand failed - hold robot and retry", False)
+                                except Exception as e:
+                                    print("[DEBUG] StandInit error: %s" % e)
+                                finally:
+                                    self._btn_busy = False
+                            threading.Thread(target=_do_stand).start()
 
-                    if js.get_button(1):       # Circle -> Sit
+                    if js.get_button(1) and not self._btn_busy:  # Circle -> Sit
                         if self.posture:
-                            self._set_status("Sitting via controller...")
-                            self.posture.goToPosture("Sit", 0.8)
-                            self._set_status("Sit complete")
+                            self._btn_busy = True
+                            def _do_sit():
+                                try:
+                                    self._set_status("Sitting via controller...")
+                                    self.posture.goToPosture("Sit", 0.8)
+                                    self._set_status("Sit complete")
+                                except Exception as e:
+                                    print("[DEBUG] Sit error: %s" % e)
+                                finally:
+                                    self._btn_busy = False
+                            threading.Thread(target=_do_sit).start()
 
-                    if js.get_button(2):       # Triangle -> Relax (servos off)
+                    if js.get_button(2) and not self._btn_busy:  # Triangle -> Relax (servos off)
                         if self.motion:
+                            self._btn_busy = True
                             self._set_status("Relaxing servos...")
-                            self.motion.rest()
-                            self._set_status("Servos relaxed")
-                        self._ctrl_running = False
-                        break
+                            def _do_relax():
+                                try:
+                                    self.motion.rest()
+                                    self._set_status("Servos relaxed (press Cross to stand)")
+                                except Exception as e:
+                                    print("[DEBUG] Relax error: %s" % e)
+                                finally:
+                                    self._btn_busy = False
+                            threading.Thread(target=_do_relax).start()
 
                     if js.get_button(3):       # Square -> Stop controller
                         self._ctrl_running = False
@@ -800,6 +905,14 @@ class NaoSettingsApp(object):
 
                 fwd_in = raw_fwd * speed if abs(raw_fwd) > dz else 0.0
                 rot_in = raw_rot * speed if abs(raw_rot) > dz else 0.0
+
+                # Heavily damp turning while actively moving forward
+                if abs(fwd_in) > 0.10:
+                    rot_in *= self._ROTATE_WHILE_FORWARD_FACTOR
+
+                # Extra tiny deadband on rotation to reduce oscillation
+                if abs(rot_in) < 0.04:
+                    rot_in = 0.0
 
                 # ---- Gyro feedback (only active while standing) ----
                 tilt_x, tilt_y = self._read_tilt()
@@ -857,12 +970,15 @@ class NaoSettingsApp(object):
                     self.motion.moveToward(
                         float(self._cur_fwd),
                         0.0,                   # NO strafe ever
-                        float(self._cur_rot))
+                        float(self._cur_rot),
+                        self._WALK_CONFIG)
 
                 time.sleep(0.05)   # ~20 Hz
-            except Exception:
+            except Exception as e:
+                print("[DEBUG] Controller loop error: %s" % e)
                 time.sleep(0.1)
 
+        print("[DEBUG] Controller loop ended")
         # Clean up readout when loop exits
         self.ctrl_axes_var.set("Fwd: 0.00   Rot: 0.00")
 
