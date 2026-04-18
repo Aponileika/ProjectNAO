@@ -133,6 +133,22 @@ class NaoSettingsApp(object):
         # Proxy cache
         self.tts = self.leds = self.motion = self.posture = None
         self.memory = self.life = self.audio = self.system = None
+        self.video = None
+        self.face = None
+        self.people = None
+
+        # Camera state
+        self._cam_name = None
+        self._cam_running = False
+        self._cam_after_id = None
+        self._cam_photo = None
+        self._human_hold_until = 0.0
+        self._alarm_active = False
+
+        # Controller panel visibility / PS button toggle
+        self._controller_expanded = False
+        self._ps_prev_down = False
+        self._PS_BUTTON_CANDIDATES = (10, 12, 16)
 
         self._build_ui()
 
@@ -144,6 +160,7 @@ class NaoSettingsApp(object):
         self.root.title("NAO Control Panel")
         self.root.configure(bg=BG)
         self.root.state("zoomed")  # start maximised
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # ---- Fonts --------------------------------------------------
         self.font_title = tkFont.Font(family="Segoe UI", size=18, weight="bold")
@@ -209,6 +226,7 @@ class NaoSettingsApp(object):
         right.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
 
         self._card_controller(right)
+        self._card_camera(right)
 
     # -----------------------------------------------------------------
     #  Widget helpers
@@ -384,9 +402,15 @@ class NaoSettingsApp(object):
             side="left", padx=4)
         self._make_btn(r2, "Stop",  self._on_controller_stop,  width=10).pack(
             side="left", padx=4)
+        self.ctrl_toggle_btn = self._make_btn(
+            r2, "Show", self._toggle_controller_details, width=10)
+        self.ctrl_toggle_btn.pack(side="left", padx=4)
+
+        # Advanced controller settings (collapsed by default)
+        self.ctrl_advanced = tk.Frame(card, bg=CARD_BG)
 
         # -- Deadzone slider
-        r3 = tk.Frame(card, bg=CARD_BG)
+        r3 = tk.Frame(self.ctrl_advanced, bg=CARD_BG)
         r3.pack(fill="x", pady=(0, 4))
         tk.Label(r3, text="Deadzone:", font=self.font_small,
                  bg=CARD_BG, fg=FG).pack(side="left")
@@ -398,26 +422,26 @@ class NaoSettingsApp(object):
                  font=self.font_small).pack(side="left", padx=4)
 
         # -- Speed slider  (capped low for safety)
-        r4 = tk.Frame(card, bg=CARD_BG)
+        r4 = tk.Frame(self.ctrl_advanced, bg=CARD_BG)
         r4.pack(fill="x", pady=(0, 4))
         tk.Label(r4, text="Speed:", font=self.font_small,
                  bg=CARD_BG, fg=FG).pack(side="left")
-        self.speed_var = tk.DoubleVar(value=0.25)
-        tk.Scale(r4, from_=0.10, to=0.40, resolution=0.05,
+        self.speed_var = tk.DoubleVar(value=0.30)
+        tk.Scale(r4, from_=0.10, to=0.45, resolution=0.05,
                  orient="horizontal", variable=self.speed_var,
                  length=180, bg=CARD_BG, fg=FG, troughcolor=BTN_BG,
                  highlightthickness=0,
                  font=self.font_small).pack(side="left", padx=4)
 
         # -- Live axis readout
-        r5 = tk.Frame(card, bg=CARD_BG)
+        r5 = tk.Frame(self.ctrl_advanced, bg=CARD_BG)
         r5.pack(fill="x", pady=(0, 4))
         self.ctrl_axes_var = tk.StringVar(value="Fwd: 0.00   Rot: 0.00")
         tk.Label(r5, textvariable=self.ctrl_axes_var, font=self.font_guide,
                  bg=CARD_BG, fg=ACCENT).pack(side="left", padx=4)
 
         # -- Gyro / tilt readout
-        r6 = tk.Frame(card, bg=CARD_BG)
+        r6 = tk.Frame(self.ctrl_advanced, bg=CARD_BG)
         r6.pack(fill="x", pady=(0, 6))
         self.gyro_var = tk.StringVar(value="Tilt X: --   Y: --   Stability: --")
         self.gyro_lbl = tk.Label(r6, textvariable=self.gyro_var,
@@ -425,7 +449,7 @@ class NaoSettingsApp(object):
         self.gyro_lbl.pack(side="left", padx=4)
 
         # -- Button guide  (plain ASCII - no Unicode escapes)
-        guide = self._make_card(card, "Button Guide")
+        guide = self._make_card(self.ctrl_advanced, "Button Guide")
         guide_lines = [
             ("Left Stick",       "Forward / Backward only"),
             ("Right Stick",      "Turn left / right"),
@@ -448,23 +472,24 @@ class NaoSettingsApp(object):
         self._ctrl_thread  = None
 
         # Safety: hard velocity clamps (absolute maximums)
-        self._MAX_FORWARD = 0.30
-        self._MAX_ROTATE  = 0.14
+        self._MAX_FORWARD  = 0.34
+        self._MAX_BACKWARD = 0.24
+        self._MAX_ROTATE   = 0.16
 
         # Smoothing factor  (low = smoother, less jerky)
         # 0.10 means 10% of new target blended per tick
         self._SMOOTHING = 0.10
 
         # Reduce turning authority while moving forward to avoid yaw wobble
-        self._ROTATE_WHILE_FORWARD_FACTOR = 0.45
+        self._ROTATE_WHILE_FORWARD_FACTOR = 0.50
 
         # Conservative NAO gait config for better straight-line stability
         self._WALK_CONFIG = [
-            ["Frequency", 0.80],
-            ["MaxStepX", 0.045],
+            ["Frequency", 0.90],
+            ["MaxStepX", 0.055],
             ["MaxStepY", 0.010],
-            ["MaxStepTheta", 0.16],
-            ["StepHeight", 0.010],
+            ["MaxStepTheta", 0.18],
+            ["StepHeight", 0.011],
             ["TorsoWy", 0.01],
         ]
 
@@ -476,6 +501,51 @@ class NaoSettingsApp(object):
         self._cur_fwd = 0.0
         self._cur_rot = 0.0
         self._btn_busy = False  # prevents overlapping button actions
+
+        self._set_controller_details(False)
+
+    def _set_controller_details(self, show):
+        self._controller_expanded = bool(show)
+        if self._controller_expanded:
+            self.ctrl_advanced.pack(fill="x", pady=(0, 0))
+            self.ctrl_toggle_btn.config(text="Hide")
+        else:
+            self.ctrl_advanced.pack_forget()
+            self.ctrl_toggle_btn.config(text="Show")
+
+    def _toggle_controller_details(self):
+        self._set_controller_details(not self._controller_expanded)
+
+    # =================================================================
+    #  RIGHT column: Camera card
+    # =================================================================
+    def _card_camera(self, parent):
+        card = self._make_card(parent, "Camera")
+
+        row = tk.Frame(card, bg=CARD_BG)
+        row.pack(fill="x", pady=(0, 6))
+        self._make_btn(row, "Start", self._on_camera_start, width=10).pack(
+            side="left", padx=4)
+        self._make_btn(row, "Stop", self._on_camera_stop, width=10).pack(
+            side="left", padx=4)
+        self.cam_status_var = tk.StringVar(value="Stopped")
+        tk.Label(row, textvariable=self.cam_status_var,
+                 font=self.font_small, bg=CARD_BG, fg=FG).pack(side="left", padx=6)
+
+        row2 = tk.Frame(card, bg=CARD_BG)
+        row2.pack(fill="x", pady=(0, 4))
+        self.cam_detect_var = tk.StringVar(value="Human presence: --")
+        self.cam_detect_lbl = tk.Label(row2, textvariable=self.cam_detect_var,
+                           font=self.font_small, bg=CARD_BG, fg=FG)
+        self.cam_detect_lbl.pack(side="left", padx=4)
+
+        self.cam_preview_lbl = tk.Label(
+            card,
+            text="No feed",
+            bg="#000000",
+            fg=FG,
+            anchor="center")
+        self.cam_preview_lbl.pack(fill="x", padx=4, pady=(0, 2))
 
     # =================================================================
     #  Status helpers
@@ -525,6 +595,9 @@ class NaoSettingsApp(object):
         self.memory  = _make_proxy("ALMemory",         self.ip, self.port)
         self.life    = _make_proxy("ALAutonomousLife",  self.ip, self.port)
         self.audio   = _make_proxy("ALAudioDevice",    self.ip, self.port)
+        self.video   = _make_proxy("ALVideoDevice",    self.ip, self.port)
+        self.face    = _make_proxy("ALFaceDetection",  self.ip, self.port)
+        self.people  = _make_proxy("ALPeoplePerception", self.ip, self.port)
         self.connected = True
 
         # Sync sliders with robot state
@@ -670,6 +743,342 @@ class NaoSettingsApp(object):
             self._set_status("Battery error: %s" % e, False)
 
     # =================================================================
+    #  Camera
+    # =================================================================
+    def _rgb_to_photo(self, width, height, payload):
+        # Use strict binary PPM (P6) payload expected by Tk PhotoImage.
+        header = "P6\n%d %d\n255\n" % (int(width), int(height))
+        ppm_data = header + payload
+        photo = tk.PhotoImage(data=ppm_data, format="PPM")
+
+        # Scale up small camera resolutions for better visibility.
+        target_w = 480
+        scale = max(1, int(target_w / max(1, int(width))))
+        if scale > 1:
+            photo = photo.zoom(scale, scale)
+        return photo
+
+    def _on_camera_start(self):
+        if not self._require_connection():
+            return
+        if self._cam_running:
+            return
+
+        # Keep camera area clear unless controller details are explicitly needed
+        self._set_controller_details(False)
+
+        if self.video is None:
+            self.video = _make_proxy("ALVideoDevice", self.ip, self.port)
+            if self.video is None:
+                self._set_status("Camera proxy unavailable", False)
+                self.cam_status_var.set("Unavailable")
+                return
+
+        try:
+            # kQVGA=1 (320x240), kRGBColorSpace=11
+            self._cam_name = self.video.subscribe("nao_settings_cam", 1, 11, 5)
+        except Exception as e:
+            self._set_status("Camera start error: %s" % e, False)
+            self.cam_status_var.set("Start failed")
+            return
+
+        if self.face is None:
+            self.face = _make_proxy("ALFaceDetection", self.ip, self.port)
+        if self.face is not None:
+            try:
+                self.face.subscribe("nao_settings_face", 500, 0.0)
+            except Exception:
+                pass
+            try:
+                self.face.setTrackingEnabled(True)
+            except Exception:
+                pass
+
+        if self.people is None:
+            self.people = _make_proxy("ALPeoplePerception", self.ip, self.port)
+        if self.people is not None:
+            try:
+                # Better distance robustness over raw speed.
+                self.people.setFastModeEnabled(False)
+            except Exception:
+                pass
+            try:
+                # Extend detection range when supported by robot firmware.
+                self.people.setMaximumDetectionRange(5.0)
+            except Exception:
+                pass
+            try:
+                self.people.subscribe("nao_settings_people")
+            except Exception:
+                pass
+
+        # Slightly raise gaze to improve medium/far human visibility.
+        if self.motion is not None:
+            try:
+                self.motion.setAngles("HeadPitch", -0.12, 0.08)
+            except Exception:
+                pass
+
+        if self.leds is not None:
+            try:
+                # Default "all clear" blue
+                self.leds.fadeRGB("AllLeds", 0x0000FF, 1.0)
+            except Exception:
+                pass
+
+        self._cam_running = True
+        self.cam_status_var.set("Starting...")
+        self.cam_detect_var.set("Human presence: scanning...")
+        self.cam_detect_lbl.config(fg=FG)
+        self._camera_tick()
+
+    def _on_camera_stop(self):
+        self._cam_running = False
+        if self._cam_after_id is not None:
+            try:
+                self.root.after_cancel(self._cam_after_id)
+            except Exception:
+                pass
+            self._cam_after_id = None
+
+        if self.video and self._cam_name:
+            try:
+                self.video.unsubscribe(self._cam_name)
+            except Exception:
+                pass
+        if self.face:
+            try:
+                self.face.unsubscribe("nao_settings_face")
+            except Exception:
+                pass
+        if self.people:
+            try:
+                self.people.unsubscribe("nao_settings_people")
+            except Exception:
+                pass
+        self._human_hold_until = 0.0
+        
+        # Reset alarm state and turn off blue if camera stops
+        if self._alarm_active:
+            self._alarm_active = False
+            if self.tts:
+                try:
+                    self.tts.stopAll()
+                except Exception:
+                    pass
+        if self.leds:
+            try:
+                self.leds.fadeRGB("AllLeds", 0x000000, 1.0)
+            except Exception:
+                pass
+
+        self._cam_name = None
+        self._cam_photo = None
+        self.cam_preview_lbl.config(image="", text="No feed")
+        self.cam_status_var.set("Stopped")
+        self.cam_detect_var.set("Human presence: --")
+        self.cam_detect_lbl.config(fg=FG)
+
+    def _collect_probabilities(self, value, out_list):
+        if isinstance(value, (int, float)):
+            v = float(value)
+            # Accept both [0..1] and [0..100] confidence representations.
+            if 0.0 <= v <= 1.0:
+                out_list.append(v)
+            elif 1.0 < v <= 100.0:
+                out_list.append(v / 100.0)
+            return
+        if isinstance(value, list):
+            for item in value:
+                self._collect_probabilities(item, out_list)
+
+    def _face_detection_state(self):
+        if not self.memory:
+            return False, None
+        try:
+            data = self.memory.getData("FaceDetected")
+        except Exception:
+            return False, None
+        if not data:
+            return False, None
+
+        detected = False
+
+        scores = []
+
+        # Typical structure is [TimeStamp, FaceInfoArray, ...]
+        try:
+            if isinstance(data, list) and len(data) > 1 and isinstance(data[1], list):
+                if len(data[1]) > 0:
+                    detected = True
+                for face_info in data[1]:
+                    if isinstance(face_info, list) and len(face_info) > 1:
+                        extra = face_info[1]
+                        self._collect_probabilities(extra, scores)
+        except Exception:
+            pass
+
+        if not scores:
+            self._collect_probabilities(data, scores)
+
+        if not scores:
+            return detected, None
+        return True, max(scores)
+
+    def _people_detected(self):
+        if not self.memory:
+            return False, 0
+        try:
+            people = self.memory.getData("PeoplePerception/PeopleList")
+        except Exception:
+            return False, 0
+        if isinstance(people, list) and len(people) > 0:
+            return True, len(people)
+        return False, 0
+
+    def _alarm_loop(self):
+        while self._alarm_active:
+            if self.audio:
+                try:
+                    self.audio.setOutputVolume(100)
+                except Exception:
+                    pass
+            if self.tts:
+                try:
+                    self.tts.say("destroy")
+                except Exception:
+                    pass
+            # Avoid tight spin loop
+            time.sleep(0.1)
+
+    def _start_alarm(self):
+        self._alarm_active = True
+        if self.leds:
+            try:
+                self.leds.fadeRGB("AllLeds", 0xFF0000, 0.2) # Red
+            except Exception:
+                pass
+        t = threading.Thread(target=self._alarm_loop)
+        t.daemon = True
+        t.start()
+
+    def _stop_alarm(self):
+        self._alarm_active = False
+        if self.tts:
+            try:
+                self.tts.stopAll()
+            except Exception:
+                pass
+        if self.leds:
+            try:
+                self.leds.fadeRGB("AllLeds", 0x0000FF, 0.5) # Blue
+            except Exception:
+                pass
+        
+        def _diffuse():
+            time.sleep(0.5) # Wait for alarm thread to finish
+            if self.tts:
+                try:
+                    self.tts.say("situation diffused")
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_diffuse)
+        t.daemon = True
+        t.start()
+
+    def _update_human_detection_label(self):
+        face_detected, conf = self._face_detection_state()
+        people_detected, people_count = self._people_detected()
+        now = time.time()
+
+        # Update alarm state. Hold applies if detected recently.
+        human_present = bool(people_detected or face_detected or now < self._human_hold_until)
+        if human_present and not self._alarm_active:
+            self._start_alarm()
+        elif not human_present and self._alarm_active:
+            self._stop_alarm()
+
+        # Priority: body-level human presence first, face confidence second.
+        if people_detected:
+            self._human_hold_until = now + 1.2
+            if people_count > 1:
+                msg = "Human presence: yes (%d people)" % people_count
+            else:
+                msg = "Human presence: yes (1 person)"
+
+            if conf is not None:
+                if conf >= 0.80:
+                    band = "high"
+                elif conf >= 0.60:
+                    band = "medium"
+                else:
+                    band = "low"
+                msg += ", face %d%% (%s)" % (int(conf * 100.0), band)
+
+            self.cam_detect_var.set(msg)
+            self.cam_detect_lbl.config(fg=SUCCESS)
+            return
+
+        # Fallback when body detector misses but face detector triggers
+        if face_detected:
+            self._human_hold_until = now + 1.2
+            if conf is None:
+                self.cam_detect_var.set("Human presence: likely (face)")
+                self.cam_detect_lbl.config(fg=WARN)
+                return
+
+            if conf >= 0.80:
+                band = "high"
+                col = SUCCESS
+            elif conf >= 0.60:
+                band = "medium"
+                col = WARN
+            else:
+                band = "low"
+                col = WARN
+
+            self.cam_detect_var.set("Human presence: likely, face %d%% (%s)" % (
+                int(conf * 100.0), band))
+            self.cam_detect_lbl.config(fg=col)
+            return
+
+        if now < self._human_hold_until:
+            self.cam_detect_var.set("Human presence: yes (recent)")
+            self.cam_detect_lbl.config(fg=SUCCESS)
+            return
+
+        if not face_detected and not people_detected:
+            self.cam_detect_var.set("Human presence: no")
+            self.cam_detect_lbl.config(fg=ERROR)
+            return
+
+    def _camera_tick(self):
+        if not self._cam_running or not self.video or not self._cam_name:
+            return
+
+        try:
+            img = self.video.getImageRemote(self._cam_name)
+            if img and len(img) >= 7:
+                width = int(img[0])
+                height = int(img[1])
+                payload = img[6]
+                photo = self._rgb_to_photo(width, height, payload)
+                self._cam_photo = photo
+                self.cam_preview_lbl.config(image=photo, text="")
+                self.cam_status_var.set("Live %dx%d" % (width, height))
+            else:
+                self.cam_status_var.set("No frame")
+        except Exception as e:
+            self.cam_status_var.set("Frame error")
+            self._set_status("Camera frame error: %s" % e, False)
+
+        self._update_human_detection_label()
+
+        if self._cam_running:
+            self._cam_after_id = self.root.after(150, self._camera_tick)
+
+    # =================================================================
     #  PS5 Controller
     # =================================================================
     def _on_controller_detect(self):
@@ -717,23 +1126,17 @@ class NaoSettingsApp(object):
         except Exception:
             pass
 
-        if not self._stand_safely():
-            self._set_status("Could not reach stable standing posture", False)
-            return
-
-        try:
-            self.motion.moveInit()
-        except Exception:
-            pass
+        self._ps_prev_down = False
 
         self._ctrl_running = True
         self._ctrl_thread = threading.Thread(target=self._controller_loop)
         self._ctrl_thread.daemon = True
         self._ctrl_thread.start()
-        self._set_status("Controller active")
+        self._set_status("Controller active - press Cross to stand")
 
     def _on_controller_stop(self):
         self._ctrl_running = False
+        self._ps_prev_down = False
         self._cur_fwd = 0.0
         self._cur_rot = 0.0
         if self.motion:
@@ -821,6 +1224,16 @@ class NaoSettingsApp(object):
                     return True
         return False
 
+    def _is_ps_button_down(self, js):
+        try:
+            n = js.get_numbuttons()
+            for idx in self._PS_BUTTON_CANDIDATES:
+                if idx < n and js.get_button(idx):
+                    return True
+        except Exception:
+            pass
+        return False
+
     def _controller_loop(self):
         js = self._joystick
         print("[DEBUG] Controller loop started, buttons=%d axes=%d" % (
@@ -829,6 +1242,11 @@ class NaoSettingsApp(object):
         while self._ctrl_running:
             try:
                 pygame.event.pump()
+
+                ps_down = self._is_ps_button_down(js)
+                if ps_down and not self._ps_prev_down:
+                    self.root.after(0, self._toggle_controller_details)
+                self._ps_prev_down = ps_down
 
                 # ---- Show which buttons are pressed (debug) ----
                 pressed = []
@@ -896,9 +1314,9 @@ class NaoSettingsApp(object):
 
                 # ---- Read sticks ----
                 # Left stick Y  = forward / back ONLY  (no strafe)
-                raw_fwd = -js.get_axis(1)      # inverted: push up = positive
+                raw_fwd = js.get_axis(1)
                 # Right stick X = rotation ONLY
-                raw_rot =  js.get_axis(2)       # axis 2 = right stick horizontal
+                raw_rot = js.get_axis(2)
 
                 dz    = self.deadzone_var.get()
                 speed = self.speed_var.get()
@@ -924,8 +1342,12 @@ class NaoSettingsApp(object):
                     # Not standing: don't gate anything, just show tilt
                     stab = 1.0
 
-                # Scale targets by stability factor
-                tgt_fwd = _clamp(fwd_in * stab, -self._MAX_FORWARD, self._MAX_FORWARD)
+                # Scale targets by stability factor (asymmetric for safer reverse)
+                fwd_target = fwd_in * stab
+                if fwd_target >= 0.0:
+                    tgt_fwd = _clamp(fwd_target, -self._MAX_FORWARD, self._MAX_FORWARD)
+                else:
+                    tgt_fwd = _clamp(fwd_target, -self._MAX_BACKWARD, self._MAX_BACKWARD)
                 tgt_rot = _clamp(rot_in * stab, -self._MAX_ROTATE,  self._MAX_ROTATE)
 
                 # Emergency stop walk when dangerously tilted AND standing
@@ -985,6 +1407,18 @@ class NaoSettingsApp(object):
     # =================================================================
     #  Run
     # =================================================================
+    def _on_close(self):
+        try:
+            self._on_camera_stop()
+        except Exception:
+            pass
+        try:
+            if self._ctrl_running:
+                self._on_controller_stop()
+        except Exception:
+            pass
+        self.root.destroy()
+
     def run(self):
         self.root.mainloop()
 
