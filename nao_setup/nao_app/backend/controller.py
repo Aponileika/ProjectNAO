@@ -50,7 +50,7 @@ class GamepadController(object):
         self._PS_BUTTON_CANDIDATES = (10, 12, 16)
         
         self.deadzone = 0.25
-        self.speed = 0.30
+        self.speed = 0.50
 
     def get_proxy(self, name):
         """Helper to get proxy from dict or object."""
@@ -290,8 +290,8 @@ class GamepadController(object):
                 except Exception:
                     pass
 
-                raw_fwd = js.get_axis(1)
-                raw_rot = js.get_axis(2)
+                raw_fwd = -js.get_axis(1)
+                raw_rot = -js.get_axis(2)
 
                 dz = self.deadzone
                 speed = self.speed

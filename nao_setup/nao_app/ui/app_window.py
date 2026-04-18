@@ -33,7 +33,7 @@ class NaoAppWindow(object):
     POSTURES = [
         "Stand", "StandInit", "StandZero",
         "Sit", "SitRelax", "Crouch",
-        "LyingBelly", "LyingBack",
+        "LyingBelly", "LyingBack", "Relax",
     ]
 
     def __init__(self, conn, vision, controller):
@@ -221,8 +221,8 @@ class NaoAppWindow(object):
         r4 = tk.Frame(self.ctrl_advanced, bg=CARD_BG)
         r4.pack(fill="x", pady=(0, 4))
         tk.Label(r4, text="Speed:", font=self.font_small, bg=CARD_BG, fg=FG).pack(side="left")
-        self.speed_var = tk.DoubleVar(value=0.30)
-        tk.Scale(r4, from_=0.10, to=0.45, resolution=0.05, orient="horizontal", variable=self.speed_var, length=180, bg=CARD_BG, fg=FG, troughcolor=BTN_BG, highlightthickness=0, font=self.font_small, command=self._on_ctrl_params_changed).pack(side="left", padx=4)
+        self.speed_var = tk.DoubleVar(value=0.50)
+        tk.Scale(r4, from_=0.10, to=1.00, resolution=0.05, orient="horizontal", variable=self.speed_var, length=180, bg=CARD_BG, fg=FG, troughcolor=BTN_BG, highlightthickness=0, font=self.font_small, command=self._on_ctrl_params_changed).pack(side="left", padx=4)
 
         r5 = tk.Frame(self.ctrl_advanced, bg=CARD_BG)
         r5.pack(fill="x", pady=(0, 4))
@@ -365,7 +365,10 @@ class NaoAppWindow(object):
         self.root.update_idletasks()
         def _go():
             try:
-                self.conn.posture.goToPosture(name, 0.8)
+                if name == "Relax":
+                    self.conn.motion.rest()
+                else:
+                    self.conn.posture.goToPosture(name, 0.8)
                 self._set_status("Posture: %s" % name)
             except Exception as e:
                 self._set_status("Posture error: %s" % e, False)
