@@ -1,4 +1,4 @@
-#include "CM_Camera.hpp"
+#include "../include/CM_Camera.hpp"
 
 struct CameraIntrinsics* ci;
 static const fp64 fx = 9.747187409387847*100.0f;
@@ -28,7 +28,7 @@ struct CameraIntrinsics* CM_GetIntrinsics()
     return ci;
 }
 
-struct Camera CM_CreateCam(cv::Mat& RigidTransform)
+struct Camera CM_CreateCam(cv::Mat RigidTransform)
 {
     Camera cam = {
         CM_GetIntrinsics(),
