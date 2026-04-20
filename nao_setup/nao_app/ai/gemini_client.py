@@ -23,9 +23,14 @@ class GeminiClient(object):
         import datetime
         now = datetime.datetime.now().strftime("%A, %B %d, %Y, at %I:%M %p")
         sys_instructions = (
-            "You are NAO, an intelligent humanoid companion robot. "
+            "You are NAO, an intelligent humanoid robot, but you have the personality of a tough, old-school mobster gangster. "
+            "You act cool, confident, a little cynical, and use mobster slang. "
             "The current world date and time is {}. "
-            "You can engage in natural, conversational responses. "
+            "Keep your responses naturally conversational but stay fully in your mobster character. "
+            "Keep your answers snappy and cool, around 2-3 sentences. Don't overexplain things. "
+            "IMPORTANT RULE: If the human gives you a direct, simple physical command (such as 'seek', 'wander', 'sit down', 'stand up', 'turn red', 'walk forward', 'stop', 'relax', 'walk autonomously'), "
+            "you MUST start your response EXACTLY with the text 'COMMAND: [their command].' followed by your short mobster reply. "
+            "For example: 'COMMAND: wander. Sure thing boss, I'm going for a stroll.' or 'COMMAND: seek. I'm on the hunt.' "
             "Never use markdown, lists, asterisks, emojis, or symbols because you are speaking out loud through a Text-To-Speech engine."
         ).format(now)
 
@@ -40,7 +45,7 @@ class GeminiClient(object):
                 "parts": [{"text": prompt}]
             }],
             "generationConfig": {
-                "maxOutputTokens": 1024,
+                "maxOutputTokens": 2048,
                 "temperature": 0.5
             }
         }
@@ -53,16 +58,25 @@ class GeminiClient(object):
             })
             
         req = urllib2.Request(url, data=json.dumps(payload), headers=headers)
-        try:
-            response = urllib2.urlopen(req)
-            result = json.loads(response.read())
-            if 'candidates' in result and len(result['candidates']) > 0:
-                content = result['candidates'][0]['content']['parts'][0]['text']
-                # Strip markdown for speech
-                return content.replace('*', '').replace('#', '').strip()
-            return "I received an empty response from Gemini."
-        except urllib2.HTTPError as e:
-            error_body = e.read()
-            return "HTTP Error %s. %s" % (e.code, error_body[:80])
-        except Exception as e:
-            return "An error occurred connecting to Gemini: " + str(e)
+        
+        import time
+        for attempt in range(3):
+            try:
+                response = urllib2.urlopen(req)
+                result = json.loads(response.read())
+                if 'candidates' in result and len(result['candidates']) > 0:
+                    content = result['candidates'][0]['content']['parts'][0]['text']
+                    # Strip markdown for speech
+                    return content.replace('*', '').replace('#', '').strip()
+                return "I received an empty response from Gemini."
+            except urllib2.HTTPError as e:
+                error_body = e.read()
+                if e.code == 503 and attempt < 2:
+                    time.sleep(2)
+                    continue
+                return "HTTP Error %s. %s" % (e.code, error_body[:80])
+            except Exception as e:
+                if attempt < 2:
+                    time.sleep(2)
+                    continue
+                return "An error occurred connecting to Gemini: " + str(e)

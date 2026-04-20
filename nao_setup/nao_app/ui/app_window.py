@@ -120,6 +120,8 @@ class NaoAppWindow(object):
         right.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
 
         self._card_gemini(right)
+        self._card_autonomous(right)
+        self._card_quick_command(right)
         self._card_controller(right)
         self._card_camera(right)
 
@@ -236,11 +238,52 @@ class NaoAppWindow(object):
         r3.pack(fill="x", pady=(0, 4))
         make_btn(r3, "Ask (Text)", self._on_gemini_ask, width=10, font_norm=self.font_norm).pack(side="left", padx=2)
         make_btn(r3, "Talk to NAO (5s)", self._on_gemini_voice_interactive, width=16, font_norm=self.font_norm).pack(side="left", padx=6)
+        make_btn(r3, "Stop Speech", self._on_stop_speech, width=10, font_norm=self.font_norm, bg="#bb3333", fg="white").pack(side="left", padx=2)
         
         r4 = tk.Frame(card, bg=CARD_BG)
         r4.pack(fill="x")
         self.gemini_status = tk.StringVar(value="Ready.")
         tk.Label(r4, textvariable=self.gemini_status, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
+
+    def _card_autonomous(self, parent):
+        card = make_card(parent, "Autonomous Wander", self.font_head)
+        
+        info = tk.Label(card, text="NAO will walk, avoid walls using Sonar, and stop when it spots a human face.", 
+                        font=self.font_small, bg=CARD_BG, fg=FG, wraplength=280, justify="left")
+        info.pack(fill="x", pady=(0, 4))
+        
+        r1 = tk.Frame(card, bg=CARD_BG)
+        r1.pack(fill="x", pady=2)
+        make_btn(r1, "Wander & Seek", self._start_wander_seek, width=16, font_norm=self.font_norm).pack(side="left", padx=2)
+        make_btn(r1, "Stop Auto", self._stop_wander_seek, width=10, font_norm=self.font_norm, bg="#bb3333", fg="white").pack(side="left", padx=2)
+        
+        r2 = tk.Frame(card, bg=CARD_BG)
+        r2.pack(fill="x")
+        self.auto_status = tk.StringVar(value="Idle.")
+        tk.Label(r2, textvariable=self.auto_status, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
+
+    def _card_quick_command(self, parent):
+        card = make_card(parent, "Quick Text Commands", self.font_head)
+        
+        info = tk.Label(card, text="Type simple verbs (e.g. 'turn red', 'walk forward', 'sit', 'say hello', 'stop')", 
+                        font=self.font_small, bg=CARD_BG, fg=FG, wraplength=280, justify="left")
+        info.pack(fill="x", pady=(0, 4))
+        
+        r1 = tk.Frame(card, bg=CARD_BG)
+        r1.pack(fill="x", pady=2)
+        
+        self.quick_cmd_var = tk.StringVar()
+        self.quick_cmd_entry = tk.Entry(r1, textvariable=self.quick_cmd_var, font=self.font_norm, width=28)
+        self.quick_cmd_entry.pack(side="left", padx=4)
+        
+        make_btn(r1, "Do", self._on_quick_command, width=6, font_norm=self.font_norm).pack(side="left", padx=2)
+        
+        self.quick_cmd_entry.bind("<Return>", lambda e: self._on_quick_command())
+        
+        r2 = tk.Frame(card, bg=CARD_BG)
+        r2.pack(fill="x")
+        self.quick_status = tk.StringVar(value="Ready.")
+        tk.Label(r2, textvariable=self.quick_status, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
 
     def _card_controller(self, parent):
         card = make_card(parent, "PS5 Controller", self.font_head)
@@ -474,13 +517,7 @@ class NaoAppWindow(object):
                     self._set_status("Gemini Error: Check console.", False)
                     print(response_text)
                 else:
-                    self.gemini_status.set("Finished!")
-                    self._set_status("Speaking Gemini response...")
-                    
-                    # Convert accurately to UTF-8 without newlines for the NAOqi 2.7 TTS engine
-                    safe_text = response_text.replace('\n', ' ').encode('utf-8', 'ignore')
-                    print("Gemini said: " + safe_text)
-                    self.conn.tts.say(safe_text)
+                    self._speak_when_face_found(response_text)
             except Exception as e:
                 self.gemini_status.set("Failed: %s" % e)
                 self._set_status("Gemini Failed: %s" % e, False)
@@ -503,7 +540,7 @@ class NaoAppWindow(object):
                 self.conn.audio_recorder.stopMicrophonesRecording()
                 self.conn.audio_recorder.startMicrophonesRecording("/home/nao/gemini.wav", "wav", 16000, (0,0,1,0))
                 self.gemini_status.set("Listening to you (5s)...")
-                self.conn.leds.fadeRGB("FaceLeds", 0x00FF0000, 0.2) # Turn eyes red so we know it listens
+                self.conn.leds.fadeRGB("AllLeds", 0x00FF0000, 0.2) # Turn eyes red so we know it listens
                 
                 # Wait 5 seconds dynamically while letting UI update
                 for i in range(5):
@@ -511,7 +548,7 @@ class NaoAppWindow(object):
                     time.sleep(1)
                     
                 self.conn.audio_recorder.stopMicrophonesRecording()
-                self.conn.leds.fadeRGB("FaceLeds", 0x000000FF, 0.2) # Turn eyes blue to show processing
+                self.conn.leds.fadeRGB("AllLeds", 0x000000FF, 0.2) # Turn eyes blue to show processing
                 self.gemini_status.set("Thinking...")
                 
                 # Use python's urllib to FTP into the robot and pull the raw WAV file securely
@@ -529,27 +566,123 @@ class NaoAppWindow(object):
                 
                 response_text = client.generate_text(prompt, audio_bytes=wav_bytes)
                 
-                self.conn.leds.fadeRGB("FaceLeds", 0x00FFFFFF, 0.2) # Back to normal white eyes
+                self.conn.leds.fadeRGB("AllLeds", 0x00FFFFFF, 0.2) # Back to normal white eyes
                 
                 if "Error" in response_text:
                     self.gemini_status.set("Gemini Voice Error.")
                     self._set_status(response_text, False)
                     print(response_text)
                 else:
-                    self.gemini_status.set("Finished!")
-                    self._set_status("Speaking Gemini response...")
-                    safe_text = response_text.replace('\n', ' ').encode('utf-8', 'ignore')
-                    print("Gemini voice response: " + safe_text)
-                    self.conn.tts.say(safe_text)
+                    self._speak_when_face_found(response_text)
             except Exception as e:
                 self.gemini_status.set("Voice Error: %s" % str(e)[:30])
                 self._set_status("Voice Pipeline Failed: %s" % e, False)
                 try: 
-                    self.conn.leds.fadeRGB("FaceLeds", 0x00FFFFFF, 0.2)
+                    self.conn.leds.fadeRGB("AllLeds", 0x00FFFFFF, 0.2)
                 except: 
                     pass
         
         threading.Thread(target=_voice_flow).start()
+
+    def _on_stop_speech(self):
+        if not self._require_connection() or not self.conn.tts:
+            return
+        try:
+            self.conn.tts.stopAll()
+            self._set_status("Speech forcefully stopped.")
+        except Exception as e:
+            self._set_status("Failed to stop speech: %s" % e, False)
+
+    def _speak_when_face_found(self, response_text):
+        command_to_run = None
+        if "COMMAND:" in response_text:
+            try:
+                parts = response_text.split("COMMAND:", 1)[1].split(".", 1)
+                command_to_run = parts[0].strip().lower()
+                response_text = parts[1].strip() if len(parts) > 1 else "Done."
+            except Exception:
+                pass
+                
+        self.gemini_status.set("Waiting for face...")
+        self._set_status("Looking for you before answering...")
+        
+        try:
+            tracker = self.conn.get_proxy("ALTracker")
+            if tracker and self.conn.face and self.conn.memory:
+                # Force head stiffness to 1.0 so manual scanning actually moves the physical neck motors
+                if self.conn.motion:
+                    self.conn.motion.setStiffnesses("Head", 1.0)
+                    
+                # Wake up the face detection engine
+                self.conn.face.subscribe("VoiceTracker")
+                
+                import time
+                import math
+                
+                face_found = False
+                
+                # Wait up to 4 seconds to spot someone
+                for i in range(4):
+                    val = self.conn.memory.getData("FaceDetected")
+                    # Check if face data is valid
+                    if val and isinstance(val, list) and len(val) >= 2 and isinstance(val[1], list) and len(val[1]) > 0:
+                        # Found face! Hand control over to ALTracker so it looks at us while speaking
+                        tracker.registerTarget("Face", 0.15)
+                        tracker.setMode("Head")
+                        tracker.track("Face")
+                        face_found = True
+                        break
+                        
+                    # Actively pan head side-to-side and up-and-down manually
+                    # (ALTracker is OFF here so it doesn't fight our manual commands)
+                    if self.conn.motion:
+                        yaw = math.sin(i * 0.8) * 0.8    # Look side to side
+                        # Math.cos forces the pitch to be out of phase with yaw, causing an oval/figure-8 sweep, and increased amplitude to 0.45 
+                        pitch = math.cos(i * 0.5) * 0.45 # Distinctly look up and down
+                        try: 
+                            self.conn.motion.setAngles(["HeadYaw", "HeadPitch"], [yaw, pitch], 0.15)
+                        except Exception: 
+                            pass
+                    
+                    time.sleep(1)
+                    
+        except Exception as fe:
+            print("Face tracking non-fatal error: " + str(fe))
+            
+        if not locals().get("face_found", False):
+            # Prepend the fallback phrase to the mobster's actual response
+            response_text = "Even if I can't see you, I will do as you say this time. " + response_text
+
+        self.gemini_status.set("Finished!")
+        self._set_status("Speaking Gemini response...")
+        safe_text = response_text.replace('\n', ' ').encode('utf-8', 'ignore')
+        print("Gemini response: " + safe_text)
+        
+        if command_to_run:
+            self._set_status("Firing voice command: " + command_to_run)
+            def do_command():
+                import time
+                time.sleep(0.5) # Slight delay purely for dramatic effect
+                self._on_quick_command(command_to_run)
+            threading.Thread(target=do_command).start()
+            
+        self.conn.tts.say(safe_text)
+        
+        # Give it a second to finish speaking before dropping tracker
+        try:
+            import time
+            time.sleep(1)
+            tracker = self.conn.get_proxy("ALTracker")
+            if tracker:
+                tracker.stopTracker()
+                tracker.unregisterAllTargets()
+            if self.conn.face:
+                self.conn.face.unsubscribe("VoiceTracker")
+            # Relax the head motors to prevent overheating
+            if self.conn.motion:
+                self.conn.motion.setStiffnesses("Head", 0.0)
+        except:
+            pass
 
     def _on_battery(self):
         if not self._require_connection() or not self.conn.memory: return
@@ -560,6 +693,263 @@ class NaoAppWindow(object):
             self._set_status("Battery: %d%%" % pct)
         except Exception as e:
             self._set_status("Battery error: %s" % e, False)
+
+    def _on_quick_command(self, cmd_text=None):
+        if not self._require_connection(): return
+        
+        cmd = (cmd_text or self.quick_cmd_var.get()).strip().lower()
+        if not cmd: return
+        
+        self.quick_status.set("Doing: " + cmd)
+        
+        def _execute_cmd():
+            try:
+                # Stop autonomous wandering if it is running so it doesn't fight the manual commands
+                if getattr(self, "_seeking", False):
+                    self._stop_wander_seek()
+                    import time
+                    time.sleep(0.5) # Wait a moment for loop to safely exit and motors to reset
+                    
+                # 1. Colors
+                if "red" in cmd: self.conn.leds.fadeRGB("AllLeds", 0xFF0000, 0.2)
+                elif "blue" in cmd: self.conn.leds.fadeRGB("AllLeds", 0x0000FF, 0.2)
+                elif "green" in cmd: self.conn.leds.fadeRGB("AllLeds", 0x00FF00, 0.2)
+                elif "white" in cmd: self.conn.leds.fadeRGB("AllLeds", 0xFFFFFF, 0.2)
+                elif "off" in cmd and "led" in cmd: self.conn.leds.fadeRGB("AllLeds", 0x000000, 0.2)
+                
+                # 2. Postures
+                words = cmd.replace('.', '').replace(',', '').split()
+                if "sit" in words or "sit down" in cmd: self.conn.posture.goToPosture("Sit", 0.8)
+                elif "stand" in cmd: 
+                    if hasattr(self.controller, "_stand_safely"): self.controller._stand_safely()
+                    else: self.conn.posture.goToPosture("StandInit", 0.8)
+                elif "crouch" in cmd: self.conn.posture.goToPosture("Crouch", 0.8)
+                elif "relax" in cmd or "rest" in cmd: self.conn.motion.rest()
+                
+                # 3. Motion
+                walk_cfg = getattr(self.controller, "_WALK_CONFIG", [])
+                
+                # Check for wandering first, as it conflicts with basic walking
+                if "wander" in cmd or "autonomously" in cmd or "seek" in cmd:
+                    # Let the existing autonomous thread logic handle this
+                    import threading
+                    threading.Thread(target=self._start_wander_seek).start()
+                    return
+                elif "forward" in cmd or "walk" in cmd: 
+                    self.conn.motion.moveToward(0.3, 0.0, 0.0, walk_cfg)
+                elif "backward" in cmd or "back" in cmd: 
+                    self.conn.motion.moveToward(-0.3, 0.0, 0.0, walk_cfg)
+                elif "left" in cmd: 
+                    self.conn.motion.moveToward(0.0, 0.0, 0.4, walk_cfg)
+                elif "right" in cmd: 
+                    self.conn.motion.moveToward(0.0, 0.0, -0.4, walk_cfg)
+                elif "stop" in cmd or "halt" in cmd: 
+                    self.conn.motion.stopMove()
+                    
+                # 4. Speech
+                if "say " in cmd:
+                    phrase = cmd.split("say ", 1)[-1]
+                    self.conn.tts.post.say(phrase)
+                elif "speak " in cmd:
+                    phrase = cmd.split("speak ", 1)[-1]
+                    self.conn.tts.post.say(phrase)
+                
+                self.quick_cmd_var.set("") # Clear field
+                self._set_status("Command processed: " + cmd)
+                self.quick_status.set("Done.")
+            except Exception as e:
+                self.quick_status.set("Error!")
+                self._set_status("Quick cmd failed: " + str(e), False)
+                
+        threading.Thread(target=_execute_cmd).start()
+
+    def _start_wander_seek(self):
+        if getattr(self, "_seeking", False): return
+        if not self._require_connection() or not self.conn.motion:
+            self.auto_status.set("Need connection!")
+            return
+        
+        self._seeking = True
+        self.auto_status.set("Wandering & Scanning...")
+        self._set_status("Autonomous wander started. Use 'Stop Auto' to abort.")
+        threading.Thread(target=self._wander_seek_thread).start()
+
+    def _stop_wander_seek(self):
+        if getattr(self, "_seeking", False):
+            self._seeking = False
+            self.auto_status.set("Stopping...")
+            self._set_status("Stopping autonomous mode...")
+
+    def _wander_seek_thread(self):
+        try:
+            self._set_status("Standing up safely...")
+            
+            # Use the robust safety parameters from the controller setup
+            if hasattr(self.controller, "_stand_safely"):
+                standing = self.controller._stand_safely()
+                if not standing:
+                    self.auto_status.set("Failed to stand.")
+                    self._set_status("Failed to stand, aborting wander.", False)
+                    self._seeking = False
+                    return
+            else:
+                self.conn.motion.wakeUp()
+                if self.conn.posture:
+                    self.conn.posture.goToPosture("StandInit", 0.5)
+
+            # Subscribe to Sonar for obstacle avoidance
+            sonar = self.conn.get_proxy("ALSonar")
+            if sonar:
+                try: sonar.subscribe("WanderSeeker")
+                except Exception: pass
+            
+            # Subscribe to Face Detection
+            if self.conn.face:
+                try: self.conn.face.subscribe("WanderSeekerFace")
+                except Exception: pass
+                
+            tracker = self.conn.get_proxy("ALTracker")
+            
+            import time
+            import math
+            import random
+            
+            wander_turn_bias = 0.0
+            last_bias_change = time.time()
+            next_speech_time = time.time() + random.uniform(3.0, 20.0)
+            
+            phrases = [
+                "Where is my human?",
+                "I am lonely.",
+                "Come out, come out, wherever you are.",
+                "I know you're hiding somewhere in this joint.",
+                "Where's this guy hiding?",
+                "Gettin' kinda bored wandering around here.",
+                "Show your face."
+            ]
+            
+            while getattr(self, "_seeking", False):
+                # 1. Check for faces
+                val = None
+                if self.conn.memory:
+                    val = self.conn.memory.getData("FaceDetected")
+                    
+                if getattr(self, "_seeking", False) and val and isinstance(val, list) and len(val) >= 2 and isinstance(val[1], list) and len(val[1]) > 0:
+                    # Found human!
+                    self._seeking = False
+                    self.conn.motion.stopMove()
+                    self.auto_status.set("Found Human!")
+                    
+                    if tracker:
+                        tracker.registerTarget("Face", 0.15)
+                        tracker.setMode("Head")
+                        tracker.track("Face")
+                    
+                    if self.conn.tts:
+                        self.conn.tts.say("Well well well, there you are. I've been looking all over for you.")
+                    
+                    time.sleep(2)
+                    if tracker:
+                        tracker.stopTracker()
+                        tracker.unregisterAllTargets()
+                    break
+
+                # 2. Check sonar for obstacles
+                l_dist = 1.0
+                r_dist = 1.0
+                if getattr(self, "_seeking", False) and self.conn.memory:
+                    try:
+                        # ALSonar writes to Device/SubDeviceList/US/Left/Sensor/Value etc.
+                        l_dist = self.conn.memory.getData("Device/SubDeviceList/US/Left/Sensor/Value")
+                        r_dist = self.conn.memory.getData("Device/SubDeviceList/US/Right/Sensor/Value")
+                    except Exception:
+                        pass
+                
+                if not getattr(self, "_seeking", False):
+                    break
+                    
+                # 3. Simple Obstacle Avoidance & Movement
+                # Use the controller's safety and constraints
+                max_fwd = 0.15 # Gentle speed, don't rush
+                max_rot = 0.16 # Hardcoded max rotation from controller
+                walk_config = getattr(self.controller, "_WALK_CONFIG", [])
+
+                if l_dist < 0.60 or r_dist < 0.60:
+                    # Very close to an object: Stop immediately so it doesn't hit it
+                    self.conn.motion.stopMove()
+                    
+                    if self.conn.tts:
+                        try:
+                            # using post.say so the robot speaks asynchronously while moving
+                            self.conn.tts.post.say("Whoa, blocked! Backing up to find a new route.")
+                        except Exception: 
+                            pass
+                            
+                    # Walk backwards to clear the space
+                    if getattr(self, "_seeking", False):
+                        self.conn.motion.moveToward(-0.15, 0.0, 0.0, walk_config)
+                        for _ in range(15): # Give it 1.5 seconds of straight backward walking
+                            if not getattr(self, "_seeking", False): break
+                            time.sleep(0.1)
+                            
+                    # Pivot randomly to establish a truly new route
+                    if getattr(self, "_seeking", False):
+                        # Base pivot direction away from obstacle
+                        base_speed = random.uniform(0.20, 0.35)
+                        turn_dir = -base_speed if l_dist < r_dist else base_speed
+                        
+                        # 20% chance to completely fake out and spin the other way (helps break loops)
+                        if random.random() < 0.20:
+                            turn_dir *= -1.0
+                            
+                        self.conn.motion.moveToward(0.0, 0.0, turn_dir, walk_config)
+                        
+                        # Randomize how long it turns (between 1.5 seconds and 3.5 seconds)
+                        # This ensures the new angle is drastically different every single time
+                        pivot_ticks = int(random.uniform(15, 35))
+                        for _ in range(pivot_ticks): 
+                            if not getattr(self, "_seeking", False): break
+                            time.sleep(0.1)
+                else:
+                    # Occasional random wandering speech
+                    if time.time() > next_speech_time:
+                        if self.conn.tts:
+                            try: self.conn.tts.post.say(random.choice(phrases))
+                            except Exception: pass
+                        next_speech_time = time.time() + random.uniform(3.0, 20.0)
+
+                    # Randomize wander drift periodically (every 4 to 8 seconds)
+                    if time.time() - last_bias_change > random.uniform(4.0, 8.0):
+                        wander_turn_bias = random.uniform(-0.15, 0.15)
+                        last_bias_change = time.time()
+                        
+                    # Clear path, walk slightly forward and slowly sweep room with random bias
+                    turn = (math.sin(time.time() * 0.5) * 0.08) + wander_turn_bias
+                    self.conn.motion.moveToward(max_fwd, 0.0, turn, walk_config)
+                    
+                time.sleep(0.1)
+                
+        except Exception as e:
+            self._set_status("Wander error: " + str(e)[:30], False)
+            self.auto_status.set("Error: View console")
+            print("Wander error: " + str(e))
+            
+        finally:
+            self._seeking = False
+            self.auto_status.set("Idle.")
+            try:
+                self.conn.motion.stopMove()
+            except Exception: pass
+            
+            try:
+                sonar = self.conn.get_proxy("ALSonar")
+                if sonar: sonar.unsubscribe("WanderSeeker")
+            except Exception: pass
+            
+            try:
+                if self.conn.face: self.conn.face.unsubscribe("WanderSeekerFace")
+            except Exception: pass
+
 
     def _on_camera_start(self):
         if not self._require_connection(): return

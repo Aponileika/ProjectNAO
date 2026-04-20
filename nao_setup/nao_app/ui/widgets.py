@@ -22,11 +22,15 @@ def make_card(parent, title, font_head=None):
     card.pack(fill="x", pady=4)
     return card
 
-def make_btn(parent, text, command, width=14, font_norm=None):
+def make_btn(parent, text, command, width=14, font_norm=None, **kwargs):
     if font_norm is None:
         font_norm = tkFont.Font(family="Segoe UI", size=10)
-    return tk.Button(
-        parent, text=text, command=command, width=width,
-        font=font_norm, bg=BTN_BG, fg=BTN_FG,
-        activebackground=ACCENT, activeforeground=BG,
-        relief="flat", cursor="hand2")
+    
+    opts = {
+        "text": text, "command": command, "width": width,
+        "font": font_norm, "bg": BTN_BG, "fg": BTN_FG,
+        "activebackground": ACCENT, "activeforeground": BG,
+        "relief": "flat", "cursor": "hand2"
+    }
+    opts.update(kwargs)
+    return tk.Button(parent, **opts)
