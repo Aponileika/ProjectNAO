@@ -45,11 +45,20 @@ class NaoAppWindow(object):
         try:
             import json, os
             # App window is in NAO/nao_setup/nao_app/ui/app_window.py (4 levels deep)
-            conf_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "config.json")
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            conf_path = os.path.join(base_dir, "config.json")
+            secrets_path = os.path.join(base_dir, "secrets.json")
+            
             if os.path.isfile(conf_path):
                 with open(conf_path, "r") as f:
                     cdata = json.load(f)
                     self.api_key_autofill = cdata.get("gemini_key", "")
+                    
+            if os.path.isfile(secrets_path):
+                with open(secrets_path, "r") as f:
+                    sdata = json.load(f)
+                    if sdata.get("gemini_key"):
+                        self.api_key_autofill = sdata.get("gemini_key")
         except:
             pass
 
