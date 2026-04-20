@@ -1,0 +1,9 @@
+# Request
+std_msgs/Header header
+int64[] node_ids  # The sequence of nodes in the path
+float64[] x       # x coordinates of the path
+float64[] y       # y coordinates of the path
+---
+# Response
+bool success      # Whether the motion planner successfully received and processed the path
+string message    # Any additional information or error messages
