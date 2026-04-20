@@ -190,8 +190,7 @@ def main(args=None):
         kx=1,
         ky=15,
         ktheta=1,
-        path=path,
-        Tsim=0.001
+        path=path
     )
 
     rclpy.spin(node)
