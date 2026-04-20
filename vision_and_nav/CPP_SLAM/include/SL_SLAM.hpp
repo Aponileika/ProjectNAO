@@ -10,9 +10,10 @@
 #include "FR_Frames.hpp"
 #include "EP_CorrespondingPoints.hpp"
 
-#define RANSACMETHOD cv::LMEDS
+//LOOK INTO USAC
+#define RANSACMETHOD cv::USAC_DEFAULT
 #define PROBECORRECT 0.95f
-#define RANSACEPIXELT 2.0f
+#define RANSACEPIXELT 1.0f
 #define RANSACMAXITERS 1000
 
 struct SLAM
