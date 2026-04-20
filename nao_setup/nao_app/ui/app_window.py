@@ -41,6 +41,18 @@ class NaoAppWindow(object):
         self.vision = vision
         self.controller = controller
         
+        self.api_key_autofill = ""
+        try:
+            import json, os
+            # App window is in NAO/nao_setup/nao_app/ui/app_window.py (4 levels deep)
+            conf_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "config.json")
+            if os.path.isfile(conf_path):
+                with open(conf_path, "r") as f:
+                    cdata = json.load(f)
+                    self.api_key_autofill = cdata.get("gemini_key", "")
+        except:
+            pass
+
         self._controller_expanded = False
         self._build_ui()
         
@@ -98,6 +110,7 @@ class NaoAppWindow(object):
         right = tk.Frame(self._body, bg=BG)
         right.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
 
+        self._card_gemini(right)
         self._card_controller(right)
         self._card_camera(right)
 
@@ -192,6 +205,33 @@ class NaoAppWindow(object):
         make_btn(row, "Refresh", self._on_battery, width=10, font_norm=self.font_norm).pack(side="left", padx=4)
         self.battery_var = tk.StringVar(value="--")
         tk.Label(row, textvariable=self.battery_var, font=self.font_norm, bg=CARD_BG, fg=SUCCESS).pack(side="left", padx=8)
+
+    def _card_gemini(self, parent):
+        card = make_card(parent, "AI Chat (Gemini)", self.font_head)
+        
+        r1 = tk.Frame(card, bg=CARD_BG)
+        r1.pack(fill="x", pady=(0, 6))
+        tk.Label(r1, text="API Key:", font=self.font_norm, bg=CARD_BG, fg=FG).pack(side="left")
+        self.gemini_key_entry = tk.Entry(r1, font=self.font_norm, show="*", width=20)
+        if self.api_key_autofill:
+            self.gemini_key_entry.insert(0, self.api_key_autofill)
+        self.gemini_key_entry.pack(side="left", padx=4)
+        
+        r2 = tk.Frame(card, bg=CARD_BG)
+        r2.pack(fill="x", pady=(0, 6))
+        tk.Label(r2, text="Prompt: ", font=self.font_norm, bg=CARD_BG, fg=FG).pack(side="left")
+        self.gemini_prompt_entry = tk.Entry(r2, font=self.font_norm, width=28)
+        self.gemini_prompt_entry.pack(side="left", padx=4)
+        
+        r3 = tk.Frame(card, bg=CARD_BG)
+        r3.pack(fill="x", pady=(0, 4))
+        make_btn(r3, "Ask (Text)", self._on_gemini_ask, width=10, font_norm=self.font_norm).pack(side="left", padx=2)
+        make_btn(r3, "Talk to NAO (5s)", self._on_gemini_voice_interactive, width=16, font_norm=self.font_norm).pack(side="left", padx=6)
+        
+        r4 = tk.Frame(card, bg=CARD_BG)
+        r4.pack(fill="x")
+        self.gemini_status = tk.StringVar(value="Ready.")
+        tk.Label(r4, textvariable=self.gemini_status, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
 
     def _card_controller(self, parent):
         card = make_card(parent, "PS5 Controller", self.font_head)
@@ -391,6 +431,116 @@ class NaoAppWindow(object):
             self._set_status("Autonomous life disabled")
         except Exception as e:
             self._set_status("Life error: %s" % e, False)
+
+    def _on_gemini_ask(self):
+        if not self._require_connection() or not self.conn.tts:
+            self._set_status("Cannot speak without NAO connected.", False)
+            return
+
+        api_key = self.gemini_key_entry.get().strip()
+        prompt = self.gemini_prompt_entry.get().strip()
+
+        if not api_key:
+            self.gemini_status.set("Error: Need API Key!")
+            return
+        if not prompt:
+            self.gemini_status.set("Enter a prompt!")
+            return
+
+        self.gemini_status.set("Thinking...")
+        self.root.update_idletasks()
+
+        def _fetch_and_say():
+            try:
+                from nao_app.ai.gemini_client import GeminiClient
+                client = GeminiClient()
+                client.set_api_key(api_key)
+                
+                # The Gemini AI client natively handles the NAO system prompt, 
+                # keeping the UI logic perfectly clean.
+                response_text = client.generate_text(prompt)
+                
+                if "Error" in response_text:
+                    self.gemini_status.set("Gemini Error.")
+                    self._set_status("Gemini Error: Check console.", False)
+                    print(response_text)
+                else:
+                    self.gemini_status.set("Finished!")
+                    self._set_status("Speaking Gemini response...")
+                    
+                    # Convert accurately to UTF-8 without newlines for the NAOqi 2.7 TTS engine
+                    safe_text = response_text.replace('\n', ' ').encode('utf-8', 'ignore')
+                    print("Gemini said: " + safe_text)
+                    self.conn.tts.say(safe_text)
+            except Exception as e:
+                self.gemini_status.set("Failed: %s" % e)
+                self._set_status("Gemini Failed: %s" % e, False)
+                
+        threading.Thread(target=_fetch_and_say).start()
+
+    def _on_gemini_voice_interactive(self):
+        if not self._require_connection() or not self.conn.audio_recorder:
+            return
+            
+        api_key = self.gemini_key_entry.get().strip()
+        if not api_key:
+            self.gemini_status.set("Error: Need API Key!")
+            return
+
+        def _voice_flow():
+            import time, urllib2
+            try:
+                # Tell NAO to use its built-in microphones to record a WAV file locally
+                self.conn.audio_recorder.stopMicrophonesRecording()
+                self.conn.audio_recorder.startMicrophonesRecording("/home/nao/gemini.wav", "wav", 16000, (0,0,1,0))
+                self.gemini_status.set("Listening to you (5s)...")
+                self.conn.leds.fadeRGB("FaceLeds", 0x00FF0000, 0.2) # Turn eyes red so we know it listens
+                
+                # Wait 5 seconds dynamically while letting UI update
+                for i in range(5):
+                    self.gemini_status.set("Listening to you (%ds left)..." % (5-i))
+                    time.sleep(1)
+                    
+                self.conn.audio_recorder.stopMicrophonesRecording()
+                self.conn.leds.fadeRGB("FaceLeds", 0x000000FF, 0.2) # Turn eyes blue to show processing
+                self.gemini_status.set("Thinking...")
+                
+                # Use python's urllib to FTP into the robot and pull the raw WAV file securely
+                ftp_url = "ftp://nao:nao@{}/gemini.wav".format(self.conn.ip)
+                wav_bytes = urllib2.urlopen(ftp_url, timeout=10).read()
+                
+                from nao_app.ai.gemini_client import GeminiClient
+                client = GeminiClient()
+                client.set_api_key(api_key)
+                
+                # We let the user type a custom extra prompt, or use a default one
+                prompt = self.gemini_prompt_entry.get().strip()
+                if not prompt:
+                    prompt = "Please listen to the attached audio recording of my voice. Answer what I say naturally."
+                
+                response_text = client.generate_text(prompt, audio_bytes=wav_bytes)
+                
+                self.conn.leds.fadeRGB("FaceLeds", 0x00FFFFFF, 0.2) # Back to normal white eyes
+                
+                if "Error" in response_text:
+                    self.gemini_status.set("Gemini Voice Error.")
+                    self._set_status(response_text, False)
+                    print(response_text)
+                else:
+                    self.gemini_status.set("Finished!")
+                    self._set_status("Speaking Gemini response...")
+                    safe_text = response_text.replace('\n', ' ').encode('utf-8', 'ignore')
+                    print("Gemini voice response: " + safe_text)
+                    self.conn.tts.say(safe_text)
+            except Exception as e:
+                self.gemini_status.set("Voice Error: %s" % str(e)[:30])
+                self._set_status("Voice Pipeline Failed: %s" % e, False)
+                try: 
+                    self.conn.leds.fadeRGB("FaceLeds", 0x00FFFFFF, 0.2)
+                except: 
+                    pass
+        
+        threading.Thread(target=_voice_flow).start()
 
     def _on_battery(self):
         if not self._require_connection() or not self.conn.memory: return

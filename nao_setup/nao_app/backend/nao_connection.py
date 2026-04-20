@@ -15,6 +15,7 @@ class NaoConnectionManager(object):
         self.memory = None
         self.life = None
         self.audio = None
+        self.audio_recorder = None
         self.video = None
         self.face = None
         self.people = None
@@ -46,6 +47,7 @@ class NaoConnectionManager(object):
         self.memory = _make_proxy("ALMemory", self.ip, self.port)
         self.life = _make_proxy("ALAutonomousLife", self.ip, self.port)
         self.audio = _make_proxy("ALAudioDevice", self.ip, self.port)
+        self.audio_recorder = _make_proxy("ALAudioRecorder", self.ip, self.port)
         self.video = _make_proxy("ALVideoDevice", self.ip, self.port)
         self.face = _make_proxy("ALFaceDetection", self.ip, self.port)
         self.people = _make_proxy("ALPeoplePerception", self.ip, self.port)
