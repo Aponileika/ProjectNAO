@@ -4,17 +4,30 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <utility>
+#include <stdio.h>
 #include "VW_Views.hpp"
 #include "PT_Points.hpp"
 #include "OB_Observations.hpp"
 #include "FR_Frames.hpp"
 #include "EP_CorrespondingPoints.hpp"
+#include "LG_Logging.hpp"
 
 //LOOK INTO USAC
 #define RANSACMETHOD cv::USAC_DEFAULT
-#define PROBECORRECT 0.95f
+//#define RANSACMETHOD cv::RANSAC
+#define PROBECORRECT 0.99f
 #define RANSACEPIXELT 1.0f
 #define RANSACMAXITERS 1000
+
+#define SLAMSTARTMSG "\
+    --------------------------------\n\
+    --------------------------------\n\
+    --------------------------------\n\
+            SLAM IS STARTING\n\
+    --------------------------------\n\
+    --------------------------------\n\
+    --------------------------------\n\
+"
 
 struct SLAM
 {

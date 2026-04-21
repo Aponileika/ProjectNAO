@@ -2,9 +2,10 @@
 #define __PT__Points_HPP_
 #include <iostream>
 #include <vector>
-#include "CArenaAlloc.h"
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
+#include "CArenaAlloc.h"
+#include "LG_Logging.hpp"
 
 struct PointSet
 {

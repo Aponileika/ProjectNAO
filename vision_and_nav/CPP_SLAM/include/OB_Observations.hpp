@@ -7,6 +7,7 @@
 #include "VW_Views.hpp"
 #include "PT_Points.hpp"
 #include "EP_CorrespondingPoints.hpp"
+#include "LG_Logging.hpp"
 
 struct ObservationSet
 {

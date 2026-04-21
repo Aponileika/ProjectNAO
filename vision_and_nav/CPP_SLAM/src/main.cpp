@@ -13,6 +13,7 @@
 #include "../include/SL_SLAM.hpp"
 #include "../include/VT_VecUtils.hpp"
 #include "../include/VW_Views.hpp"
+#include "../include/LG_Logging.hpp"
 
 #include "CArenaAlloc.c"
 #include "CM_Camera.cpp"
@@ -24,15 +25,17 @@
 #include "SL_SLAM.cpp"
 #include "VT_VecUtils.cpp"
 #include "VW_Views.cpp"
+#include "LG_Logging.cpp"
 
 int main(void)
 {
     setbuf(stdout, NULL);
-    printf("Initiating SLAM\n");
+    LG_InitLogger();
+    LG_Log("Initiating SLAM\n");
     SL_InitSlam();
-    printf("Setting intrinsics\n");
+    LG_Log("Setting intrinsics\n");
     CM_SetIntrinsics("");
-    printf("Starting SLAMLoop\n");
+    LG_Log("Starting SLAMLoop\n");
     SL_SlamLoop();
     return 0;
 }

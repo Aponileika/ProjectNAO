@@ -23,16 +23,14 @@ void VW_AddObs(struct ViewSet* views, u64 viewidx, u64 obsidx)
 
 void VW_Print(struct ViewSet* views)
 {
-    std::cout << "ViewSet\n";
-    std::cout << "  views.size(): " << views->views.size() << "\n";
-    std::cout << "  observations_indexes.size(): " << views->observations_indexes.size() << "\n";
-    std::cout << "  last_sz: " << views->last_sz << "\n";
+    LG_Log("ViewSet\n");
+    LG_Log("views.size(): %lld\n", views->views.size());
+    LG_Log("observations_indexes.size(): %lld\n", views->observations_indexes.size());
+    LG_Log("last_sz: %lld\n", views->last_sz);
 
     size_t n = std::min<size_t>(views->observations_indexes.size(), 10);
     for (size_t i = 0; i < n; ++i)
     {
-        std::cout << "  view[" << i << "] has "
-                  << views->observations_indexes[i].size()
-                  << " observations\n";
+        LG_Log("view[%lld] has %lld observations\n", i, views->observations_indexes[i].size());
     }
 }

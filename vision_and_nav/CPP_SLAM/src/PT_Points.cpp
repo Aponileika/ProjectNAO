@@ -30,26 +30,26 @@ void PT_AddObs(struct PointSet* pointset, u64 pointidx, u64 obsidx)
 
 void PT_Print(struct PointSet* points)
 {
-    std::cout << "PointSet\n";
-    std::cout << "  points.size(): " << points->points.size() << "\n";
-    std::cout << "  observations_indexes.size(): " << points->observations_indexes.size() << "\n";
-    std::cout << "  last_sz: " << points->last_sz << "\n";
+    LG_Log("PointSet\n");
+    LG_Log("points.size(): %lld\n", points->points.size());
+    LG_Log("observations_indexes.size(): %lld\n", points->observations_indexes.size());
+    LG_Log("last_sz: %lld\n", points->last_sz);
 
     size_t n = std::min<size_t>(points->points.size(), 10);
     for (size_t i = 0; i < n; ++i)
     {
-        std::cout << "  point[" << i << "] ";
+        LG_Log("  point[%lld] ", i);
         if (!points->points[i].empty())
         {
-            std::cout << "shape=(" << points->points[i].rows
-                      << "x" << points->points[i].cols << ")";
+            LG_Log("shape=(%lluX%llu)", points->points[i].rows, points->points[i].cols);
         }
         else
         {
-            std::cout << "empty";
+            LG_Log("empty");
         }
-        std::cout << " obsidx = (" << points->observations_indexes[i][0] << ", " << points->observations_indexes[i][1] << ")";
-        std::cout << ", obs count=" << points->observations_indexes[i].size() << "\n";
+        LG_Log("\n");
+        //std::cout << " obsidx = (" << points->observations_indexes[i][0] << ", " << points->observations_indexes[i][1] << ")";
+        //std::cout << ", obs count=" << points->observations_indexes[i].size() << "\n";
     }
 }
 

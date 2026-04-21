@@ -4,6 +4,7 @@
 #include <vector>
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
+#include "LG_Logging.hpp"
 
 struct ViewSet
 {

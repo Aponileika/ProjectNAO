@@ -1,0 +1,759 @@
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+Adding first view
+Adding second view
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 1446 observations
+view[1] has 1446 observations
+Printing observations
+ObservationSet
+observations.size() = 2892
+view_indexes.size() = 2892
+point_indexes.size() = 2892
+obs[0] = (842.000000, 673.000000), view=0, point=0
+obs[1] = (842.000000, 673.000000), view=1, point=0
+obs[2] = (691.000000, 258.000000), view=0, point=1
+obs[3] = (689.000000, 258.000000), view=1, point=1
+obs[4] = (851.000000, 670.000000), view=0, point=2
+obs[5] = (851.000000, 670.000000), view=1, point=2
+obs[6] = (850.000000, 657.000000), view=0, point=3
+obs[7] = (850.000000, 657.000000), view=1, point=3
+obs[8] = (658.000000, 261.000000), view=0, point=4
+obs[9] = (656.000000, 261.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 1446
+observations_indexes.size(): 1446
+last_sz: 0
+  point[0] shape=(4X1)  point[1] shape=(4X1)  point[2] shape=(4X1)  point[3] shape=(4X1)  point[4] shape=(4X1)  point[5] shape=(4X1)  point[6] shape=(4X1)  point[7] shape=(4X1)  point[8] shape=(4X1)  point[9] shape=(4X1)inliers after RANSAC: 1307
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+Adding first view
+Adding second view
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 1452 observations
+view[1] has 1452 observations
+Printing observations
+ObservationSet
+observations.size() = 2904
+view_indexes.size() = 2904
+point_indexes.size() = 2904
+obs[0] = (842.000000, 671.000000), view=0, point=0
+obs[1] = (842.000000, 671.000000), view=1, point=0
+obs[2] = (618.000000, 274.000000), view=0, point=1
+obs[3] = (617.000000, 274.000000), view=1, point=1
+obs[4] = (631.000000, 274.000000), view=0, point=2
+obs[5] = (629.000000, 274.000000), view=1, point=2
+obs[6] = (623.000000, 276.000000), view=0, point=3
+obs[7] = (621.000000, 276.000000), view=1, point=3
+obs[8] = (630.000000, 276.000000), view=0, point=4
+obs[9] = (628.000000, 276.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 1452
+observations_indexes.size(): 1452
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+  point[7] shape=(4X1)
+  point[8] shape=(4X1)
+  point[9] shape=(4X1)
+inliers after RANSAC: 1305
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+Adding first view
+Adding second view
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 1 observations
+view[1] has 1 observations
+Printing observations
+ObservationSet
+observations.size() = 2
+view_indexes.size() = 2
+point_indexes.size() = 2
+obs[0] = (986.400024, 346.800018), view=0, point=0
+obs[1] = (987.600037, 346.800018), view=1, point=0
+Printing points
+PointSet
+points.size(): 1
+observations_indexes.size(): 1
+last_sz: 0
+  point[0] shape=(4X1)
+inliers after RANSAC: 381
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+Adding first view
+Adding second view
+number of corrp after masking = 231
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 231 observations
+view[1] has 231 observations
+Printing observations
+ObservationSet
+observations.size() = 462
+view_indexes.size() = 462
+point_indexes.size() = 462
+obs[0] = (578.000000, 298.000000), view=0, point=0
+obs[1] = (571.000000, 304.000000), view=1, point=0
+obs[2] = (582.000000, 298.000000), view=0, point=1
+obs[3] = (575.000000, 304.000000), view=1, point=1
+obs[4] = (605.000000, 298.000000), view=0, point=2
+obs[5] = (598.000000, 303.000000), view=1, point=2
+obs[6] = (620.000000, 305.000000), view=0, point=3
+obs[7] = (615.000000, 310.000000), view=1, point=3
+obs[8] = (516.000000, 307.000000), view=0, point=4
+obs[9] = (510.000000, 312.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 231
+observations_indexes.size(): 231
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+  point[7] shape=(4X1)
+  point[8] shape=(4X1)
+  point[9] shape=(4X1)
+inliers after RANSAC: 738
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+ninliers b4 recover = 1002, after = 2
+Adding first view
+Adding second view
+number of corrp after masking = 2
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 2 observations
+view[1] has 2 observations
+Printing observations
+ObservationSet
+observations.size() = 4
+view_indexes.size() = 4
+point_indexes.size() = 4
+obs[0] = (771.379395, 380.713043), view=0, point=0
+obs[1] = (778.844360, 390.666321), view=1, point=0
+obs[2] = (695.734436, 182.145081), view=0, point=1
+obs[3] = (704.194702, 186.624039), view=1, point=1
+Printing points
+PointSet
+points.size(): 2
+observations_indexes.size(): 2
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+inliers after RANSAC: 1002
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+ninliers b4 recover = 71, after = 47
+Adding first view
+Adding second view
+number of corrp after masking = 47
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 47 observations
+view[1] has 47 observations
+Printing observations
+ObservationSet
+observations.size() = 94
+view_indexes.size() = 94
+point_indexes.size() = 94
+obs[0] = (498.000000, 210.000000), view=0, point=0
+obs[1] = (872.000000, 144.000000), view=1, point=0
+obs[2] = (495.000000, 326.000000), view=0, point=1
+obs[3] = (854.400024, 264.000000), view=1, point=1
+obs[4] = (727.000000, 328.000000), view=0, point=2
+obs[5] = (1107.000000, 302.000000), view=1, point=2
+obs[6] = (551.000000, 375.000000), view=0, point=3
+obs[7] = (910.000000, 326.000000), view=1, point=3
+obs[8] = (599.000000, 424.000000), view=0, point=4
+obs[9] = (958.000000, 384.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 47
+observations_indexes.size(): 47
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+  point[7] shape=(4X1)
+  point[8] shape=(4X1)
+  point[9] shape=(4X1)
+inliers after RANSAC: 71
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+ninliers b4 recover = 31, after = 31
+Adding first view
+Adding second view
+number of corrp after masking = 31
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 31 observations
+view[1] has 31 observations
+Printing observations
+ObservationSet
+observations.size() = 62
+view_indexes.size() = 62
+point_indexes.size() = 62
+obs[0] = (481.000000, 150.000000), view=0, point=0
+obs[1] = (371.520020, 50.400002), view=1, point=0
+obs[2] = (515.000000, 176.000000), view=0, point=1
+obs[3] = (399.000000, 73.000000), view=1, point=1
+obs[4] = (519.000000, 178.000000), view=0, point=2
+obs[5] = (402.000000, 75.000000), view=1, point=2
+obs[6] = (576.000000, 316.000000), view=0, point=3
+obs[7] = (470.880005, 221.760010), view=1, point=3
+obs[8] = (601.000000, 326.000000), view=0, point=4
+obs[9] = (497.000000, 230.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 31
+observations_indexes.size(): 31
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+  point[7] shape=(4X1)
+  point[8] shape=(4X1)
+  point[9] shape=(4X1)
+inliers after RANSAC: 31
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+ninliers b4 recover = 95, after = 63
+Adding first view
+Adding second view
+number of corrp after masking = 63
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 63 observations
+view[1] has 63 observations
+Printing observations
+ObservationSet
+observations.size() = 126
+view_indexes.size() = 126
+point_indexes.size() = 126
+obs[0] = (449.000000, 94.000000), view=0, point=0
+obs[1] = (436.000000, 91.000000), view=1, point=0
+obs[2] = (451.000000, 116.000000), view=0, point=1
+obs[3] = (437.000000, 112.000000), view=1, point=1
+obs[4] = (702.000000, 124.000000), view=0, point=2
+obs[5] = (671.000000, 108.000000), view=1, point=2
+obs[6] = (418.000000, 136.000000), view=0, point=3
+obs[7] = (406.000000, 133.000000), view=1, point=3
+obs[8] = (577.000000, 138.000000), view=0, point=4
+obs[9] = (551.000000, 128.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 63
+observations_indexes.size(): 63
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+  point[7] shape=(4X1)
+  point[8] shape=(4X1)
+  point[9] shape=(4X1)
+Logger initiatedInitiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+ninliers b4 recover = 11, after = 11
+Adding first view
+Adding second view
+number of corrp after masking = 11
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 11 observations
+view[1] has 11 observations
+Printing observations
+ObservationSet
+observations.size() = 22
+view_indexes.size() = 22
+point_indexes.size() = 22
+obs[0] = (624.000000, 166.800003), view=0, point=0
+obs[1] = (1064.204956, 419.232269), view=1, point=0
+obs[2] = (740.400024, 308.400024), view=0, point=1
+obs[3] = (641.088074, 252.288025), view=1, point=1
+obs[4] = (623.520020, 167.040009), view=0, point=2
+obs[5] = (1064.204956, 419.232269), view=1, point=2
+obs[6] = (532.800049, 178.560013), view=0, point=3
+obs[7] = (1171.584106, 585.792053), view=1, point=3
+obs[8] = (740.160034, 308.160004), view=0, point=4
+obs[9] = (641.088074, 252.288025), view=1, point=4
+Printing points
+PointSet
+points.size(): 11
+observations_indexes.size(): 11
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+  point[7] shape=(4X1)
+  point[8] shape=(4X1)
+  point[9] shape=(4X1)
+Logger initiated
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Recovering pose
+ninliers b4 recover = 12, after = 7
+Adding first view
+Adding second view
+number of corrp after masking = 7
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 7 observations
+view[1] has 7 observations
+Printing observations
+ObservationSet
+observations.size() = 14
+view_indexes.size() = 14
+point_indexes.size() = 14
+obs[0] = (1230.000000, 372.000000), view=0, point=0
+obs[1] = (1090.000000, 388.000000), view=1, point=0
+obs[2] = (1230.000000, 372.000000), view=0, point=1
+obs[3] = (1090.000000, 388.000000), view=1, point=1
+obs[4] = (375.600006, 400.800018), view=0, point=2
+obs[5] = (296.640015, 424.800018), view=1, point=2
+obs[6] = (375.321655, 400.204865), view=0, point=3
+obs[7] = (295.488037, 425.088043), view=1, point=3
+obs[8] = (999.475342, 410.572845), view=0, point=4
+obs[9] = (1010.258179, 410.572906), view=1, point=4
+Printing points
+PointSet
+points.size(): 7
+observations_indexes.size(): 7
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+Logger initiated
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 99
+Recovering pose
+ninliers b4 recover = 55, after = 55
+Adding first view
+Adding second view
+number of corrp after masking = 55
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 55 observations
+view[1] has 55 observations
+Printing observations
+ObservationSet
+observations.size() = 110
+view_indexes.size() = 110
+point_indexes.size() = 110
+obs[0] = (608.000000, 144.000000), view=0, point=0
+obs[1] = (662.000000, 107.000000), view=1, point=0
+obs[2] = (433.000000, 145.000000), view=0, point=1
+obs[3] = (450.720032, 103.680008), view=1, point=1
+obs[4] = (490.000000, 145.000000), view=0, point=2
+obs[5] = (517.000000, 106.000000), view=1, point=2
+obs[6] = (879.000000, 164.000000), view=0, point=3
+obs[7] = (955.200012, 138.000000), view=1, point=3
+obs[8] = (535.000000, 170.000000), view=0, point=4
+obs[9] = (590.000000, 131.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 55
+observations_indexes.size(): 55
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+  point[7] shape=(4X1)
+  point[8] shape=(4X1)
+  point[9] shape=(4X1)
+Logger initiated
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 65
+Recovering pose
+ninliers b4 recover = 29, after = 29
+Adding first view
+Adding second view
+number of corrp after masking = 29
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 29 observations
+view[1] has 29 observations
+Printing observations
+ObservationSet
+observations.size() = 58
+view_indexes.size() = 58
+point_indexes.size() = 58
+obs[0] = (456.000000, 118.000000), view=0, point=0
+obs[1] = (518.000000, 71.000000), view=1, point=0
+obs[2] = (464.000000, 126.000000), view=0, point=1
+obs[3] = (528.000000, 79.200005), view=1, point=1
+obs[4] = (478.000000, 188.000000), view=0, point=2
+obs[5] = (546.000000, 147.600006), view=1, point=2
+obs[6] = (434.400024, 90.000000), view=0, point=3
+obs[7] = (492.000031, 37.200001), view=1, point=3
+obs[8] = (393.600006, 102.000008), view=0, point=4
+obs[9] = (445.200012, 46.800003), view=1, point=4
+Printing points
+PointSet
+points.size(): 29
+observations_indexes.size(): 29
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+  point[7] shape=(4X1)
+  point[8] shape=(4X1)
+  point[9] shape=(4X1)
+Logger initiated
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 55
+Recovering pose
+ninliers b4 recover = 16, after = 12
+Adding first view
+Adding second view
+number of corrp after masking = 12
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0] has 12 observations
+view[1] has 12 observations
+Printing observations
+ObservationSet
+observations.size() = 24
+view_indexes.size() = 24
+point_indexes.size() = 24
+obs[0] = (626.400024, 326.400024), view=0, point=0
+obs[1] = (696.384094, 278.208038), view=1, point=0
+obs[2] = (501.120026, 190.080002), view=0, point=1
+obs[3] = (522.547302, 109.486107), view=1, point=1
+obs[4] = (298.080017, 436.320007), view=0, point=2
+obs[5] = (170.201141, 456.855682), view=1, point=2
+obs[6] = (295.200012, 437.760010), view=0, point=3
+obs[7] = (170.201141, 456.855682), view=1, point=3
+obs[8] = (717.120056, 169.344009), view=0, point=4
+obs[9] = (824.256104, 95.040009), view=1, point=4
+Printing points
+PointSet
+points.size(): 12
+observations_indexes.size(): 12
+last_sz: 0
+  point[0] shape=(4X1)
+  point[1] shape=(4X1)
+  point[2] shape=(4X1)
+  point[3] shape=(4X1)
+  point[4] shape=(4X1)
+  point[5] shape=(4X1)
+  point[6] shape=(4X1)
+  point[7] shape=(4X1)
+  point[8] shape=(4X1)
+  point[9] shape=(4X1)

@@ -28,19 +28,16 @@ void OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSe
 
 void OB_Print(struct ObservationSet* obs)
 {
-    std::cout << "ObservationSet\n";
-    std::cout << "  observations.size(): " << obs->observations.size() << "\n";
-    std::cout << "  view_indexes.size(): " << obs->view_indexes.size() << "\n";
-    std::cout << "  point_indexes.size(): " << obs->point_indexes.size() << "\n";
+    LG_Log("ObservationSet\n");
+    LG_Log("observations.size() = %lld\n", obs->observations.size());
+    LG_Log("view_indexes.size() = %lld\n", obs->view_indexes.size());
+    LG_Log("point_indexes.size() = %lld\n", obs->point_indexes.size());
 
     size_t n = std::min<size_t>(obs->observations.size(), 10);
     for (size_t i = 0; i < n; ++i)
     {
-        std::cout << "  obs[" << i << "] = (" 
-                  << obs->observations[i].x << ", "
-                  << obs->observations[i].y << "), view="
-                  << obs->view_indexes[i] << ", point="
-                  << obs->point_indexes[i] << "\n";
+        LG_Log("obs[%lld] = (%f, %f), view=%llu, point=%llu\n", i, obs->observations[i].x, obs->observations[i].y,
+                   obs->view_indexes[i], obs->point_indexes[i]);
     }
 }
 
