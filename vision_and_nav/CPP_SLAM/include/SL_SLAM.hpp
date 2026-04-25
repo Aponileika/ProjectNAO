@@ -11,6 +11,7 @@
 #include "FR_Frames.hpp"
 #include "EP_CorrespondingPoints.hpp"
 #include "LG_Logging.hpp"
+#include "OP_BA.hpp"
 
 //LOOK INTO USAC
 #define RANSACMETHOD cv::USAC_DEFAULT

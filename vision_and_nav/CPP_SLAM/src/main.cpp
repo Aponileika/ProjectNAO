@@ -14,6 +14,7 @@
 #include "../include/VT_VecUtils.hpp"
 #include "../include/VW_Views.hpp"
 #include "../include/LG_Logging.hpp"
+#include "../include/OP_BA.hpp"
 
 #include "CArenaAlloc.c"
 #include "CM_Camera.cpp"
@@ -26,6 +27,7 @@
 #include "VT_VecUtils.cpp"
 #include "VW_Views.cpp"
 #include "LG_Logging.cpp"
+#include "OP_BA.cpp"
 
 int main(void)
 {

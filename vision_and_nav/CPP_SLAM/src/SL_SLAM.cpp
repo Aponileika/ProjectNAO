@@ -1,11 +1,10 @@
 #include "../include/SL_SLAM.hpp"
-#include "include/EP_CorrespondingPoints.hpp"
-#include "include/LG_Logging.hpp"
+#include "OP_BA.hpp"
 
 struct SLAM slam;
 
 static cv::Mat __SL_GetNextFrame();
-static void __SL_SlamInitSets();
+static void __SL_SlamStart();
 
 void SL_InitSlam()
 {
@@ -25,7 +24,7 @@ static cv::Mat __SL_GetNextFrame()
     return FR_GetFrame();
 }
 
-static void __SL_SlamInitSets()
+static void __SL_SlamStart()
 {
     LG_Log("Getting first frame\n");
     slam.frame_pair.first = __SL_GetNextFrame();
@@ -51,9 +50,9 @@ static void __SL_SlamInitSets()
     cv::Mat Rt;
     cv::hconcat(R, t, Rt);
     LG_Log("Adding first view\n");
-    VW_AddView(slam.Tview, CM_CreateCam(cv::Mat::eye(3, 4, CV_64F)));
+    VW_AddView(slam.Tview, CM_CreateCam(cv::Mat::eye(3, 3, CV_64F), cv::Mat::eye(3, 1, CV_64F)));
     LG_Log("Adding second view\n");
-    VW_AddView(slam.Tview, CM_CreateCam(Rt));
+    VW_AddView(slam.Tview, CM_CreateCam(R, t));
 
     cv::Mat P1, P2;
     P1 = K * cv::Mat::eye(3, 4, CV_64F);
@@ -82,6 +81,9 @@ static void __SL_SlamInitSets()
 void SL_SlamLoop()
 {
     LG_Log(SLAMSTARTMSG);
-    __SL_SlamInitSets();
+    __SL_SlamStart();
+    OP_BundleAdjust(slam.Tview, slam.Tobs, slam.Tpoints);
+    LG_Log("Printing views after BA\n");
+    VW_Print(slam.Tview);
     return;
 }

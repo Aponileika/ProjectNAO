@@ -1,6 +1,6 @@
 #include "../include/PT_Points.hpp"
 
-static Eigen::Vector3d __PT_ToFromHomog(cv::Mat point);
+static inline Eigen::Vector3d __PT_ToCartFromHomog(cv::Mat point);
 static inline void __PT_AddPoint(struct PointSet* pointset, cv::Mat point);
 
 struct PointSet* PT_InitPoints()
@@ -38,24 +38,25 @@ void PT_Print(struct PointSet* points)
     size_t n = std::min<size_t>(points->points.size(), 10);
     for (size_t i = 0; i < n; ++i)
     {
-        LG_Log("  point[%lld] ", i);
-        if (!points->points[i].empty())
-        {
-            LG_Log("shape=(%lluX%llu)", points->points[i].rows, points->points[i].cols);
-        }
-        else
-        {
-            LG_Log("empty");
-        }
-        LG_Log("\n");
-        //std::cout << " obsidx = (" << points->observations_indexes[i][0] << ", " << points->observations_indexes[i][1] << ")";
-        //std::cout << ", obs count=" << points->observations_indexes[i].size() << "\n";
+        const Eigen::Vector3d& p = points->points[i];
+        LG_Log("  point[%zu] = (%f, %f, %f)\n", i, p.x(), p.y(), p.z());
     }
 }
 
 static inline void __PT_AddPoint(struct PointSet* pointset, cv::Mat point)
 {
-    pointset->points.push_back(point);
+    Eigen::Vector3d X = __PT_ToCartFromHomog(point);
+    pointset->points.push_back(X);
     pointset->observations_indexes.push_back({});
 }
 
+static inline Eigen::Vector3d __PT_ToCartFromHomog(cv::Mat point)
+{
+    CV_Assert(point.rows == 4 && point.cols == 1);
+    const fp64  w = point.at<double>(3, 0);
+    CV_Assert(std::abs(w) > 1e-12);
+    return Eigen::Vector3d(
+            point.at<double>(0, 0) / w,
+            point.at<double>(1, 0) / w,
+            point.at<double>(2, 0) / w);
+}

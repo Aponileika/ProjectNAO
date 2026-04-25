@@ -10,19 +10,50 @@ ifeq ($(UNAME_S),Linux)
 	osdir = linux/
 endif
 ifeq ($(UNAME_S),Darwin)
-	OPENCV_PREFIX = $(shell brew --prefix opencv)
-	EIGEN_PREFIX = $(shell brew --prefix eigen)
+	OPENCV = $(shell brew --prefix opencv)
+	CERES := $(shell brew --prefix ceres-solver)
+	EIGEN := $(shell brew --prefix eigen)
+	GLOG := $(shell brew --prefix glog)
+	GFLAGS := $(shell brew --prefix gflags)
+	SUITESPARSE := $(shell brew --prefix suite-sparse)
+	OPENBLAS := $(shell brew --prefix openblas)
+	TBB := $(shell brew --prefix tbb)
+	
+	CXX := clang++
+	CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -O3 -std=c++17 \
+		-DGLOG_USE_GLOG_EXPORT \
+		-I$(INCLUDE_DIR) \
+		-I$(CERES)/include \
+		-I$(EIGEN)/include/eigen3 \
+		-I$(SUITESPARSE)/include \
+		-I$(OPENCV)/include/opencv4
+	
+	LDFLAGS := \
+	  -L$(CERES)/lib \
+	  -L$(GLOG)/lib \
+	  -L$(GFLAGS)/lib \
+	  -L$(SUITESPARSE)/lib \
+	  -L$(OPENBLAS)/lib \
+	  -L$(TBB)/lib\
+	  -L$(OPENCV)/lib
+	
+	LDLIBS := \
+	  -lceres \
+	  -lglog \
+	  -lgflags \
+	  -lopenblas \
+	  -ltbb \
+	  $(OPENCVLIBS)
+
 endif
 
 .PHONY: FORCE clean
 
 main : FORCE $(sourcedir)main.cpp  
-	g++ -Wall -Wextra -Wno-deprecated-declarations -O3 -o main $(sourcedir)main.cpp \
-	-I$(INCLUDE_DIR)\
-	-I$(OPENCV_PREFIX)/include/ \
-	-I$(EIGEN_PREFIX)/include/ \
-    -L$(OPENCV_PREFIX)/lib \
-	$(OPENCVLIBS)
-	
+	$(CXX)  -o main $(sourcedir)main.cpp \
+	$(CXXFLAGS) \
+	$(LDFLAGS) \
+	$(LDLIBS)
+
 clean :
 	rm -f main

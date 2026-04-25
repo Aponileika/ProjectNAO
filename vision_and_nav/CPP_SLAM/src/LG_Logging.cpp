@@ -5,6 +5,7 @@ bool gloggerisinit = false;
 
 void LG_InitLogger()
 {
+    if(gloggerisinit)return;
     glogger = 
     {
         LOGPATH,
@@ -22,17 +23,21 @@ void LG_CloseLogger()
 
 void LG_Log(const char* fmt, ...)
 {
-    assert(gloggerisinit == true);
+    if(!gloggerisinit)LG_InitLogger();
 
     va_list args;
     va_start(args, fmt);
-    std::vfprintf(glogger.fp, fmt,  args);
-    va_end(args);
-    va_list stdargs;
-    va_start(stdargs, fmt);
-    vprintf(fmt, args);
-    va_end(stdargs);
 
+    va_list args_copy;
+    va_copy(args_copy, args);
+
+    std::vfprintf(glogger.fp, fmt, args);
+    std::vprintf(fmt, args_copy);
+
+    va_end(args_copy);
+    va_end(args);
+
+    std::fflush(glogger.fp);
 }
 
 

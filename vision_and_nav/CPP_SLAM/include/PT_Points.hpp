@@ -4,12 +4,13 @@
 #include <vector>
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
+#include <opencv2/core/eigen.hpp>
 #include "CArenaAlloc.h"
 #include "LG_Logging.hpp"
 
 struct PointSet
 {
-    std::vector<cv::Mat> points;
+    std::vector<Eigen::Vector3d> points;
     size_t last_sz;
     std::vector<std::vector<u64>> observations_indexes;
 };
