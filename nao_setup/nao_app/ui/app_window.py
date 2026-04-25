@@ -38,24 +38,36 @@ class NaoAppWindow(object):
         self.vision = vision
         self.controller = controller
         
-        self.api_key_autofill = ""
+        self.api_key_autofill = ""   # first key (shown in UI entry)
+        self.api_keys_list    = []   # all keys, used for rotation
         try:
             import json, os
             # App window is in NAO/nao_setup/nao_app/ui/app_window.py (4 levels deep)
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-            conf_path = os.path.join(base_dir, "config.json")
+            conf_path    = os.path.join(base_dir, "config.json")
             secrets_path = os.path.join(base_dir, "secrets.json")
-            
+
             if os.path.isfile(conf_path):
                 with open(conf_path, "r") as f:
                     cdata = json.load(f)
-                    self.api_key_autofill = cdata.get("gemini_key", "")
-                    
+                    k = cdata.get("gemini_key", "")
+                    if k and k not in self.api_keys_list:
+                        self.api_keys_list.append(k)
+
             if os.path.isfile(secrets_path):
                 with open(secrets_path, "r") as f:
                     sdata = json.load(f)
-                    if sdata.get("gemini_key"):
-                        self.api_key_autofill = sdata.get("gemini_key")
+                    # Support both a single key and a list
+                    single = sdata.get("gemini_key", "")
+                    if single and single not in self.api_keys_list:
+                        self.api_keys_list.append(single)
+                    for k in sdata.get("gemini_keys", []):
+                        if k and k not in self.api_keys_list:
+                            self.api_keys_list.append(k)
+
+            if self.api_keys_list:
+                self.api_key_autofill = self.api_keys_list[0]
+                print("[NaoAppWindow] Loaded %d API key(s) from config." % len(self.api_keys_list))
         except Exception as e:
             print("[NaoAppWindow] Could not load config/secrets: %s" % e)
 
@@ -214,6 +226,24 @@ class NaoAppWindow(object):
         self.battery_var = tk.StringVar(value="--")
         tk.Label(row, textvariable=self.battery_var, font=self.font_norm, bg=CARD_BG, fg=SUCCESS).pack(side="left", padx=8)
 
+    def _all_api_keys(self):
+        """Return deduplicated list of API keys: UI entry first, then secrets."""
+        keys = []
+        ui_key = self.gemini_key_entry.get().strip() if hasattr(self, 'gemini_key_entry') else ""
+        if ui_key:
+            keys.append(ui_key)
+        for k in getattr(self, 'api_keys_list', []):
+            if k and k not in keys:
+                keys.append(k)
+        return keys
+
+    def _make_gemini_client(self):
+        """Create a GeminiClient pre-loaded with all available API keys."""
+        from nao_app.ai.gemini_client import GeminiClient
+        client = GeminiClient()
+        client.set_api_keys(self._all_api_keys())
+        return client
+
     def _card_gemini(self, parent):
         card = make_card(parent, "AI Chat (Gemini)", self.font_head)
         
@@ -224,6 +254,15 @@ class NaoAppWindow(object):
         if self.api_key_autofill:
             self.gemini_key_entry.insert(0, self.api_key_autofill)
         self.gemini_key_entry.pack(side="left", padx=4)
+
+        # Live key-count label — updates whenever the entry changes
+        n_keys = len(self.api_keys_list) if self.api_keys_list else (1 if self.api_key_autofill else 0)
+        self.gemini_keys_lbl_var = tk.StringVar(
+            value=("%d key(s) loaded" % n_keys) if n_keys else "no key")
+        self.gemini_keys_lbl = tk.Label(r1, textvariable=self.gemini_keys_lbl_var,
+                                        font=self.font_small, bg=CARD_BG,
+                                        fg=SUCCESS if n_keys else ERROR)
+        self.gemini_keys_lbl.pack(side="left", padx=(6, 0))
         
         r2 = tk.Frame(card, bg=CARD_BG)
         r2.pack(fill="x", pady=(0, 6))
@@ -248,15 +287,35 @@ class NaoAppWindow(object):
     def _card_autonomous(self, parent):
         card = make_card(parent, "Autonomous Wander", self.font_head)
         
-        info = tk.Label(card, text="NAO will walk, avoid walls using Sonar, and stop when it spots a human face.", 
-                        font=self.font_small, bg=CARD_BG, fg=FG, wraplength=280, justify="left")
-        info.pack(fill="x", pady=(0, 4))
-        
+        info = tk.Label(card, text="NAO walks, avoids walls, and searches for a target using its eyes.",
+                        font=self.font_small, bg=CARD_BG, fg=FG, wraplength=300, justify="left")
+        info.pack(fill="x", pady=(0, 6))
+
+        # Target object entry
+        rt = tk.Frame(card, bg=CARD_BG)
+        rt.pack(fill="x", pady=2)
+        tk.Label(rt, text="Search for:", font=self.font_norm, bg=CARD_BG, fg=FG).pack(side="left", padx=(0, 4))
+        self.wander_target_var = tk.StringVar()
+        self.wander_target_entry = tk.Entry(rt, textvariable=self.wander_target_var,
+                                            font=self.font_norm, width=20)
+        self.wander_target_entry.pack(side="left", padx=2)
+        tk.Label(rt, text='e.g. "white shoe"', font=self.font_small, bg=CARD_BG, fg=FG).pack(side="left", padx=(4, 0))
+
+        # Floor boundary checkbox
+        rb = tk.Frame(card, bg=CARD_BG)
+        rb.pack(fill="x", pady=2)
+        self.wander_boundary_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(rb, text="Stay on green floor (boundary detection)",
+                       variable=self.wander_boundary_var,
+                       font=self.font_small, bg=CARD_BG, fg=FG,
+                       selectcolor=CARD_BG, activebackground=CARD_BG).pack(side="left")
+
+        # Buttons
         r1 = tk.Frame(card, bg=CARD_BG)
-        r1.pack(fill="x", pady=2)
+        r1.pack(fill="x", pady=(4, 2))
         make_btn(r1, "Wander & Seek", self._start_wander_seek, width=16, font_norm=self.font_norm).pack(side="left", padx=2)
         make_btn(r1, "Stop Auto", self._stop_wander_seek, width=10, font_norm=self.font_norm, bg="#bb3333", fg="white").pack(side="left", padx=2)
-        
+
         r2 = tk.Frame(card, bg=CARD_BG)
         r2.pack(fill="x")
         self.auto_status = tk.StringVar(value="Idle.")
@@ -517,10 +576,14 @@ class NaoAppWindow(object):
             + _chunk(b'IEND', b'')
         )
 
-    def _capture_image_bytes(self):
+    def _capture_image_bytes(self, resolution=2):
         """Capture one frame from NAO's camera and return it as PNG bytes,
         or None if capture fails.  Works entirely within Python 2.7 stdlib —
-        no Pillow, no subprocess, no temp files."""
+        no Pillow, no subprocess, no temp files.
+
+        resolution: NAOqi resolution code (0=QQVGA 160x120, 1=QVGA 320x240,
+                    2=VGA 640x480).  Use 1 for fast/cheap search snaps,
+                    2 (default) for full-quality AI photo requests."""
         video = self.conn.video
         if not video:
             print("[Vision] No video proxy (conn.video is None - is NAO connected?)")
@@ -528,9 +591,11 @@ class NaoAppWindow(object):
 
         w, h, payload = None, None, None
 
-        # Re-use the live camera frame if the camera tab is already streaming,
-        # to avoid fighting over the hardware subscription.
-        if (getattr(self, 'vision', None)
+        # Re-use the live camera frame only for full-quality requests; for
+        # low-resolution search snaps always do a fresh subscribe so we
+        # get the right resolution.
+        if (resolution == 2
+                and getattr(self, 'vision', None)
                 and getattr(self.vision, '_cam_running', False)
                 and getattr(self.vision, '_last_raw_img', None)):
             self._set_status("Lifting live camera frame for AI...")
@@ -541,9 +606,9 @@ class NaoAppWindow(object):
             try: video.unsubscribe("gemini_snap")
             except Exception: pass
             try:
-                cam_name = video.subscribe("gemini_snap", 2, 11, 5)
+                cam_name = video.subscribe("gemini_snap", resolution, 11, 5)
                 video.getImageRemote(cam_name)      # discard first (dark) frame
-                time.sleep(0.5)                     # let auto-exposure settle
+                time.sleep(0.4)                     # let auto-exposure settle
                 img_data = video.getImageRemote(cam_name)
                 video.unsubscribe(cam_name)
                 if img_data and len(img_data) >= 7:
@@ -573,9 +638,9 @@ class NaoAppWindow(object):
             return
 
         api_key = self.gemini_key_entry.get().strip()
-        prompt = self.gemini_prompt_entry.get().strip()
+        prompt  = self.gemini_prompt_entry.get().strip()
 
-        if not api_key:
+        if not self._all_api_keys():
             self.gemini_status.set("Error: Need API Key!")
             return
         if not prompt:
@@ -587,9 +652,7 @@ class NaoAppWindow(object):
 
         def _fetch_and_say():
             try:
-                from nao_app.ai.gemini_client import GeminiClient
-                client = GeminiClient()
-                client.set_api_key(api_key)
+                client = self._make_gemini_client()
                 
                 image_bytes = self._capture_image_bytes()
                 if image_bytes is None:
@@ -612,9 +675,8 @@ class NaoAppWindow(object):
     def _on_gemini_voice_interactive(self):
         if not self._require_connection() or not self.conn.audio_recorder:
             return
-            
-        api_key = self.gemini_key_entry.get().strip()
-        if not api_key:
+
+        if not self._all_api_keys():
             self.gemini_status.set("Error: Need API Key!")
             return
 
@@ -640,9 +702,7 @@ class NaoAppWindow(object):
                 ftp_url = "ftp://nao:nao@{}/gemini.wav".format(self.conn.ip)
                 wav_bytes = urllib2.urlopen(ftp_url, timeout=10).read()
                 
-                from nao_app.ai.gemini_client import GeminiClient
-                client = GeminiClient()
-                client.set_api_key(api_key)
+                client = self._make_gemini_client()
                 
                 # We let the user type a custom extra prompt, or use a default one
                 prompt = self.gemini_prompt_entry.get().strip()
@@ -863,11 +923,21 @@ class NaoAppWindow(object):
         if not self._require_connection() or not self.conn.motion:
             self.auto_status.set("Need connection!")
             return
-        
+
+        target       = getattr(self, 'wander_target_var',   None)
+        target       = target.get().strip() if target else ""
+        use_boundary = getattr(self, 'wander_boundary_var', None)
+        use_boundary = bool(use_boundary.get()) if use_boundary else False
+        api_keys     = self._all_api_keys()
+
         self._seeking = True
-        self.auto_status.set("Wandering & Scanning...")
+        if target:
+            self.auto_status.set("Searching for: %s" % target)
+        else:
+            self.auto_status.set("Wandering & Scanning...")
         self._set_status("Autonomous wander started. Use 'Stop Auto' to abort.")
-        threading.Thread(target=self._wander_seek_thread).start()
+        threading.Thread(target=self._wander_seek_thread,
+                         args=(target, use_boundary, api_keys)).start()
 
     def _stop_wander_seek(self):
         if getattr(self, "_seeking", False):
@@ -875,11 +945,27 @@ class NaoAppWindow(object):
             self.auto_status.set("Stopping...")
             self._set_status("Stopping autonomous mode...")
 
-    def _wander_seek_thread(self):
+    def _wander_seek_thread(self, target="", use_boundary=False, api_keys=None):
+        import time
+        import math
+        import random
+
+        if api_keys is None:
+            api_keys = []
+
+        sonar          = None
+        floor_cam_name = None
+        wander_video   = self.conn.video
+
+        # One persistent Gemini client for the whole wander session so that
+        # exhausted-key state is preserved across multiple vision checks.
+        from nao_app.ai.gemini_client import GeminiClient
+        search_client = GeminiClient()
+        search_client.set_api_keys(api_keys)
+        has_api = bool(search_client.api_key)
+
         try:
             self._set_status("Standing up safely...")
-            
-            # Use the robust safety parameters from the controller setup
             if hasattr(self.controller, "_stand_safely"):
                 standing = self.controller._stand_safely()
                 if not standing:
@@ -892,158 +978,473 @@ class NaoAppWindow(object):
                 if self.conn.posture:
                     self.conn.posture.goToPosture("StandInit", 0.5)
 
-            # Subscribe to Sonar for obstacle avoidance
+            # --- Sonar ---
             sonar = self.conn.get_proxy("ALSonar")
             if sonar:
                 try: sonar.subscribe("WanderSeeker")
                 except Exception: pass
-            
-            # Subscribe to Face Detection
+
+            # --- Face detection (used in face-seek mode only) ---
             if self.conn.face:
                 try: self.conn.face.subscribe("WanderSeekerFace")
                 except Exception: pass
-                
+
             tracker = self.conn.get_proxy("ALTracker")
-            
-            import time
-            import math
-            import random
-            
-            wander_turn_bias = 0.0
-            last_bias_change = time.time()
-            next_speech_time = time.time() + random.uniform(3.0, 20.0)
-            
-            phrases = [
+
+            # --- Floor camera (QQVGA 160x120 for fast color analysis) ---
+            floor_threshold = 0.25   # will be replaced by calibration if boundary mode
+            if use_boundary and wander_video:
+                try: wander_video.unsubscribe("wander_floor_cam")
+                except Exception: pass
+                try:
+                    floor_cam_name = wander_video.subscribe("wander_floor_cam", 0, 11, 10)
+                    # Tilt head down at a brisk speed so the floor is in view quickly
+                    if self.conn.motion:
+                        self.conn.motion.setAngles("HeadPitch", 0.45, 0.30)
+                    self.auto_status.set("Calibrating floor sensor... stay still")
+                    self._set_status("Calibrating floor boundary (2 seconds)...")
+
+                    # Wait for head to reach target angle, then sample baseline
+                    time.sleep(2.0)
+                    baseline_samples = []
+                    for _ in range(6):
+                        _, ratio = self._check_floor_boundary(floor_cam_name, wander_video)
+                        if ratio is not None:
+                            baseline_samples.append(ratio)
+                        time.sleep(0.15)
+
+                    if baseline_samples:
+                        baseline = sum(baseline_samples) / float(len(baseline_samples))
+                        # Trigger if floor coverage drops to less than 50% of what we saw at start
+                        floor_threshold = max(0.10, baseline * 0.50)
+                        self._set_status(
+                            "Floor calibrated: baseline=%.2f, trigger below %.2f" % (
+                                baseline, floor_threshold))
+                        print("[Floor] Calibrated baseline=%.2f threshold=%.2f" % (
+                            baseline, floor_threshold))
+                    else:
+                        self._set_status("Floor calibration failed – using default threshold.", False)
+                        print("[Floor] Calibration failed, no valid samples.")
+                except Exception as e:
+                    print("[Wander] Floor camera setup failed: %s" % e)
+
+            # --- Head tilt for object search on the floor ---
+            # When hunting a floor-level target, pitch head down so the camera
+            # actually sees the ground in front of the robot.
+            if target and self.conn.motion:
+                try:
+                    self.conn.motion.setAngles("HeadPitch", 0.40, 0.20)
+                    time.sleep(1.0)   # let head settle before first snap
+                    self.auto_status.set("Head tilted down — scanning floor...")
+                except Exception as e:
+                    print("[Wander] Head tilt failed: %s" % e)
+
+            # --- Local novelty detector (no API, runs every second) ---
+            # Divides the QQVGA frame into a grid of colour zones.  When enough
+            # zones change colour significantly vs. the calibrated background,
+            # a Gemini check is triggered immediately instead of waiting for
+            # the 15-second timer.  This lets NAO react the moment an object
+            # enters its field of view rather than relying on lucky timing.
+            novelty_cam_name = None
+            _novelty_baseline    = [None]   # list of (r,g,b) per zone
+            _novelty_triggered   = [False]
+            _novelty_last_t      = [0.0]
+            _NOVELTY_INTERVAL    = 1.0      # seconds between local checks
+            _NOVELTY_THRESHOLD   = 0.35     # fraction of zones that must change
+            _NOVELTY_MIN_CALL_GAP = 5.0     # shortest Gemini interval on novelty trigger
+
+            def _zone_means(raw, w, h, n_cols=4, n_rows=3):
+                """Return per-zone mean (R,G,B) for the lower 2/3 of a frame."""
+                data     = bytearray(raw) if not isinstance(raw, bytearray) else raw
+                row_size = w * 3
+                start_y  = h // 3          # top third is usually ceiling/sky
+                zone_h   = max(1, (h - start_y) // n_rows)
+                zone_w   = max(1, w // n_cols)
+                zones = []
+                for rz in range(n_rows):
+                    for cz in range(n_cols):
+                        y0 = start_y + rz * zone_h
+                        x0 = cz * zone_w
+                        r_s = g_s = b_s = cnt = 0
+                        for y in range(y0, min(y0 + zone_h, h), 2):
+                            base = y * row_size
+                            for x in range(x0, min(x0 + zone_w, w), 2):
+                                idx = base + x * 3
+                                if idx + 2 < len(data):
+                                    r_s += data[idx]; g_s += data[idx+1]; b_s += data[idx+2]
+                                    cnt += 1
+                        zones.append((r_s // max(1, cnt),
+                                      g_s // max(1, cnt),
+                                      b_s // max(1, cnt)))
+                return zones
+
+            def _novelty_score(baseline, current, colour_thresh=30):
+                """Fraction of zones whose colour shifted by more than thresh."""
+                if not baseline or len(baseline) != len(current):
+                    return 0.0
+                changed = sum(
+                    1 for (br, bg, bb), (cr, cg, cb) in zip(baseline, current)
+                    if abs(br-cr) + abs(bg-cg) + abs(bb-cb) > colour_thresh
+                )
+                return float(changed) / len(baseline)
+
+            def _novelty_blend(baseline, current, alpha=0.08):
+                """Slowly absorb the current scene into the baseline (prevents
+                false-positives as the robot gradually moves through a room)."""
+                if baseline is None:
+                    return current
+                return [
+                    (int(br + alpha * (cr - br)),
+                     int(bg + alpha * (cg - bg)),
+                     int(bb + alpha * (cb - bb)))
+                    for (br, bg, bb), (cr, cg, cb) in zip(baseline, current)
+                ]
+
+            if target and wander_video:
+                try:
+                    try: wander_video.unsubscribe("wander_novelty_cam")
+                    except Exception: pass
+                    novelty_cam_name = wander_video.subscribe(
+                        "wander_novelty_cam", 0, 11, 5)   # QQVGA 160x120
+                    # Build initial background baseline from 3 frames
+                    baseline_zones = []
+                    for _ in range(3):
+                        nimg = wander_video.getImageRemote(novelty_cam_name)
+                        if nimg and len(nimg) >= 7:
+                            baseline_zones.append(
+                                _zone_means(nimg[6], int(nimg[0]), int(nimg[1])))
+                        time.sleep(0.25)
+                    if baseline_zones:
+                        # Average the three baseline samples zone-by-zone
+                        n_zones = len(baseline_zones[0])
+                        avg = []
+                        for zi in range(n_zones):
+                            avg.append((
+                                sum(b[zi][0] for b in baseline_zones) // len(baseline_zones),
+                                sum(b[zi][1] for b in baseline_zones) // len(baseline_zones),
+                                sum(b[zi][2] for b in baseline_zones) // len(baseline_zones),
+                            ))
+                        _novelty_baseline[0] = avg
+                        print("[Novelty] Baseline built from %d zones." % n_zones)
+                    else:
+                        print("[Novelty] Could not build baseline — novelty detection disabled.")
+                except Exception as e:
+                    print("[Novelty] Setup failed: %s" % e)
+
+            # --- Gemini target-search state ---
+            _vision_checking    = [False]
+            _target_found       = [False]
+            _last_vision_t      = [time.time() - 10.0]  # first check after 5 s
+            _VISION_INTERVAL    = 15.0   # seconds between Gemini calls (fallback timer)
+            _vision_backoff_until = [0.0]    # absolute time: skip checks until here
+            _vision_backoff_secs  = [30.0]   # starts at 30 s, doubles on each 429
+
+            def _do_gemini_check(img_bytes):
+                try:
+                    prompt = (
+                        "You are a camera mounted on a small humanoid robot. "
+                        "The camera is currently tilted downward, so you are "
+                        "looking at the floor and the area immediately in front "
+                        "of the robot. "
+                        "Examine this image carefully. "
+                        "Is there a {} clearly visible anywhere in the image? "
+                        "Reply with exactly one word: YES or NO."
+                    ).format(target)
+                    result = search_client.generate_text(prompt, image_bytes=img_bytes)
+                    print("[VisionSearch] Gemini (%s): %s" % (
+                        search_client.active_key_label(), result.strip()))
+                    if "429" in result:
+                        wait = _vision_backoff_secs[0]
+                        _vision_backoff_until[0] = time.time() + wait
+                        _vision_backoff_secs[0]  = min(wait * 2.0, 120.0)
+                        print("[VisionSearch] All keys exhausted. Pausing vision for %.0f s." % wait)
+                    elif "YES" in result.upper():
+                        _target_found[0] = True
+                        _vision_backoff_secs[0] = 30.0   # reset backoff on success
+                        self.auto_status.set("FOUND: %s!" % target)
+                except Exception as e:
+                    print("[VisionSearch] Error: %s" % e)
+                finally:
+                    _vision_checking[0] = False
+
+            # --- Walk config & tuning ---
+            walk_config       = getattr(self.controller, "_WALK_CONFIG", [])
+            max_fwd           = 0.15
+            wander_turn_bias  = 0.0
+            last_bias_t       = time.time()
+            next_speech_t     = time.time() + random.uniform(3.0, 20.0)
+            floor_tick        = 0
+
+            face_phrases = [
                 "Where is my human?",
                 "I am lonely.",
                 "Come out, come out, wherever you are.",
                 "I know you're hiding somewhere in this joint.",
-                "Where's this guy hiding?",
                 "Gettin' kinda bored wandering around here.",
-                "Show your face."
+                "Show your face.",
             ]
-            
+            search_phrases = [
+                "Still looking for that %s..." % target,
+                "Haven't spotted the %s yet." % target,
+                "Where's that %s hiding?" % target,
+                "Keep your eyes open, boss.",
+                "Scanning the area.",
+            ]
+
+            # ================================================================
             while getattr(self, "_seeking", False):
-                # 1. Check for faces
-                val = None
-                if self.conn.memory:
-                    val = self.conn.memory.getData("FaceDetected")
-                    
-                if getattr(self, "_seeking", False) and val and isinstance(val, list) and len(val) >= 2 and isinstance(val[1], list) and len(val[1]) > 0:
-                    # Found human!
+
+                # 1. TARGET FOUND via Gemini?
+                if target and _target_found[0]:
                     self._seeking = False
                     self.conn.motion.stopMove()
-                    self.auto_status.set("Found Human!")
-                    
-                    if tracker:
-                        tracker.registerTarget("Face", 0.15)
-                        tracker.setMode("Head")
-                        tracker.track("Face")
-                    
+                    # Get a confirming description from Gemini
+                    try:
+                        img = self._capture_image_bytes()
+                        if img and has_api:
+                            reply = search_client.generate_text(
+                                "You just found a {}. Briefly describe it.".format(target),
+                                image_bytes=img
+                            )
+                        else:
+                            reply = "I found the {}! Right here, boss.".format(target)
+                    except Exception:
+                        reply = "I found the {}! Right here, boss.".format(target)
+
                     if self.conn.tts:
-                        self.conn.tts.say("Well well well, there you are. I've been looking all over for you.")
-                    
-                    time.sleep(2)
-                    if tracker:
-                        tracker.stopTracker()
-                        tracker.unregisterAllTargets()
+                        try: self.conn.tts.say(reply)
+                        except Exception: pass
+                    if self.conn.leds:
+                        try: self.conn.leds.fadeRGB("AllLeds", 0x0000FF00, 0.5)
+                        except Exception: pass
                     break
 
-                # 2. Check sonar for obstacles
-                l_dist = 1.0
-                r_dist = 1.0
-                if getattr(self, "_seeking", False) and self.conn.memory:
+                # 2. FACE DETECTION (face-seek mode only, not target mode)
+                if not target and self.conn.memory:
                     try:
-                        # ALSonar writes to Device/SubDeviceList/US/Left/Sensor/Value etc.
-                        l_dist = self.conn.memory.getData("Device/SubDeviceList/US/Left/Sensor/Value")
-                        r_dist = self.conn.memory.getData("Device/SubDeviceList/US/Right/Sensor/Value")
+                        val = self.conn.memory.getData("FaceDetected")
                     except Exception:
-                        pass
-                
+                        val = None
+                    if (val and isinstance(val, list) and len(val) >= 2
+                            and isinstance(val[1], list) and len(val[1]) > 0):
+                        self._seeking = False
+                        self.conn.motion.stopMove()
+                        self.auto_status.set("Found Human!")
+                        if tracker:
+                            try:
+                                tracker.registerTarget("Face", 0.15)
+                                tracker.setMode("Head")
+                                tracker.track("Face")
+                            except Exception: pass
+                        if self.conn.tts:
+                            try: self.conn.tts.say(
+                                "Well well well, there you are. I've been looking all over for you.")
+                            except Exception: pass
+                        time.sleep(2)
+                        if tracker:
+                            try:
+                                tracker.stopTracker()
+                                tracker.unregisterAllTargets()
+                            except Exception: pass
+                        break
+
+                # 3. BACKGROUND GEMINI VISION CHECK (target mode)
+                now = time.time()
+
+                # 3a. Local novelty check (runs every second, no API)
+                if (target and novelty_cam_name and wander_video
+                        and _novelty_baseline[0] is not None
+                        and now - _novelty_last_t[0] >= _NOVELTY_INTERVAL):
+                    _novelty_last_t[0] = now
+                    try:
+                        nimg = wander_video.getImageRemote(novelty_cam_name)
+                        if nimg and len(nimg) >= 7:
+                            cur_zones = _zone_means(nimg[6], int(nimg[0]), int(nimg[1]))
+                            score = _novelty_score(_novelty_baseline[0], cur_zones)
+                            print("[Novelty] score=%.2f" % score)
+                            if score >= _NOVELTY_THRESHOLD:
+                                _novelty_triggered[0] = True
+                                print("[Novelty] Scene change detected (%.0f%%) — triggering Gemini." % (score*100))
+                            else:
+                                # Slowly blend current scene into baseline
+                                _novelty_baseline[0] = _novelty_blend(
+                                    _novelty_baseline[0], cur_zones)
+                    except Exception as e:
+                        print("[Novelty] Check error: %s" % e)
+
+                # 3b. Trigger Gemini when novelty fires or timer expires
+                if target and has_api and not _vision_checking[0]:
+                    if now < _vision_backoff_until[0]:
+                        remaining = int(_vision_backoff_until[0] - now)
+                        self.auto_status.set("Rate limited — resuming in %ds..." % remaining)
+                    else:
+                        novelty_ready = (_novelty_triggered[0]
+                                         and now - _last_vision_t[0] >= _NOVELTY_MIN_CALL_GAP)
+                        timer_ready   = (now - _last_vision_t[0] >= _VISION_INTERVAL)
+                        if novelty_ready or timer_ready:
+                            _novelty_triggered[0] = False
+                            img = self._capture_image_bytes(resolution=1)   # QVGA 320x240
+                            if img:
+                                _vision_checking[0] = True
+                                _last_vision_t[0]   = now
+                                reason = "novelty" if novelty_ready else "timer"
+                                self.auto_status.set("Scanning for %s... (%s)" % (target, reason))
+                                t = threading.Thread(target=_do_gemini_check, args=(img,))
+                                t.daemon = True
+                                t.start()
+
+                # 4. SONAR check
+                l_dist = r_dist = 1.0
+                if self.conn.memory:
+                    try:
+                        l_dist = self.conn.memory.getData(
+                            "Device/SubDeviceList/US/Left/Sensor/Value")
+                        r_dist = self.conn.memory.getData(
+                            "Device/SubDeviceList/US/Right/Sensor/Value")
+                    except Exception: pass
+
+                # 5. FLOOR BOUNDARY check (every 5 ticks ~ 0.5 s)
+                boundary_ok = True
+                floor_tick += 1
+                if use_boundary and floor_tick >= 5:
+                    floor_tick = 0
+                    boundary_ok, _ = self._check_floor_boundary(
+                        floor_cam_name, wander_video, green_threshold=floor_threshold)
+
                 if not getattr(self, "_seeking", False):
                     break
-                    
-                # 3. Simple Obstacle Avoidance & Movement
-                # Use the controller's safety and constraints
-                max_fwd = 0.15 # Gentle speed, don't rush
-                max_rot = 0.16 # Hardcoded max rotation from controller
-                walk_config = getattr(self.controller, "_WALK_CONFIG", [])
 
-                if l_dist < 0.60 or r_dist < 0.60:
-                    # Very close to an object: Stop immediately so it doesn't hit it
+                # 6. MOVEMENT DECISION
+                obstacle = (l_dist < 0.60 or r_dist < 0.60) or not boundary_ok
+
+                if obstacle:
                     self.conn.motion.stopMove()
-                    
+                    reason_txt = ("boundary" if not boundary_ok else "obstacle")
                     if self.conn.tts:
-                        try:
-                            # using post.say so the robot speaks asynchronously while moving
-                            self.conn.tts.post.say("Whoa, blocked! Backing up to find a new route.")
-                        except Exception: 
-                            pass
-                            
-                    # Walk backwards to clear the space
-                    if getattr(self, "_seeking", False):
-                        self.conn.motion.moveToward(-0.15, 0.0, 0.0, walk_config)
-                        for _ in range(15): # Give it 1.5 seconds of straight backward walking
-                            if not getattr(self, "_seeking", False): break
-                            time.sleep(0.1)
-                            
-                    # Pivot randomly to establish a truly new route
-                    if getattr(self, "_seeking", False):
-                        # Base pivot direction away from obstacle
-                        base_speed = random.uniform(0.20, 0.35)
-                        turn_dir = -base_speed if l_dist < r_dist else base_speed
-                        
-                        # 20% chance to completely fake out and spin the other way (helps break loops)
-                        if random.random() < 0.20:
-                            turn_dir *= -1.0
-                            
-                        self.conn.motion.moveToward(0.0, 0.0, turn_dir, walk_config)
-                        
-                        # Randomize how long it turns (between 1.5 seconds and 3.5 seconds)
-                        # This ensures the new angle is drastically different every single time
-                        pivot_ticks = int(random.uniform(15, 35))
-                        for _ in range(pivot_ticks): 
-                            if not getattr(self, "_seeking", False): break
-                            time.sleep(0.1)
+                        msg = ("Whoa, leaving the floor! Backing up."
+                               if not boundary_ok
+                               else "Whoa, blocked! Backing up.")
+                        try: self.conn.tts.post.say(msg)
+                        except Exception: pass
+
+                    # Back up
+                    self.conn.motion.moveToward(-0.15, 0.0, 0.0, walk_config)
+                    for _ in range(15):
+                        if not getattr(self, "_seeking", False): break
+                        time.sleep(0.1)
+
+                    # Pivot away from obstacle / back onto floor
+                    turn_dir = -(random.uniform(0.20, 0.35))
+                    if not boundary_ok:
+                        # Always pivot away from the boundary (random direction)
+                        turn_dir = random.choice([-1, 1]) * random.uniform(0.20, 0.40)
+                    elif l_dist < r_dist:
+                        turn_dir = -abs(turn_dir)
+                    else:
+                        turn_dir = abs(turn_dir)
+                    if random.random() < 0.20:
+                        turn_dir *= -1.0
+
+                    self.conn.motion.moveToward(0.0, 0.0, turn_dir, walk_config)
+                    for _ in range(int(random.uniform(15, 35))):
+                        if not getattr(self, "_seeking", False): break
+                        time.sleep(0.1)
+
                 else:
-                    # Occasional random wandering speech
-                    if time.time() > next_speech_time:
+                    # Normal wander movement
+                    # Occasional speech
+                    if time.time() > next_speech_t:
+                        phrases = search_phrases if target else face_phrases
                         if self.conn.tts:
                             try: self.conn.tts.post.say(random.choice(phrases))
                             except Exception: pass
-                        next_speech_time = time.time() + random.uniform(3.0, 20.0)
+                        next_speech_t = time.time() + random.uniform(8.0, 25.0)
 
-                    # Randomize wander drift periodically (every 4 to 8 seconds)
-                    if time.time() - last_bias_change > random.uniform(4.0, 8.0):
+                    # Drift change every 4-8 s
+                    if time.time() - last_bias_t > random.uniform(4.0, 8.0):
                         wander_turn_bias = random.uniform(-0.15, 0.15)
-                        last_bias_change = time.time()
-                        
-                    # Clear path, walk slightly forward and slowly sweep room with random bias
-                    turn = (math.sin(time.time() * 0.5) * 0.08) + wander_turn_bias
+                        last_bias_t = time.time()
+
+                    turn = math.sin(time.time() * 0.5) * 0.08 + wander_turn_bias
                     self.conn.motion.moveToward(max_fwd, 0.0, turn, walk_config)
-                    
+
                 time.sleep(0.1)
-                
+
         except Exception as e:
-            self._set_status("Wander error: " + str(e)[:30], False)
-            self.auto_status.set("Error: View console")
-            print("Wander error: " + str(e))
-            
+            self._set_status("Wander error: " + str(e)[:60], False)
+            self.auto_status.set("Error: see console")
+            print("[Wander] Error: " + str(e))
+
         finally:
             self._seeking = False
             self.auto_status.set("Idle.")
-            try:
-                self.conn.motion.stopMove()
+            try: self.conn.motion.stopMove()
             except Exception: pass
-            
+            # Reset head pitch
             try:
-                sonar = self.conn.get_proxy("ALSonar")
-                if sonar: sonar.unsubscribe("WanderSeeker")
+                if self.conn.motion:
+                    self.conn.motion.setAngles("HeadPitch", 0.0, 0.1)
             except Exception: pass
-            
-            try:
-                if self.conn.face: self.conn.face.unsubscribe("WanderSeekerFace")
-            except Exception: pass
+            if sonar:
+                try: sonar.unsubscribe("WanderSeeker")
+                except Exception: pass
+            if self.conn.face:
+                try: self.conn.face.unsubscribe("WanderSeekerFace")
+                except Exception: pass
+            if floor_cam_name and wander_video:
+                try: wander_video.unsubscribe(floor_cam_name)
+                except Exception: pass
+            if novelty_cam_name and wander_video:
+                try: wander_video.unsubscribe(novelty_cam_name)
+                except Exception: pass
+
+    @staticmethod
+    def _check_floor_boundary(floor_cam_name, video_proxy,
+                               green_threshold=0.25, bottom_fraction=0.50):
+        """Get one frame from the floor camera and check if the bottom half of
+        the image still looks like it did during calibration.
+
+        Returns (is_ok: bool, ratio: float|None)
+          is_ok  – True = floor looks normal, False = boundary detected.
+          ratio  – raw fraction of pixels that match the floor heuristic,
+                   or None if no frame was available.
+        """
+        if not floor_cam_name or not video_proxy:
+            return True, None
+        try:
+            img_data = video_proxy.getImageRemote(floor_cam_name)
+            if not img_data or len(img_data) < 7:
+                return True, None
+            w   = int(img_data[0])
+            h   = int(img_data[1])
+            raw = img_data[6]
+            data     = bytearray(raw) if not isinstance(raw, bytearray) else raw
+            row_size = w * 3
+            start_row = int(h * (1.0 - bottom_fraction))
+
+            green_hits = 0
+            total      = 0
+            step       = 4
+            for y in range(start_row, h):
+                base = y * row_size
+                for x in range(0, w, step):
+                    idx = base + x * 3
+                    if idx + 2 >= len(data):
+                        break
+                    r, g, b = data[idx], data[idx + 1], data[idx + 2]
+                    # Broad green heuristic: green channel clearly dominant.
+                    # Intentionally loose so it works under varied lighting.
+                    if g > 50 and (g - r) > 15 and (g - b) > 10:
+                        green_hits += 1
+                    total += 1
+            if total == 0:
+                return True, None
+            ratio = float(green_hits) / total
+            print("[Floor] ratio=%.2f threshold=%.2f" % (ratio, green_threshold))
+            return ratio >= green_threshold, ratio
+        except Exception as e:
+            print("[Floor] check error: %s" % e)
+            return True, None
 
 
     def _on_camera_start(self):
