@@ -6,11 +6,8 @@ from nao_app.ui.widgets import make_card, make_btn, BG, FG, ACCENT, SUCCESS, ERR
 
 class NaoAppWindow(object):
     LANGUAGES = [
-        "English", "French", "German", "Spanish",
-        "Italian", "Japanese", "Chinese", "Korean",
-        "Portuguese", "Dutch", "Polish", "Czech",
-        "Turkish", "Swedish", "Danish", "Norwegian",
-        "Finnish", "Arabic", "Russian",
+        "English", "German", "Spanish", "Dutch", "Polish", "Czech", "Swedish", "Danish", "Norwegian",
+        "Finnish", "Russian",
     ]
 
     LED_GROUPS = [
@@ -59,8 +56,8 @@ class NaoAppWindow(object):
                     sdata = json.load(f)
                     if sdata.get("gemini_key"):
                         self.api_key_autofill = sdata.get("gemini_key")
-        except:
-            pass
+        except Exception as e:
+            print("[NaoAppWindow] Could not load config/secrets: %s" % e)
 
         self._controller_expanded = False
         self._build_ui()
@@ -244,6 +241,9 @@ class NaoAppWindow(object):
         r4.pack(fill="x")
         self.gemini_status = tk.StringVar(value="Ready.")
         tk.Label(r4, textvariable=self.gemini_status, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
+        
+        self.require_face = tk.BooleanVar(value=False)
+        tk.Checkbutton(r4, text="Wait for Face", variable=self.require_face, font=self.font_small, bg=CARD_BG, fg=FG, selectcolor=CARD_BG, activebackground=CARD_BG, activeforeground=FG).pack(side="right")
 
     def _card_autonomous(self, parent):
         card = make_card(parent, "Autonomous Wander", self.font_head)
@@ -460,7 +460,11 @@ class NaoAppWindow(object):
                 if name == "Relax":
                     self.conn.motion.rest()
                 else:
-                    self.conn.posture.goToPosture(name, 0.8)
+                    if name in ("Sit", "SitRelax", "Crouch"):
+                        self.conn.posture.goToPosture("StandInit", 0.5)
+                        self.conn.posture.goToPosture(name, 0.5)
+                    else:
+                        self.conn.posture.goToPosture(name, 0.8)
                 self._set_status("Posture: %s" % name)
             except Exception as e:
                 self._set_status("Posture error: %s" % e, False)
@@ -508,9 +512,66 @@ class NaoAppWindow(object):
                 client = GeminiClient()
                 client.set_api_key(api_key)
                 
+                # Take a picture from the robot's eyes to send to Gemini
+                image_bytes = None
+                try:
+                    video = self.conn.get_proxy("video")
+                    if video:
+                        self._set_status("Snapping a photo for the AI...")
+                        
+                        # First try to use the already-running UI camera feed to avoid hardware locking!
+                        w, h, payload = None, None, None
+                        
+                        if getattr(self, 'vision', None) and getattr(self.vision, '_cam_running', False) and getattr(self.vision, '_last_raw_img', None):
+                            self._set_status("Lifting live camera frame...")
+                            w, h, payload = self.vision._last_raw_img
+                        else:
+                            self._set_status("Snapping a photo for the AI...")
+                            # Cleanup dead subscriptions just in case
+                            try: video.unsubscribe("gemini_snap_text")
+                            except Exception: pass
+                            # Resolution 2 = 640x480 (Good balance of speed and clarity)
+                            cam_name = video.subscribe("gemini_snap_text", 2, 11, 5)
+                            import time
+                            video.getImageRemote(cam_name) # Throw away the first corrupted/dark frame buffer
+                            time.sleep(0.5) # Let the camera lens physically auto-expose to the room lighting
+                            img_data = video.getImageRemote(cam_name)
+                            video.unsubscribe(cam_name)
+                            if img_data and len(img_data) >= 7:
+                                w, h, payload = int(img_data[0]), int(img_data[1]), img_data[6]
+
+                        if w and h and payload:
+                            import os
+                            import subprocess
+                            
+                            # Construct raw PPM file since we don't have PIL inside the bundled Python 2.7
+                            header = "P6\n%d %d\n255\n" % (w, h)
+                            ppm_data = header + str(payload)
+                            
+                            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                            ppm_path = os.path.join(root_dir, "temp.ppm")
+                            jpg_path = os.path.join(root_dir, "latest_nao_vision.jpg")
+                            
+                            with open(ppm_path, "wb") as f:
+                                f.write(ppm_data)
+                                
+                            # Offload JPEG compression to the user's host Python 3 installation!
+                            subprocess.call(['python', '-c', 'import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2], "JPEG")', ppm_path, jpg_path])
+                            
+                            # Read back the compressed image for Gemini
+                            with open(jpg_path, "rb") as f:
+                                image_bytes = f.read()
+                            
+                            print("Saved camera debug image to: " + jpg_path)
+                        else:
+                            print("No valid image data was returned from the robot.")
+                except Exception as e:
+                    self._set_status("Camera Error: " + str(e), False)
+                    print("Failed to capture image for Gemini: " + str(e))
+                
                 # The Gemini AI client natively handles the NAO system prompt, 
                 # keeping the UI logic perfectly clean.
-                response_text = client.generate_text(prompt)
+                response_text = client.generate_text(prompt, image_bytes=image_bytes)
                 
                 if "Error" in response_text:
                     self.gemini_status.set("Gemini Error.")
@@ -564,10 +625,67 @@ class NaoAppWindow(object):
                 if not prompt:
                     prompt = "Please listen to the attached audio recording of my voice. Answer what I say naturally."
                 
-                response_text = client.generate_text(prompt, audio_bytes=wav_bytes)
+                # Take a picture from the robot's eyes to send to Gemini
+                image_bytes = None
+                try:
+                    video = self.conn.get_proxy("video")
+                    if video:
+                        self._set_status("Snapping a photo for the AI...")
+                        
+                        # First try to use the already-running UI camera feed to avoid hardware locking!
+                        w, h, payload = None, None, None
+                        
+                        if getattr(self, 'vision', None) and getattr(self.vision, '_cam_running', False) and getattr(self.vision, '_last_raw_img', None):
+                            self._set_status("Lifting live camera frame...")
+                            w, h, payload = self.vision._last_raw_img
+                        else:
+                            self._set_status("Snapping a photo for the AI...")
+                            # Cleanup dead subscriptions just in case
+                            try: video.unsubscribe("gemini_snap")
+                            except Exception: pass
+                            # Resolution 2 = 640x480 (Good balance of speed and clarity)
+                            cam_name = video.subscribe("gemini_snap", 2, 11, 5)
+                            import time
+                            video.getImageRemote(cam_name) # Throw away the first corrupted/dark frame buffer
+                            time.sleep(0.5) # Let the camera lens physically auto-expose to the room lighting
+                            img_data = video.getImageRemote(cam_name)
+                            video.unsubscribe(cam_name)
+                            if img_data and len(img_data) >= 7:
+                                w, h, payload = int(img_data[0]), int(img_data[1]), img_data[6]
+
+                        if w and h and payload:
+                            import os
+                            import subprocess
+                            
+                            # Construct raw PPM file since we don't have PIL inside the bundled Python 2.7
+                            header = "P6\n%d %d\n255\n" % (w, h)
+                            ppm_data = header + str(payload)
+                            
+                            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                            ppm_path = os.path.join(root_dir, "temp.ppm")
+                            jpg_path = os.path.join(root_dir, "latest_nao_vision.jpg")
+                            
+                            with open(ppm_path, "wb") as f:
+                                f.write(ppm_data)
+                                
+                            # Offload JPEG compression to the user's host Python 3 installation!
+                            subprocess.call(['python', '-c', 'import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2], "JPEG")', ppm_path, jpg_path])
+                            
+                            # Read back the compressed image for Gemini
+                            with open(jpg_path, "rb") as f:
+                                image_bytes = f.read()
+                            
+                            print("Saved camera debug image to: " + jpg_path)
+                        else:
+                            print("No valid image data was returned from the robot.")
+                except Exception as e:
+                    self._set_status("Camera Error: " + str(e), False)
+                    print("Failed to capture image for Gemini: " + str(e))
+                
+                response_text = client.generate_text(prompt, audio_bytes=wav_bytes, image_bytes=image_bytes)
                 
                 self.conn.leds.fadeRGB("AllLeds", 0x00FFFFFF, 0.2) # Back to normal white eyes
-                
+
                 if "Error" in response_text:
                     self.gemini_status.set("Gemini Voice Error.")
                     self._set_status(response_text, False)
@@ -579,7 +697,7 @@ class NaoAppWindow(object):
                 self._set_status("Voice Pipeline Failed: %s" % e, False)
                 try: 
                     self.conn.leds.fadeRGB("AllLeds", 0x00FFFFFF, 0.2)
-                except: 
+                except Exception:
                     pass
         
         threading.Thread(target=_voice_flow).start()
@@ -606,9 +724,12 @@ class NaoAppWindow(object):
         self.gemini_status.set("Waiting for face...")
         self._set_status("Looking for you before answering...")
         
+        face_found = False
         try:
             tracker = self.conn.get_proxy("ALTracker")
-            if tracker and self.conn.face and self.conn.memory:
+            if not self.require_face.get():
+                face_found = True # Skip searching if requirement is disabled
+            elif tracker and self.conn.face and self.conn.memory:
                 # Force head stiffness to 1.0 so manual scanning actually moves the physical neck motors
                 if self.conn.motion:
                     self.conn.motion.setStiffnesses("Head", 1.0)
@@ -618,8 +739,6 @@ class NaoAppWindow(object):
                 
                 import time
                 import math
-                
-                face_found = False
                 
                 # Wait up to 4 seconds to spot someone
                 for i in range(4):
@@ -649,7 +768,7 @@ class NaoAppWindow(object):
         except Exception as fe:
             print("Face tracking non-fatal error: " + str(fe))
             
-        if not locals().get("face_found", False):
+        if not face_found:
             # Prepend the fallback phrase to the mobster's actual response
             response_text = "Even if I can't see you, I will do as you say this time. " + response_text
 
@@ -681,8 +800,8 @@ class NaoAppWindow(object):
             # Relax the head motors to prevent overheating
             if self.conn.motion:
                 self.conn.motion.setStiffnesses("Head", 0.0)
-        except:
-            pass
+        except Exception as e:
+            print("[NaoAppWindow] Face tracker stop error: %s" % e)
 
     def _on_battery(self):
         if not self._require_connection() or not self.conn.memory: return
@@ -719,11 +838,15 @@ class NaoAppWindow(object):
                 
                 # 2. Postures
                 words = cmd.replace('.', '').replace(',', '').split()
-                if "sit" in words or "sit down" in cmd: self.conn.posture.goToPosture("Sit", 0.8)
+                if "sit" in words or "sit down" in cmd: 
+                    self.conn.posture.goToPosture("StandInit", 0.5)
+                    self.conn.posture.goToPosture("Sit", 0.5)
                 elif "stand" in cmd: 
                     if hasattr(self.controller, "_stand_safely"): self.controller._stand_safely()
                     else: self.conn.posture.goToPosture("StandInit", 0.8)
-                elif "crouch" in cmd: self.conn.posture.goToPosture("Crouch", 0.8)
+                elif "crouch" in cmd:
+                    self.conn.posture.goToPosture("StandInit", 0.5)
+                    self.conn.posture.goToPosture("Crouch", 0.5)
                 elif "relax" in cmd or "rest" in cmd: self.conn.motion.rest()
                 
                 # 3. Motion

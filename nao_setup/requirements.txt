@@ -1,0 +1,20 @@
+# NAO Control Panel - Python 2.7 dependencies
+#
+# This project runs under the BUNDLED Python 2.7 at ../Python/python.exe
+# because pynaoqi (NAOqi SDK) only supports Python 2.7.
+#
+# Install into the bundled Python with:
+#   ..\Python\python.exe -m pip install -r requirements.txt
+#
+# pynaoqi (NAOqi SDK) is vendored at:
+#   ../pynaoqi-python2.7-2.8.6.23-win64-vs2015-20191127_152649/lib/
+# and does NOT need to be installed via pip.
+
+# Gamepad / joystick input
+pygame==1.9.6
+
+# JPEG conversion for Gemini image upload
+# (called as a subprocess from app_window.py using the HOST Python 3)
+# Install on the HOST Python 3 environment, not the bundled Python 2.7:
+#   pip install Pillow
+# Pillow>=9.0.0

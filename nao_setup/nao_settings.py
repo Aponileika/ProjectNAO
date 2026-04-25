@@ -1,25 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""Entry point for the NAO Control Panel.
+
+Run with any Python version - this script will automatically relaunch itself
+under the bundled Python 2.7 if needed (required for pynaoqi / NAOqi SDK).
+"""
 import os
 import sys
-import subprocess
 
-if sys.version_info[0] != 2:
-    _base = os.path.dirname(os.path.abspath(__file__))
-    _root = os.path.dirname(_base)
-    _bundled_py  = os.path.join(_root, 'Python', 'python.exe')
-    _bundled_lib = os.path.join(
-        _root,
-        'pynaoqi-python2.7-2.8.6.23-win64-vs2015-20191127_152649',
-        'lib')
-    if os.path.isfile(_bundled_py):
-        _env = os.environ.copy()
-        _env['PYTHONPATH'] = _bundled_lib
-        _env['PATH'] = _bundled_lib + os.pathsep + _env.get('PATH', '')
-        _rc = subprocess.call(
-            [_bundled_py, __file__] + sys.argv[1:],
-            env=_env)
-        sys.exit(_rc)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import py27
+py27.relaunch_if_needed(__file__)
 
 from nao_app.main import main
 

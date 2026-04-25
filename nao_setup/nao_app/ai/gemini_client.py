@@ -16,7 +16,7 @@ class GeminiClient(object):
         api_key = re.sub(r'[^A-Za-z0-9_\-]', '', api_key)
         self.api_key = api_key
 
-    def generate_text(self, prompt, audio_bytes=None):
+    def generate_text(self, prompt, audio_bytes=None, image_bytes=None):
         if not self.api_key:
             return "Error: API key is not set. Please provide your Gemini API key."
 
@@ -27,10 +27,11 @@ class GeminiClient(object):
             "You act cool, confident, a little cynical, and use mobster slang. "
             "The current world date and time is {}. "
             "Keep your responses naturally conversational but stay fully in your mobster character. "
-            "Keep your answers snappy and cool, around 2-3 sentences. Don't overexplain things. "
-            "IMPORTANT RULE: If the human gives you a direct, simple physical command (such as 'seek', 'wander', 'sit down', 'stand up', 'turn red', 'walk forward', 'stop', 'relax', 'walk autonomously'), "
+            "Keep your answers EXTREMELY short (strictly 1 to 2 sentences maximum) unless the user asks for a very detailed explanation. Do not ramble. "
+            "IMPORTANT RULE: 1. If the human gives you a direct, simple physical command (such as 'seek', 'wander', 'sit down', 'stand up', 'turn red', 'walk forward', 'stop', 'relax', 'walk autonomously'), "
             "you MUST start your response EXACTLY with the text 'COMMAND: [their command].' followed by your short mobster reply. "
             "For example: 'COMMAND: wander. Sure thing boss, I'm going for a stroll.' or 'COMMAND: seek. I'm on the hunt.' "
+            "IMPORTANT RULE: 2. If the user attaches an image from your eyes, you MUST accurately describe ONLY what is visibly present in the image (like specific objects, colors, people). Do not invent or assume things are in the room. Keep your mobster attitude intact. "
             "Never use markdown, lists, asterisks, emojis, or symbols because you are speaking out loud through a Text-To-Speech engine."
         ).format(now)
 
@@ -55,6 +56,13 @@ class GeminiClient(object):
             b64_audio = base64.b64encode(audio_bytes).decode('ascii')
             payload["contents"][0]["parts"].append({
                 "inlineData": {"mimeType": "audio/wav", "data": b64_audio}
+            })
+            
+        if image_bytes:
+            import base64
+            b64_image = base64.b64encode(image_bytes).decode('ascii')
+            payload["contents"][0]["parts"].append({
+                "inlineData": {"mimeType": "image/jpeg", "data": b64_image}
             })
             
         req = urllib2.Request(url, data=json.dumps(payload), headers=headers)

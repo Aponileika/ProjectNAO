@@ -108,8 +108,8 @@ class GamepadController(object):
                 motion.setMotionConfig([
                     ["ENABLE_FOOT_CONTACT_PROTECTION", True],
                 ])
-            except Exception:
-                pass
+            except Exception as e:
+                print("[GamepadController] Motion setup warning: %s" % e)
 
         self._ps_prev_down = False
         self._ctrl_running = True
@@ -246,8 +246,8 @@ class GamepadController(object):
                                     else:
                                         if "set_status" in self.ui:
                                             self.ui["set_status"]("Stand failed - hold robot and retry", False)
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    print("[GamepadController] Stand thread error: %s" % e)
                                 finally:
                                     self._btn_busy = False
                             threading.Thread(target=_do_stand).start()
@@ -259,11 +259,12 @@ class GamepadController(object):
                                 try:
                                     if "set_status" in self.ui:
                                         self.ui["set_status"]("Sitting via controller...")
-                                    posture.goToPosture("Sit", 0.8)
+                                    posture.goToPosture("StandInit", 0.5)
+                                    posture.goToPosture("Sit", 0.5)
                                     if "set_status" in self.ui:
                                         self.ui["set_status"]("Sit complete")
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    print("[GamepadController] Sit thread error: %s" % e)
                                 finally:
                                     self._btn_busy = False
                             threading.Thread(target=_do_sit).start()
@@ -278,8 +279,8 @@ class GamepadController(object):
                                     motion.rest()
                                     if "set_status" in self.ui:
                                         self.ui["set_status"]("Servos relaxed (press Cross to stand)")
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    print("[GamepadController] Relax thread error: %s" % e)
                                 finally:
                                     self._btn_busy = False
                             threading.Thread(target=_do_relax).start()
@@ -359,5 +360,6 @@ class GamepadController(object):
                         self._WALK_CONFIG)
 
                 time.sleep(0.05)
-            except Exception:
+            except Exception as e:
+                print("[GamepadController] Loop error: %s" % e)
                 time.sleep(0.1)

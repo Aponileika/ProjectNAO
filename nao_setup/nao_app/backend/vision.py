@@ -5,7 +5,7 @@ import time
 try:
     import Tkinter as tk
 except ImportError:
-    pass
+    tk = None
 
 class VisionManager(object):
     def __init__(self, proxies, ui_callbacks=None):
@@ -30,6 +30,8 @@ class VisionManager(object):
         return getattr(self.proxies, name, None)
 
     def _rgb_to_photo(self, width, height, payload):
+        if tk is None:
+            raise RuntimeError("Tkinter is not available; cannot create PhotoImage")
         header = "P6\n%d %d\n255\n" % (int(width), int(height))
         ppm_data = header + payload
         photo = tk.PhotoImage(data=ppm_data, format="PPM")
@@ -66,8 +68,8 @@ class VisionManager(object):
             try:
                 face.subscribe("nao_settings_face", 500, 0.0)
                 face.setTrackingEnabled(True)
-            except Exception:
-                pass
+            except Exception as e:
+                print("[VisionManager] Face detection subscribe failed: %s" % e)
 
         people = self.get_proxy("people")
         if people is not None:
@@ -75,8 +77,8 @@ class VisionManager(object):
                 people.setFastModeEnabled(False)
                 people.setMaximumDetectionRange(5.0)
                 people.subscribe("nao_settings_people")
-            except Exception:
-                pass
+            except Exception as e:
+                print("[VisionManager] People perception subscribe failed: %s" % e)
 
         motion = self.get_proxy("motion")
         if motion is not None:
@@ -332,7 +334,8 @@ class VisionManager(object):
             if img and len(img) >= 7:
                 width = int(img[0])
                 height = int(img[1])
-                payload = img[6]
+                payload = img[6]                  
+                self._last_raw_img = (width, height, payload) # Cache for Gemini to steal independently                 
                 photo = self._rgb_to_photo(width, height, payload)
                 self._cam_photo = photo
                 if "update_frame" in self.ui:

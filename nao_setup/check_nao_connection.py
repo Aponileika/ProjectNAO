@@ -11,22 +11,9 @@ import os
 import socket
 import sys
 
-# ---- Auto-relaunch with bundled Python 2.7 if running Python 3 ----
-import subprocess
-if sys.version_info[0] != 2:
-    base = os.path.dirname(os.path.abspath(__file__))
-    root = os.path.dirname(base)  # one level up from nao_setup/
-    bundled_py  = os.path.join(root, 'Python', 'python.exe')
-    bundled_lib = os.path.join(root, 'pynaoqi-python2.7-2.8.6.23-win64-vs2015-20191127_152649', 'lib')
-    if os.path.isfile(bundled_py):
-        env = os.environ.copy()
-        env['PYTHONPATH'] = bundled_lib
-        env['PATH'] = bundled_lib + os.pathsep + env.get('PATH', '')
-        rc = subprocess.call([bundled_py, os.path.abspath(__file__)] + sys.argv[1:], env=env)
-        sys.exit(rc)
-    else:
-        if os.path.isdir(bundled_lib):
-            sys.path.insert(0, bundled_lib)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import py27
+py27.relaunch_if_needed(__file__)
 
 import traceback
 

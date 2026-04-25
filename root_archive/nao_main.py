@@ -321,6 +321,7 @@ class Nao(object):
 
             elif self.message["command"] == "sit":
                 self._stop_motion_now()
+                self.posture.goToPosture("StandInit", 0.5)
                 self.posture.goToPosture("Sit", 0.5)
 
             elif self.message["command"] == "stand":

@@ -1,1 +1,19 @@
 secrets.json
+
+# Python compiled files
+*.pyc
+*.pyo
+__pycache__/
+
+# Test / scratch files
+test.jpg
+test.ppm
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS junk
+.DS_Store
+Thumbs.db
