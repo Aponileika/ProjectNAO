@@ -16,7 +16,7 @@ class GeminiClient(object):
         api_key = re.sub(r'[^A-Za-z0-9_\-]', '', api_key)
         self.api_key = api_key
 
-    def generate_text(self, prompt, audio_bytes=None, image_bytes=None):
+    def generate_text(self, prompt, audio_bytes=None, image_bytes=None, image_mime_type="image/png"):
         if not self.api_key:
             return "Error: API key is not set. Please provide your Gemini API key."
 
@@ -62,7 +62,7 @@ class GeminiClient(object):
             import base64
             b64_image = base64.b64encode(image_bytes).decode('ascii')
             payload["contents"][0]["parts"].append({
-                "inlineData": {"mimeType": "image/jpeg", "data": b64_image}
+                "inlineData": {"mimeType": image_mime_type, "data": b64_image}
             })
             
         req = urllib2.Request(url, data=json.dumps(payload), headers=headers)

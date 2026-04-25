@@ -488,6 +488,85 @@ class NaoAppWindow(object):
         except Exception as e:
             self._set_status("Life error: %s" % e, False)
 
+    @staticmethod
+    def _rgb_to_png(width, height, rgb_payload):
+        """Encode raw 24-bit RGB bytes as a PNG using only Python 2.7 stdlib.
+        No Pillow, no subprocess, no temp files required.
+        Returns the PNG as a byte string."""
+        import zlib
+        import struct
+
+        if isinstance(rgb_payload, bytearray):
+            rgb_payload = bytes(rgb_payload)
+
+        def _chunk(tag, data):
+            crc = zlib.crc32(tag + data) & 0xffffffff
+            return struct.pack('>I', len(data)) + tag + data + struct.pack('>I', crc)
+
+        row_size = width * 3
+        # PNG filter byte 0 (None) prepended to each row
+        raw_rows = b''.join(
+            b'\x00' + rgb_payload[y * row_size:(y + 1) * row_size]
+            for y in range(height)
+        )
+
+        return (
+            b'\x89PNG\r\n\x1a\n'
+            + _chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+            + _chunk(b'IDAT', zlib.compress(raw_rows, 6))
+            + _chunk(b'IEND', b'')
+        )
+
+    def _capture_image_bytes(self):
+        """Capture one frame from NAO's camera and return it as PNG bytes,
+        or None if capture fails.  Works entirely within Python 2.7 stdlib —
+        no Pillow, no subprocess, no temp files."""
+        video = self.conn.video
+        if not video:
+            print("[Vision] No video proxy (conn.video is None - is NAO connected?)")
+            return None
+
+        w, h, payload = None, None, None
+
+        # Re-use the live camera frame if the camera tab is already streaming,
+        # to avoid fighting over the hardware subscription.
+        if (getattr(self, 'vision', None)
+                and getattr(self.vision, '_cam_running', False)
+                and getattr(self.vision, '_last_raw_img', None)):
+            self._set_status("Lifting live camera frame for AI...")
+            w, h, payload = self.vision._last_raw_img
+        else:
+            self._set_status("Snapping a photo for the AI...")
+            import time
+            try: video.unsubscribe("gemini_snap")
+            except Exception: pass
+            try:
+                cam_name = video.subscribe("gemini_snap", 2, 11, 5)
+                video.getImageRemote(cam_name)      # discard first (dark) frame
+                time.sleep(0.5)                     # let auto-exposure settle
+                img_data = video.getImageRemote(cam_name)
+                video.unsubscribe(cam_name)
+                if img_data and len(img_data) >= 7:
+                    w, h, payload = int(img_data[0]), int(img_data[1]), img_data[6]
+                else:
+                    print("[Vision] getImageRemote returned empty/short data: %s" % repr(img_data))
+            except Exception as e:
+                print("[Vision] Camera subscribe/capture error: %s" % e)
+                return None
+
+        if not (w and h and payload):
+            print("[Vision] No valid pixel data (w=%s h=%s payload_len=%s)." % (
+                w, h, len(payload) if payload else 0))
+            return None
+
+        try:
+            png_bytes = self._rgb_to_png(w, h, payload)
+            print("[Vision] Captured %dx%d -> %d bytes PNG" % (w, h, len(png_bytes)))
+            return png_bytes
+        except Exception as e:
+            print("[Vision] PNG encoding failed: %s" % e)
+            return None
+
     def _on_gemini_ask(self):
         if not self._require_connection() or not self.conn.tts:
             self._set_status("Cannot speak without NAO connected.", False)
@@ -512,65 +591,10 @@ class NaoAppWindow(object):
                 client = GeminiClient()
                 client.set_api_key(api_key)
                 
-                # Take a picture from the robot's eyes to send to Gemini
-                image_bytes = None
-                try:
-                    video = self.conn.get_proxy("video")
-                    if video:
-                        self._set_status("Snapping a photo for the AI...")
-                        
-                        # First try to use the already-running UI camera feed to avoid hardware locking!
-                        w, h, payload = None, None, None
-                        
-                        if getattr(self, 'vision', None) and getattr(self.vision, '_cam_running', False) and getattr(self.vision, '_last_raw_img', None):
-                            self._set_status("Lifting live camera frame...")
-                            w, h, payload = self.vision._last_raw_img
-                        else:
-                            self._set_status("Snapping a photo for the AI...")
-                            # Cleanup dead subscriptions just in case
-                            try: video.unsubscribe("gemini_snap_text")
-                            except Exception: pass
-                            # Resolution 2 = 640x480 (Good balance of speed and clarity)
-                            cam_name = video.subscribe("gemini_snap_text", 2, 11, 5)
-                            import time
-                            video.getImageRemote(cam_name) # Throw away the first corrupted/dark frame buffer
-                            time.sleep(0.5) # Let the camera lens physically auto-expose to the room lighting
-                            img_data = video.getImageRemote(cam_name)
-                            video.unsubscribe(cam_name)
-                            if img_data and len(img_data) >= 7:
-                                w, h, payload = int(img_data[0]), int(img_data[1]), img_data[6]
+                image_bytes = self._capture_image_bytes()
+                if image_bytes is None:
+                    self._set_status("No image captured - sending text prompt only.", False)
 
-                        if w and h and payload:
-                            import os
-                            import subprocess
-                            
-                            # Construct raw PPM file since we don't have PIL inside the bundled Python 2.7
-                            header = "P6\n%d %d\n255\n" % (w, h)
-                            ppm_data = header + str(payload)
-                            
-                            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                            ppm_path = os.path.join(root_dir, "temp.ppm")
-                            jpg_path = os.path.join(root_dir, "latest_nao_vision.jpg")
-                            
-                            with open(ppm_path, "wb") as f:
-                                f.write(ppm_data)
-                                
-                            # Offload JPEG compression to the user's host Python 3 installation!
-                            subprocess.call(['python', '-c', 'import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2], "JPEG")', ppm_path, jpg_path])
-                            
-                            # Read back the compressed image for Gemini
-                            with open(jpg_path, "rb") as f:
-                                image_bytes = f.read()
-                            
-                            print("Saved camera debug image to: " + jpg_path)
-                        else:
-                            print("No valid image data was returned from the robot.")
-                except Exception as e:
-                    self._set_status("Camera Error: " + str(e), False)
-                    print("Failed to capture image for Gemini: " + str(e))
-                
-                # The Gemini AI client natively handles the NAO system prompt, 
-                # keeping the UI logic perfectly clean.
                 response_text = client.generate_text(prompt, image_bytes=image_bytes)
                 
                 if "Error" in response_text:
@@ -626,61 +650,9 @@ class NaoAppWindow(object):
                     prompt = "Please listen to the attached audio recording of my voice. Answer what I say naturally."
                 
                 # Take a picture from the robot's eyes to send to Gemini
-                image_bytes = None
-                try:
-                    video = self.conn.get_proxy("video")
-                    if video:
-                        self._set_status("Snapping a photo for the AI...")
-                        
-                        # First try to use the already-running UI camera feed to avoid hardware locking!
-                        w, h, payload = None, None, None
-                        
-                        if getattr(self, 'vision', None) and getattr(self.vision, '_cam_running', False) and getattr(self.vision, '_last_raw_img', None):
-                            self._set_status("Lifting live camera frame...")
-                            w, h, payload = self.vision._last_raw_img
-                        else:
-                            self._set_status("Snapping a photo for the AI...")
-                            # Cleanup dead subscriptions just in case
-                            try: video.unsubscribe("gemini_snap")
-                            except Exception: pass
-                            # Resolution 2 = 640x480 (Good balance of speed and clarity)
-                            cam_name = video.subscribe("gemini_snap", 2, 11, 5)
-                            import time
-                            video.getImageRemote(cam_name) # Throw away the first corrupted/dark frame buffer
-                            time.sleep(0.5) # Let the camera lens physically auto-expose to the room lighting
-                            img_data = video.getImageRemote(cam_name)
-                            video.unsubscribe(cam_name)
-                            if img_data and len(img_data) >= 7:
-                                w, h, payload = int(img_data[0]), int(img_data[1]), img_data[6]
-
-                        if w and h and payload:
-                            import os
-                            import subprocess
-                            
-                            # Construct raw PPM file since we don't have PIL inside the bundled Python 2.7
-                            header = "P6\n%d %d\n255\n" % (w, h)
-                            ppm_data = header + str(payload)
-                            
-                            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                            ppm_path = os.path.join(root_dir, "temp.ppm")
-                            jpg_path = os.path.join(root_dir, "latest_nao_vision.jpg")
-                            
-                            with open(ppm_path, "wb") as f:
-                                f.write(ppm_data)
-                                
-                            # Offload JPEG compression to the user's host Python 3 installation!
-                            subprocess.call(['python', '-c', 'import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2], "JPEG")', ppm_path, jpg_path])
-                            
-                            # Read back the compressed image for Gemini
-                            with open(jpg_path, "rb") as f:
-                                image_bytes = f.read()
-                            
-                            print("Saved camera debug image to: " + jpg_path)
-                        else:
-                            print("No valid image data was returned from the robot.")
-                except Exception as e:
-                    self._set_status("Camera Error: " + str(e), False)
-                    print("Failed to capture image for Gemini: " + str(e))
+                image_bytes = self._capture_image_bytes()
+                if image_bytes is None:
+                    self._set_status("No image captured - sending audio only.", False)
                 
                 response_text = client.generate_text(prompt, audio_bytes=wav_bytes, image_bytes=image_bytes)
                 

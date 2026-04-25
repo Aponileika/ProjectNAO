@@ -53,6 +53,7 @@ def relaunch_if_needed(script_file):
     env = os.environ.copy()
     env['PYTHONPATH'] = bundled_lib
     env['PATH'] = bundled_lib + os.pathsep + env.get('PATH', '')
+    env['NAO_HOST_PYTHON'] = sys.executable  # let Python 2.7 find us for Pillow subprocesses
 
     rc = subprocess.call(
         [bundled_py, os.path.abspath(script_file)] + sys.argv[1:],
