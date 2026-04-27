@@ -2,6 +2,7 @@
 #define __VW_VIEW_HPP_
 #include <iostream>
 #include <vector>
+#include <unordered_map>
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
 #include "LG_Logging.hpp"

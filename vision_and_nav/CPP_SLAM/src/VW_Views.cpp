@@ -29,6 +29,7 @@ void VW_Print(struct ViewSet* views)
     LG_Log("last_sz: %zu\n", views->last_sz);
 
     size_t n = std::min<size_t>(views->views.size(), 10);
+
     for (size_t i = 0; i < n; ++i)
     {
         const Camera& cam = views->views[i];
@@ -40,22 +41,28 @@ void VW_Print(struct ViewSet* views)
 
         if (cam.p)
         {
-            const Eigen::Quaterniond& q = cam.p->q;
-            const Eigen::Vector3d& t = cam.p->t;
+            const Eigen::Quaterniond& q_wc = cam.p->q;
+            const Eigen::Vector3d& C_world_param = cam.p->t;
 
-            LG_Log("  q (w,x,y,z) = (%.15f, %.15f, %.15f, %.15f)\n",
-                   q.w(), q.x(), q.y(), q.z());
+            LG_Log("  parametrized world pose:\n");
 
-            LG_Log("  t = (%.15f, %.15f, %.15f)\n",
-                   t.x(), t.y(), t.z());
+            LG_Log("    q_wc (w,x,y,z) = (%.15f, %.15f, %.15f, %.15f)\n",
+                   q_wc.w(), q_wc.x(), q_wc.y(), q_wc.z());
+
+            LG_Log("    C_world param = (%.15f, %.15f, %.15f)\n",
+                   C_world_param.x(),
+                   C_world_param.y(),
+                   C_world_param.z());
         }
 
         if (!cam.R.empty())
         {
-            LG_Log("  R =\n");
+            LG_Log("  OpenCV extrinsics:\n");
+            LG_Log("    R_cw, world-to-camera =\n");
+
             for (int r = 0; r < cam.R.rows; ++r)
             {
-                LG_Log("    ");
+                LG_Log("      ");
                 for (int c = 0; c < cam.R.cols; ++c)
                 {
                     LG_Log("%.15f ", cam.R.at<double>(r, c));
@@ -65,12 +72,13 @@ void VW_Print(struct ViewSet* views)
         }
         else
         {
-            LG_Log("  R: empty\n");
+            LG_Log("  R_cw: empty\n");
         }
 
         if (!cam.t.empty())
         {
-            LG_Log("  t_cv = (");
+            LG_Log("    t_cw / t_cv = (");
+
             if (cam.t.rows == 3 && cam.t.cols == 1)
             {
                 LG_Log("%.15f, %.15f, %.15f",
@@ -89,11 +97,68 @@ void VW_Print(struct ViewSet* views)
             {
                 LG_Log("shape=(%d x %d)", cam.t.rows, cam.t.cols);
             }
+
             LG_Log(")\n");
         }
         else
         {
-            LG_Log("  t_cv: empty\n");
+            LG_Log("    t_cw / t_cv: empty\n");
+        }
+
+        if (!cam.R.empty() && !cam.t.empty() &&
+            cam.R.rows == 3 && cam.R.cols == 3 &&
+            ((cam.t.rows == 3 && cam.t.cols == 1) ||
+             (cam.t.rows == 1 && cam.t.cols == 3)))
+        {
+            cv::Mat R_cw;
+            cam.R.convertTo(R_cw, CV_64F);
+
+            cv::Mat t_cw;
+
+            if (cam.t.rows == 3 && cam.t.cols == 1)
+            {
+                cam.t.convertTo(t_cw, CV_64F);
+            }
+            else
+            {
+                t_cw = cam.t.reshape(1, 3);
+                t_cw.convertTo(t_cw, CV_64F);
+            }
+
+            cv::Mat R_wc = R_cw.t();
+            cv::Mat C_world = -R_wc * t_cw;
+
+            LG_Log("  world pose:\n");
+
+            LG_Log("    R_wc, camera-to-world =\n");
+            for (int r = 0; r < R_wc.rows; ++r)
+            {
+                LG_Log("      ");
+                for (int c = 0; c < R_wc.cols; ++c)
+                {
+                    LG_Log("%.15f ", R_wc.at<double>(r, c));
+                }
+                LG_Log("\n");
+            }
+
+            LG_Log("    C_world / camera center = (%.15f, %.15f, %.15f)\n",
+                   C_world.at<double>(0, 0),
+                   C_world.at<double>(1, 0),
+                   C_world.at<double>(2, 0));
+
+            if (cam.p)
+            {
+                const Eigen::Vector3d& C_param = cam.p->t;
+
+                LG_Log("    C_world - C_param = (%.15f, %.15f, %.15f)\n",
+                       C_world.at<double>(0, 0) - C_param.x(),
+                       C_world.at<double>(1, 0) - C_param.y(),
+                       C_world.at<double>(2, 0) - C_param.z());
+            }
+        }
+        else
+        {
+            LG_Log("  world pose: unavailable\n");
         }
     }
 }

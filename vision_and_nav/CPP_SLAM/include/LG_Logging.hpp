@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <filesystem>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 
 #define LOGPATH "/Users/Jonathan/Programmering/FIA/ProjectNAO/vision_and_nav/CPP_SLAM/logs/log.txt"
 

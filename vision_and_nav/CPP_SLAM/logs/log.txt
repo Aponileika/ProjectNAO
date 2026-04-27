@@ -308,3 +308,3654 @@ view[1]
     0.036446330082718 0.999333642639818 -0.001983862831321 
     0.116595403692728 -0.002280667616174 0.993176877697500 
   t_cv = (1.407901768631402, -0.333459852909862, -0.865287704323732)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 705
+Recovering pose
+ninliers b4 recover = 537, after = 420
+Adding first view
+Adding second view
+number of corrp after masking = 420
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 420
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 420
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.998741892000227, -0.000678744673083, 0.047170691019054, -0.017002893232034)
+  t = (-0.415292016252052, 0.252384597327913, 0.873976290450108)
+  R =
+    0.994971655061050 -0.034027037222589 -0.094199609144239 
+    0.033898969801570 0.999420881854817 -0.002959857924116 
+    0.094245771637072 -0.000248294968197 0.995548930428907 
+  t_cv = (0.504119909793362, -0.235573619661497, -0.830883978825873)
+Printing observations
+ObservationSet
+observations.size() = 840
+view_indexes.size() = 840
+point_indexes.size() = 840
+obs[0] = (645.000000, 600.000000), view=0, point=0
+obs[1] = (607.200012, 595.200012), view=1, point=0
+obs[2] = (658.000000, 644.000000), view=0, point=1
+obs[3] = (621.600037, 645.600037), view=1, point=1
+obs[4] = (609.000000, 621.000000), view=0, point=2
+obs[5] = (565.200012, 620.400024), view=1, point=2
+obs[6] = (802.000000, 675.000000), view=0, point=3
+obs[7] = (781.000000, 682.000000), view=1, point=3
+obs[8] = (678.000000, 620.000000), view=0, point=4
+obs[9] = (644.000000, 619.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 420
+observations_indexes.size(): 420
+last_sz: 0
+  point[0] = (-0.153102, 1.878783, 6.994601)
+  point[1] = (-0.058698, 2.158848, 6.882841)
+  point[2] = (-0.410246, 2.028190, 6.975268)
+  point[3] = (0.972107, 2.415600, 6.984754)
+  point[4] = (0.083838, 2.025611, 6.999472)
+  point[5] = (-0.267840, 2.040487, 6.993939)
+  point[6] = (-0.224125, 2.016141, 6.973971)
+  point[7] = (-0.491423, 2.002043, 6.909317)
+  point[8] = (-0.934864, 2.108279, 6.783930)
+  point[9] = (-0.842584, 1.996636, 6.825457)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          424                      422
+Parameters                               1274                     1267
+Effective parameters                     1272                     1266
+Residual blocks                           840                      840
+Residuals                                1680                     1680
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    420,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          3.931621e+06
+Final                            5.459077e+01
+Change                           3.931567e+06
+
+Minimizer iterations                       36
+Successful steps                           30
+Unsuccessful steps                          6
+
+Time (in seconds):
+Preprocessor                         0.003039
+
+  Residual only evaluation           0.001251 (31)
+  Jacobian & residual evaluation     0.007710 (30)
+  Linear solver                      0.004985 (36)
+Minimizer                            0.016096
+
+Postprocessor                        0.000035
+Total                                0.019170
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 7.853720e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 420
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 420
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.998695434426885, -0.000439875894726, 0.048142310941107, -0.017016276365384)
+  t = (-1.483461417526781, 0.288453905006101, 0.988731744026944)
+  R =
+    0.994785528471813 -0.034030508318308 -0.096144042179704 
+    0.033945801749911 0.999420505695708 -0.002517009831238 
+    0.096173982378868 -0.000759801640130 0.995364248812894 
+  t_cv = (1.580602849717822, -0.235440812907920, -0.841258669691765)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 144
+Recovering pose
+ninliers b4 recover = 62, after = 39
+Adding first view
+Adding second view
+number of corrp after masking = 39
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 39
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 39
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.996383250035843, -0.029570731241339, 0.076808298973712, -0.021129981321044)
+  t = (-0.232238509648599, -0.354495595807662, 0.905758327143156)
+  R =
+    0.987308018196274 -0.046649674055828 -0.151811347124746 
+    0.037564563791604 0.997358191486450 -0.062173478445596 
+    0.154310663119863 0.055681646755133 0.986452114125235 
+  t_cv = (0.350258230524420, 0.418597170464757, -0.837911439729045)
+Printing observations
+ObservationSet
+observations.size() = 78
+view_indexes.size() = 78
+point_indexes.size() = 78
+obs[0] = (386.000000, 99.000000), view=0, point=0
+obs[1] = (208.800003, 60.000004), view=1, point=0
+obs[2] = (391.000000, 100.000000), view=0, point=1
+obs[3] = (198.000015, 138.000000), view=1, point=1
+obs[4] = (1065.000000, 684.000000), view=0, point=2
+obs[5] = (895.000000, 636.000000), view=1, point=2
+obs[6] = (344.000000, 318.000000), view=0, point=3
+obs[7] = (166.800003, 246.000015), view=1, point=3
+obs[8] = (390.000000, 104.000000), view=0, point=4
+obs[9] = (213.600006, 64.800003), view=1, point=4
+Printing points
+PointSet
+points.size(): 39
+observations_indexes.size(): 39
+last_sz: 0
+  point[0] = (-0.987971, -0.840103, 3.441643)
+  point[1] = (-0.556943, -0.479087, 1.969629)
+  point[2] = (14.165580, 12.300916, 34.648692)
+  point[3] = (-16.233074, -0.978379, 49.101403)
+  point[4] = (-1.010600, -0.852067, 3.563572)
+  point[5] = (-2.801242, -0.454901, 8.639135)
+  point[6] = (0.068780, -0.199467, 3.381801)
+  point[7] = (-8.790101, -3.912906, 28.630558)
+  point[8] = (-2.316406, -1.633551, 7.996942)
+  point[9] = (-6.466668, 1.326769, 19.015477)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                           43                       41
+Parameters                                131                      124
+Effective parameters                      129                      123
+Residual blocks                            78                       78
+Residuals                                 156                      156
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                     39,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          7.930414e+05
+Final                            4.148368e+00
+Change                           7.930372e+05
+
+Minimizer iterations                        6
+Successful steps                            6
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.003649
+
+  Residual only evaluation           0.000036 (6)
+  Jacobian & residual evaluation     0.000309 (6)
+  Linear solver                      0.001205 (6)
+Minimizer                            0.002379
+
+Postprocessor                        0.000071
+Total                                0.006099
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 4.020493e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 39
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 39
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.996384228784474, -0.029922304781838, 0.076457183979344, -0.021850018857195)
+  t = (-1.292111471513333, -0.451124977637896, 1.149953207239777)
+  R =
+    0.987353751387778 -0.048117578699487 -0.151053858741114 
+    0.038966478052324 0.997254464704966 -0.062969406970445 
+    0.153669070436050 0.056287043323578 0.986517909388983 
+  t_cv = (-1.427768936320364, -0.572647302888850, 0.910499374013479)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 96
+Recovering pose
+ninliers b4 recover = 38, after = 38
+Adding first view
+Adding second view
+number of corrp after masking = 38
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 38
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 38
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.968059606681402, -0.206498131222165, 0.137895726853673, -0.034697092516530)
+  t = (-0.421563393408764, -0.429783251549526, 0.798480220184072)
+  R =
+    0.959561760572793 -0.124128127266691 -0.252652796675013 
+    0.010227287671469 0.912309267145306 -0.409374160967298 
+    0.281312335729037 0.390235837798194 0.876686580634502 
+  t_cv = (0.552906182546109, 0.723283863535465, -0.413709083839719)
+Printing observations
+ObservationSet
+observations.size() = 76
+view_indexes.size() = 76
+point_indexes.size() = 76
+obs[0] = (878.400024, 653.760010), view=0, point=0
+obs[1] = (828.000061, 548.640015), view=1, point=0
+obs[2] = (869.184082, 661.824036), view=0, point=1
+obs[3] = (816.998535, 555.724854), view=1, point=1
+obs[4] = (881.280090, 656.640076), view=0, point=2
+obs[5] = (831.513733, 549.504089), view=1, point=2
+obs[6] = (689.472046, 349.056030), view=0, point=3
+obs[7] = (632.448059, 165.888031), view=1, point=3
+obs[8] = (876.096069, 651.456055), view=0, point=4
+obs[9] = (825.292908, 543.283264), view=1, point=4
+Printing points
+PointSet
+points.size(): 38
+observations_indexes.size(): 38
+last_sz: 0
+  point[0] = (0.517349, 0.771450, 2.380346)
+  point[1] = (0.496102, 0.791743, 2.383709)
+  point[2] = (0.526675, 0.778129, 2.383510)
+  point[3] = (0.063725, 0.031907, 2.685682)
+  point[4] = (0.516340, 0.770071, 2.396551)
+  point[5] = (0.096051, 0.004286, 2.681822)
+  point[6] = (0.484995, 0.786924, 2.393605)
+  point[7] = (0.082771, 0.032171, 2.691812)
+  point[8] = (0.510382, 0.769893, 2.382064)
+  point[9] = (0.518353, 0.756100, 2.399896)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                           42                       40
+Parameters                                128                      121
+Effective parameters                      126                      120
+Residual blocks                            76                       76
+Residuals                                 152                      152
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                     38,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          2.661806e+06
+Final                            4.025426e+00
+Change                           2.661802e+06
+
+Minimizer iterations                       16
+Successful steps                           16
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.000526
+
+  Residual only evaluation           0.000111 (16)
+  Jacobian & residual evaluation     0.000762 (16)
+  Linear solver                      0.000436 (16)
+Minimizer                            0.001703
+
+Postprocessor                        0.000007
+Total                                0.002236
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 9.689865e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 38
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 38
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.976325757793871, -0.180673884728472, 0.114143741672605, -0.033409104781831)
+  t = (-1.482402724483784, -0.496098993032746, 1.119502283928625)
+  R =
+    0.971710075909309 -0.106481925537537 -0.210810644679399 
+    0.023990752635807 0.932481558189599 -0.360420015293637 
+    0.234955255664335 0.345166254390716 0.908656307228201 
+  t_cv = (-1.623643086095996, -0.901658149404019, 0.497707868887408)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 801
+Recovering pose
+ninliers b4 recover = 582, after = 516
+Adding first view
+Adding second view
+number of corrp after masking = 516
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 516
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 516
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999299764767844, 0.018067427314929, 0.030328646480117, -0.012398443766664)
+  t = (-0.560689858948849, 0.506115029075837, 0.655343008977348)
+  R =
+    0.997852903589698 -0.023683602647350 -0.061062834549760 
+    0.025875445110709 0.999039693324769 0.035357495695732 
+    0.060166802623471 -0.036861607767343 0.997507482545808 
+  t_cv = (0.611489732738418, -0.514292191384763, -0.601318425325681)
+Printing observations
+ObservationSet
+observations.size() = 1032
+view_indexes.size() = 1032
+point_indexes.size() = 1032
+obs[0] = (900.000000, 595.000000), view=0, point=0
+obs[1] = (855.000000, 624.000000), view=1, point=0
+obs[2] = (789.000000, 658.000000), view=0, point=1
+obs[3] = (743.000000, 688.000000), view=1, point=1
+obs[4] = (742.000000, 658.000000), view=0, point=2
+obs[5] = (695.000000, 688.000000), view=1, point=2
+obs[6] = (610.000000, 658.000000), view=0, point=3
+obs[7] = (557.000000, 688.000000), view=1, point=3
+obs[8] = (618.000000, 657.000000), view=0, point=4
+obs[9] = (566.000000, 688.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 516
+observations_indexes.size(): 516
+last_sz: 0
+  point[0] = (7.803321, 8.579287, 32.568178)
+  point[1] = (3.851244, 10.044956, 30.619433)
+  point[2] = (2.375224, 10.043986, 30.606713)
+  point[3] = (-1.907303, 10.816158, 32.965602)
+  point[4] = (-1.620171, 10.752075, 32.821088)
+  point[5] = (4.461135, 9.941280, 30.445330)
+  point[6] = (0.212248, 10.032675, 30.747762)
+  point[7] = (4.840677, 9.984236, 30.677082)
+  point[8] = (2.219887, 9.954848, 30.614807)
+  point[9] = (1.724532, -7.259514, 33.578272)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          520                      518
+Parameters                               1562                     1555
+Effective parameters                     1560                     1554
+Residual blocks                          1032                     1032
+Residuals                                2064                     2064
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    516,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          2.030529e+05
+Final                            6.048971e+01
+Change                           2.029924e+05
+
+Minimizer iterations                        9
+Successful steps                            9
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.001031
+
+  Residual only evaluation           0.000520 (9)
+  Jacobian & residual evaluation     0.003276 (9)
+  Linear solver                      0.001733 (9)
+Minimizer                            0.006383
+
+Postprocessor                        0.000019
+Total                                0.007434
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 3.811126e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 516
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 516
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999150655556496, 0.020613480761567, 0.033429889141426, -0.012469740330476)
+  t = (-1.787440616453570, 0.703327923733825, 0.673383052924780)
+  R =
+    0.997453896176165 -0.023540085698272 -0.067317080806481 
+    0.026296511204985 0.998839179973966 0.040358221558701 
+    0.066288901796865 -0.042025669706181 0.996915053845769 
+  t_cv = (-1.844776188051275, 0.682684576840083, 0.523260399955544)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 90
+Recovering pose
+ninliers b4 recover = 48, after = 48
+Adding first view
+Adding second view
+number of corrp after masking = 48
+Triangulating
+Adding points
+Adding observations
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 317
+Recovering pose
+ninliers b4 recover = 247, after = 174
+Adding first view
+Adding second view
+number of corrp after masking = 174
+Triangulating
+Adding points
+Adding observations
+key val = 0
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 372
+Recovering pose
+ninliers b4 recover = 278, after = 118
+Adding first view
+Adding second view
+number of corrp after masking = 118
+Triangulating
+Adding points
+Adding observations
+key val = 0
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 378
+Recovering pose
+ninliers b4 recover = 278, after = 32
+Adding first view
+Adding second view
+number of corrp after masking = 32
+Triangulating
+Adding points
+Adding observations
+key val = 0
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 340
+Recovering pose
+ninliers b4 recover = 224, after = 150
+Adding first view
+Adding second view
+number of corrp after masking = 150
+Triangulating
+Adding points
+Adding observations
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+key val = 6168961144
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 150
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 150
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999668833396108, -0.005143782906100, 0.019381239980769, -0.016128625815223)
+  t = (-0.485238935348769, 0.365868125550688, 0.794155960959570)
+  R =
+    0.998728469932241 -0.032445954887797 -0.038583718823156 
+    0.032047183324148 0.999426817853455 -0.010909344448938 
+    0.038915567422225 0.009658973378998 0.999195818068445 
+  t_cv = (0.527134370448324, -0.341444154431711, -0.778167877065395)
+Printing observations
+ObservationSet
+observations.size() = 300
+view_indexes.size() = 300
+point_indexes.size() = 300
+obs[0] = (603.000000, 200.000000), view=0, point=0
+obs[1] = (587.000000, 170.000000), view=1, point=0
+obs[2] = (498.000000, 539.000000), view=0, point=1
+obs[3] = (467.000000, 517.000000), view=1, point=1
+obs[4] = (570.000000, 222.000000), view=0, point=2
+obs[5] = (552.000000, 192.000000), view=1, point=2
+obs[6] = (524.000000, 527.000000), view=0, point=3
+obs[7] = (495.000000, 504.000000), view=1, point=3
+obs[8] = (546.000000, 293.000000), view=0, point=4
+obs[9] = (522.000000, 265.000000), view=1, point=4
+Printing points
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          154                      152
+Parameters                                464                      457
+Effective parameters                      462                      456
+Residual blocks                           300                      300
+Residuals                                 600                      600
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    150,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          1.103724e+05
+Final                            2.176511e+01
+Change                           1.103507e+05
+
+Minimizer iterations                        7
+Successful steps                            7
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.002360
+
+  Residual only evaluation           0.000078 (7)
+  Jacobian & residual evaluation     0.000645 (7)
+  Linear solver                      0.000681 (7)
+Minimizer                            0.001645
+
+Postprocessor                        0.000016
+Total                                0.004021
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 6.336991e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 150
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 150
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999667007247331, -0.004322795202988, 0.020150892643766, -0.015528347898476)
+  t = (-1.546462118557293, 0.420190076821025, 0.819735097431173)
+  R =
+    0.998705623874407 -0.031220570506442 -0.040154113349499 
+    0.030872137778217 0.999480367706354 -0.009268531629903 
+    0.040422616820722 0.008016891344154 0.999150509934585 
+  t_cv = (-1.590494724850210, 0.364631400216063, 0.759895313153194)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 132 2D<->3D correspondences
+Solving PnP
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 249
+Recovering pose
+ninliers b4 recover = 153, after = 153
+Adding first view
+Adding second view
+number of corrp after masking = 153
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 153
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 153
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.998949883755568, 0.016617710289315, 0.031654268140256, -0.028652901388541)
+  t = (-0.321792226462564, 0.816731207195487, 0.478957094301011)
+  R =
+    0.996354037101047 -0.056193582107937 -0.064194346186599 
+    0.058297667937436 0.997805725893518 0.031386546276491 
+    0.062289763729707 -0.035014492770689 0.997443718026490 
+  t_cv = (0.397260373615450, -0.811212147697152, -0.429090954208414)
+Printing observations
+ObservationSet
+observations.size() = 306
+view_indexes.size() = 306
+point_indexes.size() = 306
+obs[0] = (651.000000, 278.000000), view=0, point=0
+obs[1] = (626.400024, 229.200012), view=1, point=0
+obs[2] = (562.000000, 687.000000), view=0, point=1
+obs[3] = (508.000000, 653.000000), view=1, point=1
+obs[4] = (656.000000, 685.000000), view=0, point=2
+obs[5] = (609.000000, 654.000000), view=1, point=2
+obs[6] = (728.000000, 684.000000), view=0, point=3
+obs[7] = (685.200012, 656.400024), view=1, point=3
+obs[8] = (652.000000, 684.000000), view=0, point=4
+obs[9] = (604.000000, 652.000000), view=1, point=4
+Printing points
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          157                      155
+Parameters                                473                      466
+Effective parameters                      471                      465
+Residual blocks                           306                      306
+Residuals                                 612                      612
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    153,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          5.846076e+05
+Final                            1.753787e+01
+Change                           5.845901e+05
+
+Minimizer iterations                        6
+Successful steps                            6
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.002658
+
+  Residual only evaluation           0.000070 (6)
+  Jacobian & residual evaluation     0.000473 (6)
+  Linear solver                      0.000933 (6)
+Minimizer                            0.001955
+
+Postprocessor                        0.000040
+Total                                0.004654
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 2.113700e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 153
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 153
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.998872297664095, 0.019792399483507, 0.032373662982071, -0.028536640080083)
+  t = (-1.353672566304037, 0.929464511638202, 0.500943800197088)
+  R =
+    0.996275212236126 -0.055727413547840 -0.065803927414173 
+    0.058290423429783 0.997587842191250 0.037692487959566 
+    0.063544693092645 -0.041387830233939 0.997120413735617 
+  t_cv = (-1.433391145977628, 0.867198167640703, 0.375014062120937)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 126 2D<->3D correspondences
+Solving PnP
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 253
+Recovering pose
+ninliers b4 recover = 173, after = 119
+Adding first view
+Adding second view
+number of corrp after masking = 119
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 119
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 119
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999300708925779, 0.012853178360191, 0.028611162093226, -0.020354123664556)
+  t = (-0.334308421690337, 0.690681308574969, 0.641246605583283)
+  R =
+    0.997534222107046 -0.039944291676154 -0.057705539489553 
+    0.041415269154061 0.998841010911778 0.024523670231713 
+    0.056659078762249 -0.026853090757442 0.998032394419433 
+  t_cv = (0.398076348340719, -0.691761063502648, -0.602496350124549)
+Printing observations
+ObservationSet
+observations.size() = 238
+view_indexes.size() = 238
+point_indexes.size() = 238
+obs[0] = (834.000000, 625.000000), view=0, point=0
+obs[1] = (794.000000, 627.000000), view=1, point=0
+obs[2] = (760.000000, 522.000000), view=0, point=1
+obs[3] = (715.200012, 524.400024), view=1, point=1
+obs[4] = (656.000000, 248.000000), view=0, point=2
+obs[5] = (624.000000, 230.000000), view=1, point=2
+obs[6] = (660.000000, 261.000000), view=0, point=3
+obs[7] = (627.000000, 244.000000), view=1, point=3
+obs[8] = (1225.000000, 460.000000), view=0, point=4
+obs[9] = (1164.000000, 491.000000), view=1, point=4
+Printing points
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          123                      121
+Parameters                                371                      364
+Effective parameters                      369                      363
+Residual blocks                           238                      238
+Residuals                                 476                      476
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    119,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          1.391614e+05
+Final                            1.148408e+01
+Change                           1.391499e+05
+
+Minimizer iterations                       15
+Successful steps                           15
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.002401
+
+  Residual only evaluation           0.000132 (15)
+  Jacobian & residual evaluation     0.000846 (15)
+  Linear solver                      0.000948 (15)
+Minimizer                            0.002274
+
+Postprocessor                        0.000015
+Total                                0.004690
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 1.738313e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 119
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 119
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999067229127143, 0.020430328190375, 0.032929725489189, -0.019050106389535)
+  t = (-1.592944715287284, 1.178303314126289, 0.732813078471503)
+  R =
+    0.997105453251508 -0.036719143812415 -0.066576419052003 
+    0.039410204208267 0.998439390273162 0.039567913202738 
+    0.065019619349604 -0.042077172298527 0.996996469738480 
+  t_cv = (-1.680388221786277, 1.142682050273939, 0.577459721612917)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 99 2D<->3D correspondences
+Solving PnP
+Creating cam
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 254
+Recovering pose
+ninliers b4 recover = 149, after = 138
+Adding first view
+Adding second view
+number of corrp after masking = 138
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 138
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 138
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999750376868310, 0.001271618647496, 0.019739392999155, -0.010388614041979)
+  t = (-0.366178947935639, 0.681257792016490, 0.633877589843311)
+  R =
+    0.999004866124623 -0.020721839646760 -0.039495351890789 
+    0.020822243567672 0.999780919368604 0.002132472573552 
+    0.039442510469439 -0.002952732314716 0.999217478700080 
+  t_cv = (0.404966684050917, -0.674835600961332, -0.616926978242938)
+Printing observations
+ObservationSet
+observations.size() = 276
+view_indexes.size() = 276
+point_indexes.size() = 276
+obs[0] = (1201.000000, 656.000000), view=0, point=0
+obs[1] = (1169.000000, 646.000000), view=1, point=0
+obs[2] = (822.000000, 605.000000), view=0, point=1
+obs[3] = (806.000000, 579.000000), view=1, point=1
+obs[4] = (153.000000, 546.000000), view=0, point=2
+obs[5] = (100.800003, 516.000000), view=1, point=2
+obs[6] = (746.000000, 298.000000), view=0, point=3
+obs[7] = (731.000000, 264.000000), view=1, point=3
+obs[8] = (744.000000, 306.000000), view=0, point=4
+obs[9] = (730.000000, 270.000000), view=1, point=4
+Printing points
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          142                      140
+Parameters                                428                      421
+Effective parameters                      426                      420
+Residual blocks                           276                      276
+Residuals                                 552                      552
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    138,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          1.702291e+05
+Final                            1.753134e+01
+Change                           1.702116e+05
+
+Minimizer iterations                        7
+Successful steps                            7
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.002557
+
+  Residual only evaluation           0.000072 (7)
+  Jacobian & residual evaluation     0.000503 (7)
+  Linear solver                      0.001072 (7)
+Minimizer                            0.002321
+
+Postprocessor                        0.000116
+Total                                0.004994
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 2.042723e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 138
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 138
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999743075304187, 0.001540948478468, 0.020051670357200, -0.010456546992152)
+  t = (-1.383962603228679, 0.700393963146308, 0.642883388367514)
+  R =
+    0.998977182281774 -0.020845923712137 -0.040125263176141 
+    0.020969518075848 0.999776572205575 0.002661762674776 
+    0.040060811175430 -0.003500447608220 0.999191111987346 
+  t_cv = (-1.422943286030740, 0.672927649850582, 0.584469010806221)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 102 2D<->3D correspondences
+Solving PnP
+Creating cam
+Adding View
+Printing View
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 138
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 138
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999743075304187, 0.001540948478468, 0.020051670357200, -0.010456546992152)
+  t = (-1.383962603228679, 0.700393963146308, 0.642883388367514)
+  R =
+    0.998977182281774 -0.020845923712137 -0.040125263176141 
+    0.020969518075848 0.999776572205575 0.002661762674776 
+    0.040060811175430 -0.003500447608220 0.999191111987346 
+  t_cv = (-1.422943286030740, 0.672927649850582, 0.584469010806221)
+view[2]
+  obs count: 0
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+  R: empty
+  t_cv: empty
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 316
+Recovering pose
+ninliers b4 recover = 167, after = 167
+Adding first view
+Adding second view
+number of corrp after masking = 167
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 167
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 167
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999196609935092, 0.012801802436808, 0.034364885028307, -0.016164876293395)
+  t = (-0.590404216912157, 0.733694049613476, -0.336327076242934)
+  R =
+    0.997115502902821 -0.031423914246970 -0.069088432347633 
+    0.033183644122554 0.999149621257576 0.024472026961196 
+    0.068260674136739 -0.026694043422473 0.997310337062720 
+  t_cv = (0.588520426107190, -0.705247763090176, 0.395309120449950)
+Printing observations
+ObservationSet
+observations.size() = 334
+view_indexes.size() = 334
+point_indexes.size() = 334
+obs[0] = (1225.000000, 480.000000), view=0, point=0
+obs[1] = (1174.000000, 480.000000), view=1, point=0
+obs[2] = (1231.000000, 496.000000), view=0, point=1
+obs[3] = (1179.000000, 496.000000), view=1, point=1
+obs[4] = (752.000000, 591.000000), view=0, point=2
+obs[5] = (717.000000, 570.000000), view=1, point=2
+obs[6] = (769.000000, 597.000000), view=0, point=3
+obs[7] = (734.000000, 577.000000), view=1, point=3
+obs[8] = (662.000000, 323.000000), view=0, point=4
+obs[9] = (641.000000, 292.000000), view=1, point=4
+Printing points
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          171                      169
+Parameters                                515                      508
+Effective parameters                      513                      507
+Residual blocks                           334                      334
+Residuals                                 668                      668
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    167,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          3.771807e+05
+Final                            1.818166e+01
+Change                           3.771625e+05
+
+Minimizer iterations                        6
+Successful steps                            6
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.002707
+
+  Residual only evaluation           0.000071 (6)
+  Jacobian & residual evaluation     0.000490 (6)
+  Linear solver                      0.001064 (6)
+Minimizer                            0.002204
+
+Postprocessor                        0.000041
+Total                                0.004953
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 4.936296e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 167
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 167
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999289682785840, 0.006699922124712, 0.032567572033865, -0.017736802787337)
+  t = (-1.523559512173128, 0.580097242949620, 0.262554192013874)
+  R =
+    0.997249518157404 -0.035012007669150 -0.065326547848485 
+    0.035884808454821 0.999281033740812 0.012235036904532 
+    0.064851207058819 -0.014545615314240 0.997788928590684 
+  t_cv = (-1.556831117505201, 0.528219891569767, 0.154731121215347)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 82 2D<->3D correspondences
+Solving PnP
+Creating cam
+Adding View
+Printing View
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 167
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 167
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999289682785840, 0.006699922124712, 0.032567572033865, -0.017736802787337)
+  t = (-1.523559512173128, 0.580097242949620, 0.262554192013874)
+  R =
+    0.997249518157404 -0.035012007669150 -0.065326547848485 
+    0.035884808454821 0.999281033740812 0.012235036904532 
+    0.064851207058819 -0.014545615314240 0.997788928590684 
+  t_cv = (-1.556831117505201, 0.528219891569767, 0.154731121215347)
+view[2]
+  obs count: 0
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+  R: empty
+  t_cv: empty
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 311
+Recovering pose
+ninliers b4 recover = 233, after = 54
+Adding first view
+Adding second view
+number of corrp after masking = 54
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 54
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 54
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999612935207751, 0.000198204064479, 0.025376452743947, -0.011400707286321)
+  t = (-0.387320901552869, 0.415976077147709, 0.822767538531435)
+  R =
+    0.998452119039012 -0.022782529515696 -0.050737780158119 
+    0.022802648380000 0.999739969177041 -0.000182364326071 
+    0.050728741492030 -0.000974873712726 0.998711992722566 
+  t_cv = (0.437943760650248, -0.406885924770026, -0.801653981922100)
+Printing observations
+ObservationSet
+observations.size() = 108
+view_indexes.size() = 108
+point_indexes.size() = 108
+obs[0] = (813.000000, 621.000000), view=0, point=0
+obs[1] = (782.400024, 613.200012), view=1, point=0
+obs[2] = (823.200012, 565.200012), view=0, point=1
+obs[3] = (792.000061, 556.800049), view=1, point=1
+obs[4] = (817.200012, 621.600037), view=0, point=2
+obs[5] = (787.200012, 614.400024), view=1, point=2
+obs[6] = (813.600037, 620.400024), view=0, point=3
+obs[7] = (782.400024, 613.200012), view=1, point=3
+obs[8] = (823.680054, 561.600037), view=0, point=4
+obs[9] = (792.000061, 552.960022), view=1, point=4
+Printing points
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                           58                       56
+Parameters                                176                      169
+Effective parameters                      174                      168
+Residual blocks                           108                      108
+Residuals                                 216                      216
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                     54,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          5.318705e+04
+Final                            6.249572e+00
+Change                           5.318080e+04
+
+Minimizer iterations                       11
+Successful steps                           11
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.002150
+
+  Residual only evaluation           0.000045 (11)
+  Jacobian & residual evaluation     0.000299 (11)
+  Linear solver                      0.000682 (11)
+Minimizer                            0.001240
+
+Postprocessor                        0.000015
+Total                                0.003405
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 3.317174e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 54
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 54
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999601882670641, 0.001584801117008, 0.025443299138778, -0.012091447211300)
+  t = (-1.416055831619071, 0.510127418146436, 0.894399346740147)
+  R =
+    0.998412870866542 -0.024092621655465 -0.050904664519044 
+    0.024253911931047 0.999702570619512 0.002553047743603 
+    0.050828014362857 -0.003783632977275 0.998700253868708 
+  t_cv = (-1.471627773727445, 0.477914242069028, 0.819331413579339)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 38 2D<->3D correspondences
+Solving PnP
+Creating cam
+Adding View
+Printing View
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 54
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 54
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999601882670641, 0.001584801117008, 0.025443299138778, -0.012091447211300)
+  t = (-1.416055831619071, 0.510127418146436, 0.894399346740147)
+  R =
+    0.998412870866542 -0.024092621655465 -0.050904664519044 
+    0.024253911931047 0.999702570619512 0.002553047743603 
+    0.050828014362857 -0.003783632977275 0.998700253868708 
+  t_cv = (-1.471627773727445, 0.477914242069028, 0.819331413579339)
+view[2]
+  obs count: 38
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999600672734186, 0.001454473698272, 0.025524679547728, -0.012036208273789)
+  t = (-1.419370672683811, 0.503722946034057, 0.902222044167226)
+  R =
+    0.998407240848752 -0.023988553825179 -0.051063986391189 
+    0.024137053725415 0.999706028393302 0.002293345056217 
+    0.050993960997744 -0.003522226492850 0.998692750480494 
+  t_cv = (1.475264596244982, -0.471384546072035, -0.826889055803743)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 189
+Recovering pose
+ninliers b4 recover = 106, after = 25
+Adding first view
+Adding second view
+number of corrp after masking = 25
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 25
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 25
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999135000543495, 0.013699938828947, 0.035456967319256, -0.016863150166973)
+  t = (-0.395088673417614, 0.471279221730318, 0.788543489797726)
+  R =
+    0.996916875269934 -0.032725610535820 -0.071314642375093 
+    0.034668643669155 0.999055891685058 0.026180344449872 
+    0.070390545872090 -0.028572009107352 0.997110230289209 
+  t_cv = (0.465528162994135, -0.477781434838597, -0.744988879100136)
+Printing observations
+ObservationSet
+observations.size() = 50
+view_indexes.size() = 50
+point_indexes.size() = 50
+obs[0] = (807.600037, 526.800049), view=0, point=0
+obs[1] = (759.600037, 540.000000), view=1, point=0
+obs[2] = (658.080017, 299.520020), view=0, point=1
+obs[3] = (612.000000, 298.080017), view=1, point=1
+obs[4] = (804.960022, 522.720032), view=0, point=2
+obs[5] = (757.440002, 535.679993), view=1, point=2
+obs[6] = (803.520020, 527.040039), view=0, point=3
+obs[7] = (756.000000, 540.000000), view=1, point=3
+obs[8] = (806.400024, 528.480042), view=0, point=4
+obs[9] = (758.880005, 541.440002), view=1, point=4
+Printing points
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                           29                       27
+Parameters                                 89                       82
+Effective parameters                       87                       81
+Residual blocks                            50                       50
+Residuals                                 100                      100
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                     25,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          3.290529e+04
+Final                            1.651566e+00
+Change                           3.290364e+04
+
+Minimizer iterations                       15
+Successful steps                           15
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.000323
+
+  Residual only evaluation           0.000035 (15)
+  Jacobian & residual evaluation     0.000234 (15)
+  Linear solver                      0.000151 (15)
+Minimizer                            0.000566
+
+Postprocessor                        0.000004
+Total                                0.000893
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 5.340091e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 25
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 25
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999012084175438, 0.015234435707647, 0.037570183311807, -0.018200246317933)
+  t = (-1.509356690225658, 0.576732465012319, 0.902302969779141)
+  R =
+    0.996514464719768 -0.035219810928792 -0.075620675231151 
+    0.037509253097545 0.998873326005272 0.029071197554097 
+    0.074511593301576 -0.031806343916036 0.996712786589174 
+  t_cv = (-1.592640942443423, 0.545698861322025, 0.768528584377423)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 14 2D<->3D correspondences
+Solving PnP
+Creating cam
+Adding View
+Printing View
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 25
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 25
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999012084175438, 0.015234435707647, 0.037570183311807, -0.018200246317933)
+  t = (-1.509356690225658, 0.576732465012319, 0.902302969779141)
+  R =
+    0.996514464719768 -0.035219810928792 -0.075620675231151 
+    0.037509253097545 0.998873326005272 0.029071197554097 
+    0.074511593301576 -0.031806343916036 0.996712786589174 
+  t_cv = (-1.592640942443423, 0.545698861322025, 0.768528584377423)
+view[2]
+  obs count: 14
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.997736144161630, 0.020027845525601, 0.060760397421662, -0.020727907329199)
+  t = (-1.854587362169515, 1.162801517216817, 2.185270780986739)
+  R =
+    0.991757055925828 -0.038928164963078 -0.122075959934552 
+    0.043795764377619 0.998338478522710 0.037446138967072 
+    0.120415418630319 -0.042483882515238 0.991814119017529 
+  t_cv = (2.151334859849902, -1.161476379736362, -1.894661177810988)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 213
+Recovering pose
+ninliers b4 recover = 141, after = 121
+Adding first view
+Adding second view
+number of corrp after masking = 121
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 121
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 121
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999497652207546, 0.029515453449055, 0.003391175795310, -0.011035450422436)
+  t = (0.843247061743458, -0.136925420289714, 0.519794018953190)
+  R =
+    0.999733437521399 -0.021859629393907 -0.007430377137736 
+    0.022259997759204 0.998014113683341 0.058926406547617 
+    0.006127511844805 -0.059076099157068 0.998234675868844 
+  t_cv = (-0.842153157063983, 0.087253230584439, -0.532132440093389)
+Printing observations
+ObservationSet
+observations.size() = 242
+view_indexes.size() = 242
+point_indexes.size() = 242
+obs[0] = (479.000000, 158.000000), view=0, point=0
+obs[1] = (425.000000, 214.000000), view=1, point=0
+obs[2] = (485.000000, 163.000000), view=0, point=1
+obs[3] = (463.000000, 218.000000), view=1, point=1
+obs[4] = (1033.000000, 126.000000), view=0, point=2
+obs[5] = (988.000000, 195.000000), view=1, point=2
+obs[6] = (1086.000000, 124.000000), view=0, point=3
+obs[7] = (1049.000000, 194.000000), view=1, point=3
+obs[8] = (431.000000, 173.000000), view=0, point=4
+obs[9] = (346.000000, 228.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 121
+observations_indexes.size(): 121
+last_sz: 0
+  point[0] = (-3.465868, -3.312533, 18.034619)
+  point[1] = (-8.571533, -8.237591, 46.075229)
+  point[2] = (6.432599, -3.699367, 17.099171)
+  point[3] = (9.153043, -4.644133, 21.258183)
+  point[4] = (-2.864899, -2.002313, 11.865648)
+  point[5] = (1.905588, -1.079911, 5.266476)
+  point[6] = (-2.605053, -2.533693, 13.341426)
+  point[7] = (4.943038, -2.646246, 12.176539)
+  point[8] = (-20.970818, 6.754433, 36.866498)
+  point[9] = (9.817078, -5.241936, 29.840263)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          125                      123
+Parameters                                377                      370
+Effective parameters                      375                      369
+Residual blocks                           242                      242
+Residuals                                 484                      484
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    121,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          3.414100e+05
+Final                            8.885948e+00
+Change                           3.414011e+05
+
+Minimizer iterations                       51
+Successful steps                           50
+Unsuccessful steps                          1
+
+Time (in seconds):
+Preprocessor                         0.002211
+
+  Residual only evaluation           0.000448 (50)
+  Jacobian & residual evaluation     0.002807 (50)
+  Linear solver                      0.001994 (50)
+Minimizer                            0.006176
+
+Postprocessor                        0.000017
+Total                                0.008404
+
+Termination:                   NO_CONVERGENCE (Maximum number of iterations reached. Number of iterations: 50.)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 121
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 121
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999474470995983, 0.029460104502777, 0.009434568777556, -0.009688807045646)
+  t = (-0.567784431622978, -0.085148254925838, 0.353090029298860)
+  R =
+    0.999634231860028 -0.018811543828807 -0.019430087812191 
+    0.019923317357309 0.998076458521435 0.058706425293910 
+    0.018288354739903 -0.059072064159688 0.998086182309334 
+  t_cv = (-0.572835554312920, -0.075567964720367, 0.347060319431139)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 49 2D<->3D correspondences
+Solving PnP
+Creating cam
+Adding View
+Pre slam 
+Printing views
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 121
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 121
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999474470995983, 0.029460104502777, 0.009434568777556, -0.009688807045646)
+  t = (-0.567784431622978, -0.085148254925838, 0.353090029298860)
+  R =
+    0.999634231860028 -0.018811543828807 -0.019430087812191 
+    0.019923317357309 0.998076458521435 0.058706425293910 
+    0.018288354739903 -0.059072064159688 0.998086182309334 
+  t_cv = (-0.572835554312920, -0.075567964720367, 0.347060319431139)
+view[2]
+  obs count: 49
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999507133921247, 0.018918519459571, 0.020588478061715, -0.014272120833818)
+  t = (-0.967351679198960, -0.187548433906590, 0.098398632837606)
+  R =
+    0.998744842276014 -0.027751166133468 -0.041696676189978 
+    0.029309180224882 0.998876792376725 0.037230707832776 
+    0.040616646607082 -0.038406072819500 0.998436408385120 
+  t_cv = (0.965035708450556, 0.212026612032056, -0.066157195071393)
+Printing observations
+ObservationSet
+observations.size() = 291
+view_indexes.size() = 291
+point_indexes.size() = 291
+obs[0] = (479.000000, 158.000000), view=0, point=0
+obs[1] = (425.000000, 214.000000), view=1, point=0
+obs[2] = (485.000000, 163.000000), view=0, point=1
+obs[3] = (463.000000, 218.000000), view=1, point=1
+obs[4] = (1033.000000, 126.000000), view=0, point=2
+obs[5] = (988.000000, 195.000000), view=1, point=2
+obs[6] = (1086.000000, 124.000000), view=0, point=3
+obs[7] = (1049.000000, 194.000000), view=1, point=3
+obs[8] = (431.000000, 173.000000), view=0, point=4
+obs[9] = (346.000000, 228.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 121
+observations_indexes.size(): 121
+last_sz: 0
+  point[0] = (-3.433323, -2.319484, 12.704912)
+  point[1] = (-13.112909, -11.615167, 65.322987)
+  point[2] = (3.791272, -2.750445, 12.868234)
+  point[3] = (7.413133, -4.257556, 19.749046)
+  point[4] = (-2.830719, -1.275319, 7.610481)
+  point[5] = (0.020774, -0.577811, 2.849551)
+  point[6] = (-2.692582, -1.641298, 8.699172)
+  point[7] = (2.140351, -1.677366, 7.817935)
+  point[8] = (-21.266157, 6.567236, 35.583924)
+  point[9] = (11.254622, -6.522942, 37.587330)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          127                      125
+Parameters                                384                      377
+Effective parameters                      381                      375
+Residual blocks                           291                      291
+Residuals                                 582                      582
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    121,4
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          2.437024e+05
+Final                            1.544175e+03
+Change                           2.421582e+05
+
+Minimizer iterations                       51
+Successful steps                           31
+Unsuccessful steps                         20
+
+Time (in seconds):
+Preprocessor                         0.000265
+
+  Residual only evaluation           0.000623 (50)
+  Jacobian & residual evaluation     0.002549 (31)
+  Linear solver                      0.002306 (50)
+Minimizer                            0.006435
+
+Postprocessor                        0.000006
+Total                                0.006706
+
+Termination:                   NO_CONVERGENCE (Maximum number of iterations reached. Number of iterations: 50.)
+
+After slam 
+Printing views
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 121
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 121
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999513918954904, 0.029196996712382, 0.003560265938701, -0.010333716893399)
+  t = (-0.619287800832441, -0.064498876830518, 0.254392812451681)
+  R =
+    0.999761077603226 -0.020449489593168 -0.007720497718151 
+    0.020865285884797 0.998081499356289 0.058292027650860 
+    0.006513643725498 -0.058439190771963 0.998269719778846 
+  t_cv = (-0.619784909124303, -0.062467679845522, 0.253688083669399)
+view[2]
+  obs count: 49
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999774756721596, 0.015846459497661, 0.006885079016055, -0.012325633071254)
+  t = (-0.749973582179752, -0.131672591235482, 0.645890415636327)
+  R =
+    0.999601348912671 -0.024427505358972 -0.014157691687064 
+    0.024863921862037 0.999193936981564 0.031516054463108 
+    0.013376421106077 -0.031855506293582 0.999402970816663 
+  t_cv = (-0.755602488835922, -0.129857821858660, 0.639667334814080)
+Printing observations
+ObservationSet
+observations.size() = 291
+view_indexes.size() = 291
+point_indexes.size() = 291
+obs[0] = (479.000000, 158.000000), view=0, point=0
+obs[1] = (425.000000, 214.000000), view=1, point=0
+obs[2] = (485.000000, 163.000000), view=0, point=1
+obs[3] = (463.000000, 218.000000), view=1, point=1
+obs[4] = (1033.000000, 126.000000), view=0, point=2
+obs[5] = (988.000000, 195.000000), view=1, point=2
+obs[6] = (1086.000000, 124.000000), view=0, point=3
+obs[7] = (1049.000000, 194.000000), view=1, point=3
+obs[8] = (431.000000, 173.000000), view=0, point=4
+obs[9] = (346.000000, 228.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 121
+observations_indexes.size(): 121
+last_sz: 0
+  point[0] = (-2.856930, -1.760230, 9.746604)
+  point[1] = (-4.985427, -3.821293, 21.492435)
+  point[2] = (1.929974, -1.680316, 7.869092)
+  point[3] = (3.160597, -2.103151, 9.766539)
+  point[4] = (-2.320808, -0.920138, 5.490720)
+  point[5] = (-0.141431, -0.485715, 2.396706)
+  point[6] = (-2.199228, -1.163002, 6.163516)
+  point[7] = (1.231608, -1.190933, 5.555518)
+  point[8] = (-10.033517, 2.928334, 15.861944)
+  point[9] = (3.551305, -2.422976, 13.960144)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 422
+Recovering pose
+ninliers b4 recover = 297, after = 297
+Adding first view
+Adding second view
+number of corrp after masking = 297
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 297
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 297
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999614065004336, -0.022121202868548, -0.013425671481853, 0.010105680304467)
+  t = (0.700445442708975, -0.329553095232533, 0.633064719606839)
+  R =
+    0.999435253141690 0.020797544342558 0.026393880482496 
+    -0.019609576332572 0.998817055218465 -0.044496682132167 
+    -0.027288079699056 0.043953979956693 0.998660807457820 
+  t_cv = (-0.709905007781450, 0.371067970091327, -0.598617942847624)
+Printing observations
+ObservationSet
+observations.size() = 594
+view_indexes.size() = 594
+point_indexes.size() = 594
+obs[0] = (703.000000, 688.000000), view=0, point=0
+obs[1] = (678.000000, 688.000000), view=1, point=0
+obs[2] = (728.000000, 616.000000), view=0, point=1
+obs[3] = (706.000000, 610.000000), view=1, point=1
+obs[4] = (732.000000, 687.000000), view=0, point=2
+obs[5] = (707.000000, 687.000000), view=1, point=2
+obs[6] = (628.000000, 582.000000), view=0, point=3
+obs[7] = (601.200012, 576.000000), view=1, point=3
+obs[8] = (688.000000, 613.000000), view=0, point=4
+obs[9] = (663.600037, 609.600037), view=1, point=4
+Printing points
+PointSet
+points.size(): 297
+observations_indexes.size(): 297
+last_sz: 0
+  point[0] = (0.444853, 4.219766, 11.745988)
+  point[1] = (0.797058, 3.594718, 12.605785)
+  point[2] = (0.781762, 4.148432, 11.586526)
+  point[3] = (-0.498048, 3.154199, 12.609690)
+  point[4] = (0.276930, 3.468090, 12.272475)
+  point[5] = (0.834171, 3.601259, 12.584852)
+  point[6] = (-0.041412, 3.091826, 12.443134)
+  point[7] = (-0.263828, 3.117331, 12.609114)
+  point[8] = (-0.334769, 3.044878, 12.411079)
+  point[9] = (-1.037564, 3.684131, 13.063677)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          301                      299
+Parameters                                905                      898
+Effective parameters                      903                      897
+Residual blocks                           594                      594
+Residuals                                1188                     1188
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    297,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          8.823157e+05
+Final                            3.723608e+01
+Change                           8.822784e+05
+
+Minimizer iterations                        8
+Successful steps                            8
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.002690
+
+  Residual only evaluation           0.000177 (8)
+  Jacobian & residual evaluation     0.001130 (8)
+  Linear solver                      0.001026 (8)
+Minimizer                            0.002731
+
+Postprocessor                        0.000019
+Total                                0.005440
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 3.494727e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 297
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 297
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999604580481405, -0.022389290824784, -0.013708970307596, 0.010073056639506)
+  t = (-0.277554240848358, -0.344813009318553, 0.648101234878283)
+  R =
+    0.999421195326086 0.020752015358847 0.026956041837120 
+    -0.019524278866347 0.998794506372601 -0.045037057793125 
+    -0.027858156215506 0.044484692855614 0.998621567578937 
+  t_cv = (-0.267078912019731, -0.368166865805324, 0.639601119711670)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 155 2D<->3D correspondences
+Solving PnP
+Creating cam
+Adding View
+Pre slam 
+Printing views
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 297
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 297
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999604580481405, -0.022389290824784, -0.013708970307596, 0.010073056639506)
+  t = (-0.277554240848358, -0.344813009318553, 0.648101234878283)
+  R =
+    0.999421195326086 0.020752015358847 0.026956041837120 
+    -0.019524278866347 0.998794506372601 -0.045037057793125 
+    -0.027858156215506 0.044484692855614 0.998621567578937 
+  t_cv = (-0.267078912019731, -0.368166865805324, 0.639601119711670)
+view[2]
+  obs count: 155
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999773436708847, -0.016219523399600, -0.013503113557984, 0.002769158050784)
+  t = (-0.329086475826297, 0.030698731902922, 1.220436558080183)
+  R =
+    0.999619995375860 0.005975089455087 0.026910279648667 
+    -0.005099033189802 0.999458517648759 -0.032506481813234 
+    -0.027089937343875 0.032356912790755 0.999109185969860 
+  t_cv = (0.295935704703069, 0.007311966835494, -1.229257624273170)
+Printing observations
+ObservationSet
+observations.size() = 749
+view_indexes.size() = 749
+point_indexes.size() = 749
+obs[0] = (703.000000, 688.000000), view=0, point=0
+obs[1] = (678.000000, 688.000000), view=1, point=0
+obs[2] = (728.000000, 616.000000), view=0, point=1
+obs[3] = (706.000000, 610.000000), view=1, point=1
+obs[4] = (732.000000, 687.000000), view=0, point=2
+obs[5] = (707.000000, 687.000000), view=1, point=2
+obs[6] = (628.000000, 582.000000), view=0, point=3
+obs[7] = (601.200012, 576.000000), view=1, point=3
+obs[8] = (688.000000, 613.000000), view=0, point=4
+obs[9] = (663.600037, 609.600037), view=1, point=4
+Printing points
+PointSet
+points.size(): 297
+observations_indexes.size(): 297
+last_sz: 0
+  point[0] = (-0.548958, 4.313295, 12.025207)
+  point[1] = (-0.188683, 3.673229, 12.897223)
+  point[2] = (-0.204941, 4.241348, 11.866572)
+  point[3] = (-1.510556, 3.223484, 12.893875)
+  point[4] = (-0.719214, 3.544792, 12.555846)
+  point[5] = (-0.150820, 3.679976, 12.876439)
+  point[6] = (-1.044024, 3.160355, 12.726366)
+  point[7] = (-1.271256, 3.185912, 12.893596)
+  point[8] = (-1.343685, 3.112459, 12.692948)
+  point[9] = (-2.061010, 3.762424, 13.351221)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          303                      301
+Parameters                                912                      905
+Effective parameters                      909                      903
+Residual blocks                           749                      749
+Residuals                                1498                     1498
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    297,4
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          3.361674e+03
+Final                            1.465088e+02
+Change                           3.215166e+03
+
+Minimizer iterations                       13
+Successful steps                           13
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.000531
+
+  Residual only evaluation           0.000416 (13)
+  Jacobian & residual evaluation     0.002756 (13)
+  Linear solver                      0.001524 (13)
+Minimizer                            0.005398
+
+Postprocessor                        0.000008
+Total                                0.005937
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 5.433017e-07 <= 1.000000e-06)
+
+After slam 
+Printing views
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 297
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+  t = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  R =
+    1.000000000000000 0.000000000000000 0.000000000000000 
+    0.000000000000000 1.000000000000000 0.000000000000000 
+    0.000000000000000 0.000000000000000 1.000000000000000 
+  t_cv = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+view[1]
+  obs count: 297
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.999358551544835, -0.025375701879371, -0.023347897862133, 0.009666171618425)
+  t = (-0.035305855860305, -0.417935817774069, 0.696363593496496)
+  R =
+    0.998722881583325 0.020504881126465 0.046175270999629 
+    -0.018135003943827 0.998525277760745 -0.051170218924534 
+    -0.047156414556845 0.050267479773875 0.997621898839097 
+  t_cv = (-0.011675712719543, -0.452312284224040, 0.675363887734889)
+view[2]
+  obs count: 155
+  intrinsics: set
+  p: set
+  q (w,x,y,z) = (0.997425960618340, -0.033933346443123, -0.058596815977061, 0.023588010537190)
+  t = (0.862874558463539, -0.300039458707123, 1.566429304653532)
+  R =
+    0.992020037832496 0.051031360252291 0.115291130663267 
+    -0.043077816024237 0.996584267516137 -0.070456365971479 
+    -0.118492811197117 0.064927636720628 0.990829882313043 
+  t_cv = (1.021272836062093, -0.446550272020181, 1.430339678461955)
+Printing observations
+ObservationSet
+observations.size() = 749
+view_indexes.size() = 749
+point_indexes.size() = 749
+obs[0] = (703.000000, 688.000000), view=0, point=0
+obs[1] = (678.000000, 688.000000), view=1, point=0
+obs[2] = (728.000000, 616.000000), view=0, point=1
+obs[3] = (706.000000, 610.000000), view=1, point=1
+obs[4] = (732.000000, 687.000000), view=0, point=2
+obs[5] = (707.000000, 687.000000), view=1, point=2
+obs[6] = (628.000000, 582.000000), view=0, point=3
+obs[7] = (601.200012, 576.000000), view=1, point=3
+obs[8] = (688.000000, 613.000000), view=0, point=4
+obs[9] = (663.600037, 609.600037), view=1, point=4
+Printing points
+PointSet
+points.size(): 297
+observations_indexes.size(): 297
+last_sz: 0
+  point[0] = (-0.538580, 4.438501, 12.380940)
+  point[1] = (-0.181586, 3.709161, 13.030482)
+  point[2] = (-0.181990, 4.361477, 12.199400)
+  point[3] = (-1.512813, 3.242995, 12.969126)
+  point[4] = (-0.715162, 3.600182, 12.750586)
+  point[5] = (-0.143015, 3.717323, 13.014453)
+  point[6] = (-1.044443, 3.195714, 12.867486)
+  point[7] = (-1.276077, 3.230405, 13.061643)
+  point[8] = (-1.357723, 3.199162, 13.029469)
+  point[9] = (-2.036597, 3.687255, 13.103927)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 356
+Recovering pose
+ninliers b4 recover = 198, after = 120
+Adding first view
+Adding second view
+number of corrp after masking = 120
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 120
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world param = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    t_cw / t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+  world pose:
+    R_wc, camera-to-world =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    C_world / camera center = (-1.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 120
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.999790908247907, -0.003167284949699, 0.016429720946601, -0.011754673984817)
+    C_world param = (-0.408246268162225, 0.282123931846374, 0.868182625725233)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.999183783818255 -0.023608507574640 -0.032778110450922 
+      0.023400357143112 0.999703591891116 -0.006719497419857 
+      0.032927032058925 0.005946993366301 0.999440065151329 
+    t_cw / t_cv = (0.443030961931590, -0.266653448634401, -0.855931951209529)
+  world pose:
+    R_wc, camera-to-world =
+      0.999183783818255 0.023400357143112 0.032927032058925 
+      -0.023608507574640 0.999703591891116 0.005946993366301 
+      -0.032778110450922 -0.006719497419857 0.999440065151329 
+    C_world / camera center = (-0.408246268162225, 0.282123931846374, 0.868182625725233)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+Printing observations
+ObservationSet
+observations.size() = 240
+view_indexes.size() = 240
+point_indexes.size() = 240
+obs[0] = (660.000000, 679.000000), view=0, point=0
+obs[1] = (639.600037, 674.400024), view=1, point=0
+obs[2] = (658.000000, 677.000000), view=0, point=1
+obs[3] = (638.400024, 670.800049), view=1, point=1
+obs[4] = (680.000000, 671.000000), view=0, point=2
+obs[5] = (660.000000, 666.000000), view=1, point=2
+obs[6] = (583.000000, 213.000000), view=0, point=3
+obs[7] = (576.000000, 178.800003), view=1, point=3
+obs[8] = (580.000000, 212.000000), view=0, point=4
+obs[9] = (572.400024, 180.000000), view=1, point=4
+Printing points
+PointSet
+points.size(): 120
+observations_indexes.size(): 120
+last_sz: 0
+  point[0] = (-0.135806, 7.290967, 20.807148)
+  point[1] = (-0.171560, 6.985807, 20.097233)
+  point[2] = (0.300789, 7.343414, 21.468172)
+  point[3] = (-1.354609, -2.019509, 15.840181)
+  point[4] = (-1.481619, -2.153938, 16.810481)
+  point[5] = (0.234917, 6.597968, 19.636585)
+  point[6] = (-0.326819, 6.516580, 20.777878)
+  point[7] = (-0.255914, 6.413703, 20.237638)
+  point[8] = (0.205617, 6.773562, 20.713331)
+  point[9] = (0.162822, 6.720763, 20.678131)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          124                      122
+Parameters                                374                      367
+Effective parameters                      372                      366
+Residual blocks                           240                      240
+Residuals                                 480                      480
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    120,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          1.535511e+05
+Final                            1.465506e+01
+Change                           1.535364e+05
+
+Minimizer iterations                       22
+Successful steps                           22
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.002369
+
+  Residual only evaluation           0.000186 (22)
+  Jacobian & residual evaluation     0.001195 (22)
+  Linear solver                      0.001150 (22)
+Minimizer                            0.003004
+
+Postprocessor                        0.000015
+Total                                0.005388
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 8.738444e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 120
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world param = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    t_cw / t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+  world pose:
+    R_wc, camera-to-world =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    C_world / camera center = (-1.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 120
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.999802471583054, -0.002177957192394, 0.015678044380980, -0.012019702295502)
+    C_world param = (-1.387568668365095, 0.319387966648294, 0.843169829228511)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.999219451362231 -0.024102948344515 -0.031297538249255 
+      0.023966363906426 0.999701566518391 -0.004731944819985 
+      0.031402251837515 0.003978163115845 0.999498910853712 
+    t_cw / t_cv = (1.420572935174073, -0.282047841828445, -0.800445122641326)
+  world pose:
+    R_wc, camera-to-world =
+      0.999219451362231 0.023966363906426 0.031402251837515 
+      -0.024102948344515 0.999701566518391 0.003978163115845 
+      -0.031297538249255 -0.004731944819985 0.999498910853712 
+    C_world / camera center = (-1.387568668365095, 0.319387966648294, 0.843169829228511)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 41 2D<->3D correspondences
+Solving PnP
+Creating cam
+Adding View
+Pre BA
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 120
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world param = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    t_cw / t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+  world pose:
+    R_wc, camera-to-world =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    C_world / camera center = (-1.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 120
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.999802471583054, -0.002177957192394, 0.015678044380980, -0.012019702295502)
+    C_world param = (-1.387568668365095, 0.319387966648294, 0.843169829228511)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.999219451362231 -0.024102948344515 -0.031297538249255 
+      0.023966363906426 0.999701566518391 -0.004731944819985 
+      0.031402251837515 0.003978163115845 0.999498910853712 
+    t_cw / t_cv = (1.420572935174073, -0.282047841828445, -0.800445122641326)
+  world pose:
+    R_wc, camera-to-world =
+      0.999219451362231 0.023966363906426 0.031402251837515 
+      -0.024102948344515 0.999701566518391 0.003978163115845 
+      -0.031297538249255 -0.004731944819985 0.999498910853712 
+    C_world / camera center = (-1.387568668365095, 0.319387966648294, 0.843169829228511)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[2]
+  obs count: 41
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.999148793185032, 0.007589697087859, 0.033166829966184, -0.023324814361578)
+    C_world param = (-1.261826922602427, 1.158819641923753, 1.206696170591016)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.996711828849984 -0.046106467855655 -0.066631252820241 
+      0.047113372626887 0.998796699066225 0.013619253068101 
+      0.065923139717701 -0.016713693675794 0.997684715776218 
+    t_cw / t_cv = (1.391510577909938, -1.114410611694931, -1.101350576945464)
+  world pose:
+    R_wc, camera-to-world =
+      0.996711828849984 0.047113372626887 0.065923139717701 
+      -0.046106467855655 0.998796699066225 -0.016713693675794 
+      -0.066631252820241 0.013619253068101 0.997684715776218 
+    C_world / camera center = (-1.261826922602427, 1.158819641923753, 1.206696170591016)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                          126                      124
+Parameters                                381                      374
+Effective parameters                      378                      372
+Residual blocks                           281                      281
+Residuals                                 562                      562
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                    120,4
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          2.015904e+02
+Final                            4.392092e+01
+Change                           1.576695e+02
+
+Minimizer iterations                        9
+Successful steps                            9
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.000242
+
+  Residual only evaluation           0.000109 (9)
+  Jacobian & residual evaluation     0.000709 (9)
+  Linear solver                      0.000417 (9)
+Minimizer                            0.001482
+
+Postprocessor                        0.000004
+Total                                0.001728
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 7.366780e-07 <= 1.000000e-06)
+
+After BA
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 120
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world param = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    t_cw / t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+  world pose:
+    R_wc, camera-to-world =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    C_world / camera center = (-1.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 120
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.999820547982113, -0.001931582949590, 0.014525943448414, -0.012005739751823)
+    C_world param = (-1.341078943599480, 0.320392951171818, 0.812723253541598)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.999289718359890 -0.024063286724580 -0.029000293312697 
+      0.023951054465814 0.999704262400641 -0.004211262039646 
+      0.029093053641504 0.003513683252881 0.999570531908485 
+    t_cw / t_cv = (1.371405320031240, -0.284755353522102, -0.774483892540212)
+  world pose:
+    R_wc, camera-to-world =
+      0.999289718359890 0.023951054465814 0.029093053641504 
+      -0.024063286724580 0.999704262400641 0.003513683252881 
+      -0.029000293312697 -0.004211262039646 0.999570531908485 
+    C_world / camera center = (-1.341078943599480, 0.320392951171818, 0.812723253541598)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, -0.000000000000000)
+view[2]
+  obs count: 41
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.999134318757373, 0.009429228145591, 0.033624149058567, -0.022607948555896)
+    C_world param = (-1.273573981699465, 1.211451577376846, 1.017941522229235)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.996716594524362 -0.044542655012444 -0.067616433536531 
+      0.045810854103143 0.998799940637345 0.017321784815003 
+      0.066763731517181 -0.020362476943610 0.997561012513331 
+    t_cw / t_cv = (1.392183166871590, -1.169286815706130, -0.905762069400269)
+  world pose:
+    R_wc, camera-to-world =
+      0.996716594524362 0.045810854103143 0.066763731517181 
+      -0.044542655012444 0.998799940637345 -0.020362476943610 
+      -0.067616433536531 0.017321784815003 0.997561012513331 
+    C_world / camera center = (-1.273573981699465, 1.211451577376846, 1.017941522229235)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+Logger initiated
+Setting intrinsics
+Setting K
+Setting distcoeffs
+Set Intrinsics
+Initiating SLAM
+Setting intrinsics
+Starting SLAMLoop
+    --------------------------------
+    --------------------------------
+    --------------------------------
+            SLAM IS STARTING
+    --------------------------------
+    --------------------------------
+    --------------------------------
+Getting first frame
+Getting second frame
+Getting corresponding points between frames
+Getting intrinsics of camera
+Finding essential matrix
+Num points before RANSAC = 118
+Recovering pose
+ninliers b4 recover = 71, after = 62
+Adding first view
+Adding second view
+number of corrp after masking = 62
+Triangulating
+Adding points
+Adding observations
+Printing views
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 62
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world param = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    t_cw / t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+  world pose:
+    R_wc, camera-to-world =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    C_world / camera center = (-1.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 62
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.996982064968957, 0.001162361049902, 0.067042210237496, -0.039124839852658)
+    C_world param = (-0.996995595980819, 0.022898122356760, -0.073996334959145)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.987949177905950 -0.077857672748007 -0.133770716785180 
+      0.078169381763524 0.996935791646587 -0.002928325238280 
+      0.133588808025467 -0.007563737717362 0.991007981926522 
+    t_cw / t_cv = (0.976865231175139, 0.054889886284620, 0.206691607243265)
+  world pose:
+    R_wc, camera-to-world =
+      0.987949177905950 0.078169381763524 0.133588808025467 
+      -0.077857672748007 0.996935791646587 -0.007563737717362 
+      -0.133770716785180 -0.002928325238280 0.991007981926522 
+    C_world / camera center = (-0.996995595980819, 0.022898122356760, -0.073996334959145)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+Printing observations
+ObservationSet
+observations.size() = 124
+view_indexes.size() = 124
+point_indexes.size() = 124
+obs[0] = (494.000000, 115.000000), view=0, point=0
+obs[1] = (407.000000, 95.000000), view=1, point=0
+obs[2] = (522.000000, 123.600006), view=0, point=1
+obs[3] = (534.000000, 116.400002), view=1, point=1
+obs[4] = (798.000061, 640.800049), view=0, point=2
+obs[5] = (798.000061, 643.200012), view=1, point=2
+obs[6] = (565.200012, 61.200001), view=0, point=3
+obs[7] = (481.200012, 48.000000), view=1, point=3
+obs[8] = (528.000000, 134.400009), view=0, point=4
+obs[9] = (456.000031, 120.000008), view=1, point=4
+Printing points
+PointSet
+points.size(): 62
+observations_indexes.size(): 62
+last_sz: 0
+  point[0] = (-5.553213, -7.158266, 31.410475)
+  point[1] = (-1.136998, -1.684256, 7.678766)
+  point[2] = (0.798729, 1.835331, 5.913021)
+  point[3] = (-3.737422, -10.199555, 36.023973)
+  point[4] = (-3.040463, -4.457543, 21.424779)
+  point[5] = (0.796089, 1.832636, 5.904228)
+  point[6] = (0.813220, 1.841866, 5.901480)
+  point[7] = (-7.854315, -12.745018, 48.452567)
+  point[8] = (3.560466, -2.773613, 9.591259)
+  point[9] = (-17.924726, 10.656198, 41.335402)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                           66                       64
+Parameters                                200                      193
+Effective parameters                      198                      192
+Residual blocks                           124                      124
+Residuals                                 248                      248
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                     62,2
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          4.916750e+05
+Final                            5.458325e+00
+Change                           4.916696e+05
+
+Minimizer iterations                        8
+Successful steps                            8
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.002378
+
+  Residual only evaluation           0.000036 (8)
+  Jacobian & residual evaluation     0.000256 (8)
+  Linear solver                      0.000569 (8)
+Minimizer                            0.001044
+
+Postprocessor                        0.000015
+Total                                0.003437
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 3.497066e-07 <= 1.000000e-06)
+
+Printing views after BA
+ViewSet
+views.size(): 2
+observations_indexes.size(): 2
+last_sz: 1
+view[0]
+  obs count: 62
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world param = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    t_cw / t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+  world pose:
+    R_wc, camera-to-world =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    C_world / camera center = (-1.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 62
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.996754221972509, 0.001159483694118, 0.070758377662623, -0.038378751518195)
+    C_world param = (-2.302124770762857, 0.029091075146027, -0.074672249521244)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.987040646844917 -0.076344278849345 -0.141146422423461 
+      0.076672451589833 0.997051454058935 -0.003119795853449 
+      0.140968424277118 -0.007742676923129 0.989983815176233 
+    t_cw / t_cv = (2.263971939130216, 0.147271289091162, 0.398676462688796)
+  world pose:
+    R_wc, camera-to-world =
+      0.987040646844917 0.076672451589833 0.140968424277118 
+      -0.076344278849345 0.997051454058935 -0.007742676923129 
+      -0.141146422423461 -0.003119795853449 0.989983815176233 
+    C_world / camera center = (-2.302124770762857, 0.029091075146027, -0.074672249521244)
+    C_world - C_param = (-0.000000000000000, 0.000000000000000, 0.000000000000000)
+Getting new frame in SLAM loop
+Getting corresponding points in SLAM loop
+Solving pnp
+Finding 2D->3D correspondences
+Found 16 2D<->3D correspondences
+Solving PnP
+Creating cam
+Adding View
+Pre BA
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 62
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world param = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    t_cw / t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+  world pose:
+    R_wc, camera-to-world =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    C_world / camera center = (-1.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 62
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.996754221972509, 0.001159483694118, 0.070758377662623, -0.038378751518195)
+    C_world param = (-2.302124770762857, 0.029091075146027, -0.074672249521244)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.987040646844917 -0.076344278849345 -0.141146422423461 
+      0.076672451589833 0.997051454058935 -0.003119795853449 
+      0.140968424277118 -0.007742676923129 0.989983815176233 
+    t_cw / t_cv = (2.263971939130216, 0.147271289091162, 0.398676462688796)
+  world pose:
+    R_wc, camera-to-world =
+      0.987040646844917 0.076672451589833 0.140968424277118 
+      -0.076344278849345 0.997051454058935 -0.007742676923129 
+      -0.141146422423461 -0.003119795853449 0.989983815176233 
+    C_world / camera center = (-2.302124770762857, 0.029091075146027, -0.074672249521244)
+    C_world - C_param = (-0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[2]
+  obs count: 16
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.984088298012031, 0.008725958370331, 0.149340852011097, -0.095871733513602)
+    C_world param = (-3.821491281024752, 0.333980827833213, 0.168566304867015)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.937011841267393 -0.186086218006450 -0.295602315269597 
+      0.191298786237005 0.981464936727232 -0.011460905691039 
+      0.292256024247473 -0.045809359775770 0.955242335142237 
+    t_cw / t_cv = (3.692760400753567, 0.405188094140666, 0.971131625701631)
+  world pose:
+    R_wc, camera-to-world =
+      0.937011841267393 0.191298786237005 0.292256024247473 
+      -0.186086218006450 0.981464936727232 -0.045809359775770 
+      -0.295602315269597 -0.011460905691039 0.955242335142237 
+    C_world / camera center = (-3.821491281024752, 0.333980827833213, 0.168566304867015)
+    C_world - C_param = (0.000000000000000, -0.000000000000000, -0.000000000000000)
+
+Solver Summary (v 2.2.0-eigen-(3.5.0)-lapack-suitesparse-(7.12.1)-metis-(5.1.0)-acceleratesparse-eigensparse)
+
+                                     Original                  Reduced
+Parameter blocks                           68                       66
+Parameters                                207                      200
+Effective parameters                      204                      198
+Residual blocks                           140                      140
+Residuals                                 280                      280
+
+Minimizer                        TRUST_REGION
+
+Dense linear algebra library            EIGEN 
+Trust region strategy     LEVENBERG_MARQUARDT
+                                        Given                     Used
+Linear solver                     DENSE_SCHUR              DENSE_SCHUR
+Threads                                     1                        1
+Linear solver ordering              AUTOMATIC                     62,4
+Schur structure                         2,3,3                    2,3,3
+
+Cost:
+Initial                          1.205904e+03
+Final                            3.715158e+01
+Change                           1.168753e+03
+
+Minimizer iterations                       10
+Successful steps                           10
+Unsuccessful steps                          0
+
+Time (in seconds):
+Preprocessor                         0.000150
+
+  Residual only evaluation           0.000060 (10)
+  Jacobian & residual evaluation     0.000392 (10)
+  Linear solver                      0.000225 (10)
+Minimizer                            0.000851
+
+Postprocessor                        0.000003
+Total                                0.001004
+
+Termination:                      CONVERGENCE (Function tolerance reached. |cost_change|/cost: 2.844875e-07 <= 1.000000e-06)
+
+After BA
+ViewSet
+views.size(): 3
+observations_indexes.size(): 3
+last_sz: 2
+view[0]
+  obs count: 62
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (1.000000000000000, 0.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world param = (-1.000000000000000, -0.000000000000000, -0.000000000000000)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    t_cw / t_cv = (1.000000000000000, 0.000000000000000, 0.000000000000000)
+  world pose:
+    R_wc, camera-to-world =
+      1.000000000000000 0.000000000000000 0.000000000000000 
+      0.000000000000000 1.000000000000000 0.000000000000000 
+      0.000000000000000 0.000000000000000 1.000000000000000 
+    C_world / camera center = (-1.000000000000000, 0.000000000000000, 0.000000000000000)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, 0.000000000000000)
+view[1]
+  obs count: 62
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.996958232634449, 0.001338749806983, 0.068107824782815, -0.037865740910541)
+    C_world param = (-2.144391959804094, 0.027133401907349, -0.070645395882013)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.987855019737298 -0.075318765596569 -0.135902698754775 
+      0.075683482945697 0.997128786828500 -0.002488551211394 
+      0.135699927741434 -0.007827261777432 0.990719063904615 
+    t_cw / t_cv = (2.110791116159909, 0.135063751506817, 0.361195954711767)
+  world pose:
+    R_wc, camera-to-world =
+      0.987855019737298 0.075683482945697 0.135699927741434 
+      -0.075318765596569 0.997128786828500 -0.007827261777432 
+      -0.135902698754775 -0.002488551211394 0.990719063904615 
+    C_world / camera center = (-2.144391959804093, 0.027133401907349, -0.070645395882013)
+    C_world - C_param = (0.000000000000000, 0.000000000000000, -0.000000000000000)
+view[2]
+  obs count: 16
+  intrinsics: set
+  p: set
+  parametrized world pose:
+    q_wc (w,x,y,z) = (0.987142889738733, 0.001097061734676, 0.138389967960156, -0.079974548837748)
+    C_world param = (-3.386014377805671, 0.110944015028756, 0.142053023957527)
+  OpenCV extrinsics:
+    R_cw, world-to-camera =
+      0.948904576612371 -0.157588969813868 -0.273396819800633 
+      0.158196259167116 0.987205735987498 -0.019969437120589 
+      0.273045871731522 -0.024301263884547 0.961694026447075 
+    t_cw / t_cv = (3.269324937603539, 0.428966958974766, 0.790621782690344)
+  world pose:
+    R_wc, camera-to-world =
+      0.948904576612371 0.158196259167116 0.273045871731522 
+      -0.157588969813868 0.987205735987498 -0.024301263884547 
+      -0.273396819800633 -0.019969437120589 0.961694026447075 
+    C_world / camera center = (-3.386014377805671, 0.110944015028756, 0.142053023957527)
+    C_world - C_param = (0.000000000000000, -0.000000000000000, -0.000000000000000)

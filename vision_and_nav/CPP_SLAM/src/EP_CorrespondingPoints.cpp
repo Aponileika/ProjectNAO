@@ -64,7 +64,7 @@ PointPair2D EP_FilterPointPairByMask(const PointPair2D& corrp, const cv::Mat& ma
 }
 
 void EP_DrawCorrespondences(const cv::Mat& img1, const cv::Mat& img2, const std::vector<cv::Point2d>& pts1,
-        const std::vector<cv::Point2d>& pts2, const cv::Mat& mask)
+        const std::vector<cv::Point2d>& pts2)
 {
     const std::string windowName = "Correspondences";
     CV_Assert(pts1.size() == pts2.size());
@@ -85,15 +85,6 @@ void EP_DrawCorrespondences(const cv::Mat& img1, const cv::Mat& img2, const std:
 
     for (size_t i = 0; i < pts1.size(); ++i)
     {
-        bool usePoint = true;
-        if (!mask.empty())
-        {
-            // mask is usually Nx1 uchar
-            usePoint = mask.at<uchar>((int)i) != 0;
-        }
-
-        if (!usePoint) continue;
-
         cv::Point2f p1 = pts1[i];
         cv::Point2f p2 = pts2[i];
         p2.x += static_cast<float>(left.cols); // shift right image points

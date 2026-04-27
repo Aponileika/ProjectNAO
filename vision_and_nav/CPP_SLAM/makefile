@@ -9,6 +9,7 @@ OPENCVLIBS = -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_imgcodecs 
 ifeq ($(UNAME_S),Linux)
 	osdir = linux/
 endif
+#This is really just if Jonathans mac... todo
 ifeq ($(UNAME_S),Darwin)
 	OPENCV = $(shell brew --prefix opencv)
 	CERES := $(shell brew --prefix ceres-solver)

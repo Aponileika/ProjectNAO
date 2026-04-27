@@ -2,22 +2,34 @@
 #define __OB__OBSERVATIONS_HPP
 #include <iostream>
 #include <vector>
+#include <map>
 #include <Eigen/Dense>
+#include <opencv2/opencv.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/core/eigen.hpp>
 #include "CArenaAlloc.h"
 #include "VW_Views.hpp"
 #include "PT_Points.hpp"
 #include "EP_CorrespondingPoints.hpp"
 #include "LG_Logging.hpp"
 
+#define PnPRansacIts 200
+#define Reprojerr 1.0f
+#define conf 0.99f
+
 struct ObservationSet
 {
     std::vector<cv::Point2d> observations;
     std::vector<u64> view_indexes;
     std::vector<u64> point_indexes;
+    //Maps 2D image point paired with view to idx
+    std::map<std::pair<std::pair<fp64, fp64>, u64>, u64> imagepoint2idx;
 };
 
 struct ObservationSet* OB_InitObs();
 void OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points, PointPair2D corrp);
 void OB_Print(struct ObservationSet* obs);
+void OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointSet* TPoints);
 
 #endif //__OB__OBSERVATIONS_HPP

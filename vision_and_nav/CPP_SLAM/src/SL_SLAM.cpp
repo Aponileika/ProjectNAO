@@ -1,4 +1,7 @@
 #include "../include/SL_SLAM.hpp"
+#include "EP_CorrespondingPoints.hpp"
+#include "FR_Frames.hpp"
+#include "OB_Observations.hpp"
 #include "OP_BA.hpp"
 
 struct SLAM slam;
@@ -22,6 +25,16 @@ static cv::Mat __SL_GetNextFrame()
     int frameskip = 90;
     for(int i = 0; i < frameskip; i++)FR_GetFrame();
     return FR_GetFrame();
+}
+
+void __SL_PrintSlam()
+{
+    LG_Log("Printing views\n");
+    VW_Print(slam.Tview);
+    LG_Log("Printing observations\n");
+    OB_Print(slam.Tobs);
+    LG_Log("Printing points\n");
+    PT_Print(slam.Tpoints);
 }
 
 static void __SL_SlamStart()
@@ -70,20 +83,35 @@ static void __SL_SlamStart()
     PT_AddPoints(slam.Tpoints, points3d);
     LG_Log("Adding observations\n");
     OB_AddObs(slam.Tobs, slam.Tview, slam.Tpoints, corrp);
-
-    LG_Log("Printing views\n");
-    VW_Print(slam.Tview);
-    LG_Log("Printing observations\n");
-    OB_Print(slam.Tobs);
-    LG_Log("Printing points\n");
-    PT_Print(slam.Tpoints);
+    __SL_PrintSlam();
 }
+
+
+void __SL_SlamLoop()
+{
+    OP_BundleAdjust(slam.Tview, slam.Tobs, slam.Tpoints);
+    LG_Log("Printing views after BA\n");
+    VW_Print(slam.Tview);
+    slam.frame_pair.first = slam.frame_pair.second;
+    LG_Log("Getting new frame in SLAM loop\n");
+    slam.frame_pair.second = __SL_GetNextFrame();
+    LG_Log("Getting corresponding points in SLAM loop\n");
+    PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
+    LG_Log("Solving pnp\n");
+    OB_SolvePnP(corrp, slam.Tview, slam.Tobs, slam.Tpoints);
+    LG_Log("Pre BA\n");
+    VW_Print(slam.Tview);
+    OP_BundleAdjust(slam.Tview, slam.Tobs, slam.Tpoints);
+    LG_Log("After BA\n");
+    VW_Print(slam.Tview);
+    //TODO triangulate new points using epipolar constraint, then continue looping
+    //After that TODO = ALOT of improvements
+}
+
 void SL_SlamLoop()
 {
     LG_Log(SLAMSTARTMSG);
     __SL_SlamStart();
-    OP_BundleAdjust(slam.Tview, slam.Tobs, slam.Tpoints);
-    LG_Log("Printing views after BA\n");
-    VW_Print(slam.Tview);
+    __SL_SlamLoop();
     return;
 }
