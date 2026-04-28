@@ -14,7 +14,7 @@
 #include "EP_CorrespondingPoints.hpp"
 #include "LG_Logging.hpp"
 
-#define PnPRansacIts 200
+#define PnPRansacIts 800
 #define Reprojerr 1.0f
 #define conf 0.99f
 

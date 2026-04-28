@@ -66,6 +66,7 @@ static void __SL_SlamStart()
     VW_AddView(slam.Tview, CM_CreateCam(cv::Mat::eye(3, 3, CV_64F), cv::Mat::eye(3, 1, CV_64F)));
     LG_Log("Adding second view\n");
     VW_AddView(slam.Tview, CM_CreateCam(R, t));
+    EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
     cv::Mat P1, P2;
     P1 = K * cv::Mat::eye(3, 4, CV_64F);
@@ -97,6 +98,7 @@ void __SL_SlamLoop()
     slam.frame_pair.second = __SL_GetNextFrame();
     LG_Log("Getting corresponding points in SLAM loop\n");
     PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
+    EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
     LG_Log("Solving pnp\n");
     OB_SolvePnP(corrp, slam.Tview, slam.Tobs, slam.Tpoints);
     LG_Log("Pre BA\n");
