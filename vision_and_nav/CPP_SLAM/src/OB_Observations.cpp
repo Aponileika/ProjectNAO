@@ -1,4 +1,5 @@
 #include "../include/OB_Observations.hpp"
+#include "EP_CorrespondingPoints.hpp"
 
 static void __OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points,
         cv::Point2d observation, u64 view_index, u64 point_index);
@@ -40,14 +41,17 @@ void OB_Print(struct ObservationSet* obs)
     }
 }
 
-void OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointSet* TPoints)
+PointPair2D OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointSet* TPoints)
 {
     /*
      * Find 2D->3D corrp from last view, where the corrp come from the new frame
      * and the last view. Using these 3D points solve PnP on the new frame.
      * After solving pnp it adds the new view, and links the observations
      * and 3d points used in optimization to this view
+     * Returns points not used in pnp
      * */
+    PointPair2D nonpnpPoints;
+
     std::vector<cv::Point2d> pnpPoints;
     //This is a bit (very naive).
     pnpPoints.reserve(corrp.second.size());
@@ -78,11 +82,29 @@ void OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointS
             Eigen::Vector3d v = TPoints->points[pidx];
             pnpPoints3D.emplace_back(v(0), v(1), v(2));
         }
+        else
+        {
+            nonpnpPoints.first.push_back(corrp.first[i]);
+            nonpnpPoints.second.push_back(corrp.second[i]);
+        }
     }
     LG_Log("Found %lld 2D<->3D correspondences\n", pnpPoints3D.size());
     struct CameraIntrinsics* ci = CM_GetIntrinsics();
     cv::Mat rvec, t;
     LG_Log("Solving PnP\n");
+    if(pnpPoints3D.size() < (size_t)PnPPointCntThreshold)
+    {
+        LG_Log("not enough observed points were found for pnp, found %lld, need %d\n",
+            pnpPoints3D.size(), PnPPointCntThreshold);
+        return nonpnpPoints;
+    }
+    if(nonpnpPoints.first.size() < (size_t)NonPnpThreshold)
+    {
+        LG_Log("not enough non observed points were found, found %lld, need %d\n",
+            nonpnpPoints.first.size(), NonPnpThreshold);
+
+        return {};
+    }
     cv::solvePnPRansac(pnpPoints3D, pnpPoints, ci->K, ci->distcoeffs, rvec, t,
             false, PnPRansacIts, Reprojerr, conf);
     struct Camera cam;
@@ -93,6 +115,7 @@ void OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointS
     LG_Log("Adding View\n");
     VW_AddView(TView, cam);
     __OB_AddObsPnP(TView, TObs, TPoints, pnpPoints, pnpPoints3Didx);
+    return nonpnpPoints;
 }
 
 static void __OB_AddObsPnP(struct ViewSet* views, struct ObservationSet* obs, struct PointSet* points, 
@@ -116,10 +139,10 @@ static void __OB_AddObsPnP(struct ViewSet* views, struct ObservationSet* obs, st
 }
 
 #define PUSHVIEW(vidx, views, idx)\
-    (vidx.push_back(views->last_sz - 1 + idx))
+    (vidx.push_back(views->last_sz + (idx - 1)))
 
 #define PUSHPOINT(pidx, points, idx)\
-    (pidx.push_back(points->last_sz + idx))
+            (pidx.push_back(points->last_sz + idx))
 
 void __OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points,
         cv::Point2d observation, u64 view_index, u64 point_index)

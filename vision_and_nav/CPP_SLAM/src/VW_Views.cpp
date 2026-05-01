@@ -28,7 +28,7 @@ void VW_Print(struct ViewSet* views)
     LG_Log("observations_indexes.size(): %zu\n", views->observations_indexes.size());
     LG_Log("last_sz: %zu\n", views->last_sz);
 
-    size_t n = std::min<size_t>(views->views.size(), 10);
+    size_t n = views->views.size();
 
     for (size_t i = 0; i < n; ++i)
     {

@@ -44,10 +44,16 @@ struct ReprojectionError
         Eigen::Map<const Eigen::Quaternion<T>> qwc(qp);
         Eigen::Map<const Eigen::Matrix<T,3,1>> t(tp);
         Eigen::Map<const Eigen::Matrix<T,3,1>> X(Xp);
-        //Note we do not use homogenous coordinates to project
 
-        //IREG P.176
+        //Note we do not use homogenous coordinates to project, 
+        //Right now we distort all projected points, a more reasonable
+        //approach could be to distort all detected ORB keypoints instead
+        //Since this would save some computations
+
+        //IREG P.176, since rotation is parametrized as 
+        //R^T, and translation as -R^T*t.
         const Eigen::Quaternion<T> qcw = qwc.conjugate();
+
         const fp64 fx_ = intr_->fx;
         const fp64 fy_ = intr_->fy;
         const fp64 cx_ = intr_->cx;
@@ -67,7 +73,7 @@ struct ReprojectionError
         T x = Xc.x() / Xc.z();
         T y = Xc.y() / Xc.z();
 
-        //https://docs.opencv.org/4.x/d4/d94/tutorial_camera_calibration.html
+        // https://docs.opencv.org/4.x/d4/d94/tutorial_camera_calibration.html
         T r2 = x*x + y*y;
 
         T radial = T(1.0) + T(k1_)*r2 + T(k2_)*r2*r2 + T(k3_)*r2*r2*r2;

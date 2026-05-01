@@ -16,9 +16,11 @@
 //LOOK INTO USAC
 #define RANSACMETHOD cv::USAC_DEFAULT
 //#define RANSACMETHOD cv::RANSAC
-#define PROBECORRECT 0.99f
+#define PROBECORRECT 0.97f
 #define RANSACEPIXELT 1.0f
 #define RANSACMAXITERS 1000
+#define NewFrameCorrpThreshold 50 
+#define InitFrameThresholdCorrp 80
 
 #define SLAMSTARTMSG "\
     --------------------------------\n\

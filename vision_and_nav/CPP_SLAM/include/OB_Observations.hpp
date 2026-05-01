@@ -17,6 +17,8 @@
 #define PnPRansacIts 800
 #define Reprojerr 1.0f
 #define conf 0.99f
+#define PnPPointCntThreshold 10 
+#define NonPnpThreshold 30 
 
 struct ObservationSet
 {
@@ -30,6 +32,6 @@ struct ObservationSet
 struct ObservationSet* OB_InitObs();
 void OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points, PointPair2D corrp);
 void OB_Print(struct ObservationSet* obs);
-void OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointSet* TPoints);
+PointPair2D OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointSet* TPoints);
 
 #endif //__OB__OBSERVATIONS_HPP

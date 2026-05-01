@@ -25,6 +25,7 @@ void PT_AddPoints(struct PointSet* pointset, cv::Mat points)
 
 void PT_AddObs(struct PointSet* pointset, u64 pointidx, u64 obsidx)
 {
+    assert(pointset->observations_indexes.size() > pointset->last_sz + pointidx);
     pointset->observations_indexes[pointset->last_sz + pointidx].push_back(obsidx);
 }
 
@@ -41,6 +42,14 @@ void PT_Print(struct PointSet* points)
         const Eigen::Vector3d& p = points->points[i];
         LG_Log("  point[%zu] = (%f, %f, %f)\n", i, p.x(), p.y(), p.z());
     }
+}
+
+cv::Mat PT_ToHomogFromCart(cv::Point2d point)
+{
+    return (cv::Mat_<fp64>(3, 1) << 
+            point.x,
+            point.y,
+            1.0f);
 }
 
 static inline void __PT_AddPoint(struct PointSet* pointset, cv::Mat point)

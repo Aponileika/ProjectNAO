@@ -67,7 +67,7 @@ void __OP_BuildProblem(struct ViewSet* views, struct ObservationSet* obs, struct
             ReprojectionError::Create(px, py, &opintr);
 
         //Explore options? Could be more robust
-        ceres::LossFunction* lossfunc = nullptr;
+        ceres::LossFunction* lossfunc = new ceres::HuberLoss(1.0f);
 
         u64 viewidx = obs->view_indexes[i];
         u64 pidx = obs->point_indexes[i];

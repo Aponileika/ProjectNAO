@@ -19,4 +19,5 @@ struct PointSet* PT_InitPoints();
 void PT_AddPoints(struct PointSet* pointset, cv::Mat points);
 void PT_AddObs(struct PointSet* points, u64 pointidx, u64 obsidx);
 void PT_Print(struct PointSet* points);
+cv::Mat PT_ToHomogFromCart(cv::Point2d point);
 #endif //__PT__Points_HPP_
