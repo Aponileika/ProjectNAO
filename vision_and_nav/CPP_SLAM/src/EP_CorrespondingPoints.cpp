@@ -2,10 +2,6 @@
 #include "PT_Points.hpp"
 
 struct OrbExtractor orb;
-static std::vector<cv::Mat> __EP_BuildPyramid(const cv::Mat& image, int nlevels, float scaleFactor);
-static void __EP_DetectGridFASTAtLevel(const cv::Mat& levelImg, std::vector<cv::KeyPoint>& levelKeypoints, int level,
-    float scaleFactor, int cellSize, int fastThresholdHigh, int fastThresholdLow);
-static std::vector<cv::KeyPoint> __EP_DetectGridFASTPyramid(const cv::Mat& image, int nlevels, float scaleFactor);
 
 void EP_InitCPointExtractor()
 {
@@ -16,14 +12,11 @@ void EP_InitCPointExtractor()
 
 PointPair2D EP_CorrespExtract(cv::Mat img1, cv::Mat img2)
 {
-    const i32 nlevels = 8;
-    const fp32 scalefactor = 1.2f;
+    std::vector<cv::KeyPoint> kp1, kp2;
     cv::Mat des1, des2;
 
-    std::vector<cv::KeyPoint> kp1 = __EP_DetectGridFASTPyramid(img1, nlevels, scalefactor);
-    std::vector<cv::KeyPoint> kp2 = __EP_DetectGridFASTPyramid(img2, nlevels, scalefactor);
-    orb.orb->compute(img1, kp1, des1);
-    orb.orb->compute(img2, kp2, des2);
+    orb.orb->detectAndCompute(img1, cv::noArray(), kp1, des1);
+    orb.orb->detectAndCompute(img2, cv::noArray(), kp2, des2);
 
     if(des1.empty() || des2.empty())
     {
@@ -176,101 +169,4 @@ void EP_DrawCorrespondences(const cv::Mat& img1, const cv::Mat& img2, const std:
 
     cv::imshow(windowName, canvas);
     cv::waitKey(0);
-}
-
-static std::vector<cv::Mat> __EP_BuildPyramid(const cv::Mat& image, int nlevels, float scaleFactor)
-{
-    //S\o chatgpt, same strategy as in ORB slam
-    std::vector<cv::Mat> pyramid(nlevels);
-    pyramid[0] = image;
-
-    for (int level = 1; level < nlevels; ++level)
-    {
-        float scale = 1.0f / std::pow(scaleFactor, level);
-
-        cv::resize(
-            image,
-            pyramid[level],
-            cv::Size(),
-            scale,
-            scale,
-            cv::INTER_LINEAR
-        );
-    }
-
-    return pyramid;
-}
-
-static void __EP_DetectGridFASTAtLevel(const cv::Mat& levelImg, std::vector<cv::KeyPoint>& levelKeypoints, int level,
-    float scaleFactor, int cellSize = 30, int fastThresholdHigh = 20, int fastThresholdLow = 7)
-{
-    //S\o chatgpt, same strategy as in ORB slam
-    levelKeypoints.clear();
-
-    for (int y = 0; y < levelImg.rows; y += cellSize)
-    {
-        for (int x = 0; x < levelImg.cols; x += cellSize)
-        {
-            int w = std::min(cellSize, levelImg.cols - x);
-            int h = std::min(cellSize, levelImg.rows - y);
-
-            cv::Rect cell(x, y, w, h);
-            cv::Mat roi = levelImg(cell);
-
-            std::vector<cv::KeyPoint> kps;
-
-            cv::FAST(roi, kps, fastThresholdHigh, true);
-
-            if (kps.empty())
-            {
-                cv::FAST(roi, kps, fastThresholdLow, true);
-            }
-
-            for (auto& kp : kps)
-            {
-                kp.pt.x += static_cast<float>(x);
-                kp.pt.y += static_cast<float>(y);
-
-                kp.octave = level;
-                kp.size = 31.0f * std::pow(scaleFactor, level);
-
-                levelKeypoints.push_back(kp);
-            }
-        }
-    }
-}
-
-static std::vector<cv::KeyPoint> __EP_DetectGridFASTPyramid(const cv::Mat& image, int nlevels = 8, float scaleFactor = 1.2f)
-{
-    //S\o chatgpt, same strategy as in ORB slam, we force the fast features to be distributed
-    //uniformally by trying to find enough FAST keypoints in each grid box
-    std::vector<cv::Mat> pyramid = __EP_BuildPyramid(image, nlevels, scaleFactor);
-    std::vector<cv::KeyPoint> allKeypoints;
-
-    for (int level = 0; level < nlevels; ++level)
-    {
-        std::vector<cv::KeyPoint> levelKeypoints;
-
-        __EP_DetectGridFASTAtLevel(
-            pyramid[level],
-            levelKeypoints,
-            level,
-            scaleFactor
-        );
-
-        float scaleToOriginal = std::pow(scaleFactor, level);
-
-        for (auto& kp : levelKeypoints)
-        {
-            kp.pt.x *= scaleToOriginal;
-            kp.pt.y *= scaleToOriginal;
-
-            kp.octave = level;
-            kp.size = 31.0f * scaleToOriginal;
-
-            allKeypoints.push_back(kp);
-        }
-    }
-
-    return allKeypoints;
 }
