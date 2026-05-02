@@ -1,11 +1,12 @@
 #include "../include/EP_CorrespondingPoints.hpp"
+#include "CM_Camera.hpp"
 #include "PT_Points.hpp"
 
 struct OrbExtractor orb;
 
 void EP_InitCPointExtractor()
 {
-    orb.orb = cv::ORB::create(NFEATURES);
+    orb.orb = ORB_SLAM::ORBextractor();
     orb.matcher = cv::BFMatcher(cv::NORM_HAMMING, false);
     orb.matchratio = MATCHRATIO;
 }
@@ -15,8 +16,12 @@ PointPair2D EP_CorrespExtract(cv::Mat img1, cv::Mat img2)
     std::vector<cv::KeyPoint> kp1, kp2;
     cv::Mat des1, des2;
 
-    orb.orb->detectAndCompute(img1, cv::noArray(), kp1, des1);
-    orb.orb->detectAndCompute(img2, cv::noArray(), kp2, des2);
+    orb.orb(img1, {}, kp1, des1);
+    orb.orb(img2, {}, kp2, des2);
+    struct CameraIntrinsics* ci = CM_GetIntrinsics();
+    cv::Matx33d K = ci->K;
+    cv::Vec<fp64, 5> distcoeffs = ci->distcoeffs;
+
 
     if(des1.empty() || des2.empty())
     {
@@ -42,6 +47,11 @@ PointPair2D EP_CorrespExtract(cv::Mat img1, cv::Mat img2)
         out.second.push_back(kp2[m.trainIdx].pt);
     }
 
+    std::vector<cv::Point2d> p1d, p2d;
+    cv::undistortPoints(out.first, p1d, K, distcoeffs);
+    cv::undistortPoints(out.second, p2d, K, distcoeffs);
+
+    out = PointPair2D(p1d, p2d);
     return out;
 }
 
@@ -96,18 +106,12 @@ PointPair2D EP_FindCorrpEpipolar(const PointPair2D& corrp, const cv::Mat& E)
         fp64 normc = c * normfactor;
 
         fp64 dist = abs(norma*p1 + normb*p2 + normc*p3);
-        LG_Log("distance to epipolar line =%lf\n", dist);
         if(dist < EpiPolarTreshhold)
         {
             corr_p.first.push_back(corrp.first[i]);
             corr_p.second.push_back(corrp.second[i]);
         }
-        else if(dist < EpiPolarTreshhold + 1.0f)
-        {
-            cnt2++;
-        }
     }
-    LG_Log("%d poitns where under threshold + 1.0f \n", cnt2);
     return corr_p;
 }
 

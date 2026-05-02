@@ -1,14 +1,10 @@
-libdir = ./lib/
-sourcedir = ./src/
+sourcedir = ./MIT/src/
 
 UNAME_S := $(shell uname -s)
 
-INCLUDE_DIR = ./include/
+INCLUDE_DIR = ./MIT/include/
 OPENCVLIBS = -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_imgcodecs -lopencv_calib3d -lopencv_videoio -lopencv_features2d
 
-ifeq ($(UNAME_S),Linux)
-	osdir = linux/
-endif
 #This is really just if Jonathans mac... todo
 ifeq ($(UNAME_S),Darwin)
 	OPENCV = $(shell brew --prefix opencv)

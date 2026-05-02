@@ -37,5 +37,7 @@ cv::Mat FR_GetFrame()
         std::cerr << "FR_GetFrame failed to get a frame\n";
         return {};
     }
-    return frame;
+    cv::Mat gray;
+    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+    return gray;
 }

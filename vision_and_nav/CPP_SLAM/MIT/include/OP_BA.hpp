@@ -19,14 +19,8 @@
 struct OPIntrinsics
 {
     OPIntrinsics(struct CameraIntrinsics* ci) :
-        fx(ci->K(0, 0)), fy(ci->K(1, 1)), cx(ci->K(0, 2)), cy(ci->K(1, 2)), 
-        k1(ci->distcoeffs[0]),
-        k2(ci->distcoeffs[1]), 
-        p1(ci->distcoeffs[2]), 
-        p2(ci->distcoeffs[3]),
-        k3(ci->distcoeffs[4]) {}
+        fx(ci->K(0, 0)), fy(ci->K(1, 1)), cx(ci->K(0, 2)), cy(ci->K(1, 2)) {}
      fp64 fx, fy, cx, cy;
-     fp64 k1, k2, p1, p2, k3;
 };
 
 struct ReprojectionError
@@ -59,13 +53,6 @@ struct ReprojectionError
         const fp64 cx_ = intr_->cx;
         const fp64 cy_ = intr_->cy;
 
-        const fp64 k1_ = intr_->k1;
-        const fp64 k2_ = intr_->k2;
-        const fp64 p1_ = intr_->p1;
-        const fp64 p2_ = intr_->p2;
-        const fp64 k3_ = intr_->k3;
-
-
         //X in camera coordinates is now R^T(X - t)
         Eigen::Matrix<T, 3, 1> Xc = qcw * (X - t);
 
@@ -73,21 +60,9 @@ struct ReprojectionError
         T x = Xc.x() / Xc.z();
         T y = Xc.y() / Xc.z();
 
-        // https://docs.opencv.org/4.x/d4/d94/tutorial_camera_calibration.html
-        T r2 = x*x + y*y;
-
-        T radial = T(1.0) + T(k1_)*r2 + T(k2_)*r2*r2 + T(k3_)*r2*r2*r2;
-
-        T x_tan = T(2.0)*T(p1_)*x*y + T(p2_)*(r2 + T(2.0)*x*x);
-        T y_tan = T(p1_)*(r2 + T(2.0)*y*y) + T(2.0)*T(p2_)*x*y;
-
-        //Distort the projected image coordinates, to match the observedx and y
-        T xd = x * radial + x_tan;
-        T yd = y * radial + y_tan;
-
         //Normalized image coordinates, u,v convention from graphics programming?
-        T u = T(fx_) * xd + T(cx_);
-        T v = T(fy_) * yd + T(cy_);
+        T u = T(fx_) * x + T(cx_);
+        T v = T(fy_) * y + T(cy_);
 
         residuals[0] = u - T(observedx_);
         residuals[1] = v - T(observedy_);

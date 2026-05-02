@@ -18,6 +18,7 @@
 #include "../include/VW_Views.hpp"
 #include "../include/LG_Logging.hpp"
 #include "../include/OP_BA.hpp"
+#include "../../third-party/ORBSLAM/include/ORBextractor.h"
 
 #include "CArenaAlloc.c"
 #include "CM_Camera.cpp"
@@ -31,6 +32,7 @@
 #include "VW_Views.cpp"
 #include "LG_Logging.cpp"
 #include "OP_BA.cpp"
+#include "../../third-party/ORBSLAM/src/ORBextractor.cc"
 
 int main(void)
 {

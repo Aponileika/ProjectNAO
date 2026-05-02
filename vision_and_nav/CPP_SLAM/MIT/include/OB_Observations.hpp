@@ -29,9 +29,22 @@ struct ObservationSet
     std::map<std::pair<std::pair<fp64, fp64>, u64>, u64> imagepoint2idx;
 };
 
+typedef enum
+{
+    PNP_SUCCESS = 0,
+    PNP_NOT_ENOUGH_2D3D = 1,
+    PNP_NOT_ENOUGH_NONPNP = 2,
+}PnPRet_t;
+
+struct PnPret
+{
+    PointPair2D nonpnpPoints;
+    PnPRet_t ret;
+};
+
 struct ObservationSet* OB_InitObs();
 void OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points, PointPair2D corrp);
 void OB_Print(struct ObservationSet* obs);
-PointPair2D OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointSet* TPoints);
+struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointSet* TPoints);
 
 #endif //__OB__OBSERVATIONS_HPP

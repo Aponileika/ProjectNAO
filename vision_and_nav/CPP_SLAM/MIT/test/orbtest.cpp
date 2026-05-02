@@ -1,195 +1,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d.hpp>
-
-#include <iostream>
-#include <vector>
-#include <cmath>
-#include <algorithm>
-
-static float computeICAngle(
-    const cv::Mat& image,
-    const cv::Point2f& pt,
-    int halfPatchSize = 15)
-{
-    int cx = cvRound(pt.x);
-    int cy = cvRound(pt.y);
-
-    if (cx < halfPatchSize ||
-        cy < halfPatchSize ||
-        cx >= image.cols - halfPatchSize ||
-        cy >= image.rows - halfPatchSize)
-    {
-        return -1.0f;
-    }
-
-    int m01 = 0;
-    int m10 = 0;
-
-    for (int u = -halfPatchSize; u <= halfPatchSize; ++u)
-    {
-        m10 += u * image.at<uchar>(cy, cx + u);
-    }
-
-    for (int v = 1; v <= halfPatchSize; ++v)
-    {
-        int vSum = 0;
-
-        int d = cvRound(std::sqrt(
-            static_cast<float>(halfPatchSize * halfPatchSize - v * v)
-        ));
-
-        for (int u = -d; u <= d; ++u)
-        {
-            int valPlus  = image.at<uchar>(cy + v, cx + u);
-            int valMinus = image.at<uchar>(cy - v, cx + u);
-
-            vSum += valPlus - valMinus;
-            m10 += u * (valPlus + valMinus);
-        }
-
-        m01 += v * vSum;
-    }
-
-    return cv::fastAtan2(static_cast<float>(m01),
-                         static_cast<float>(m10));
-}
-
-static std::vector<cv::Mat> buildPyramid(
-    const cv::Mat& gray,
-    int nlevels,
-    float scaleFactor)
-{
-    std::vector<cv::Mat> pyramid(nlevels);
-    pyramid[0] = gray;
-
-    for (int level = 1; level < nlevels; ++level)
-    {
-        float invScale = 1.0f / std::pow(scaleFactor, level);
-
-        cv::resize(
-            gray,
-            pyramid[level],
-            cv::Size(),
-            invScale,
-            invScale,
-            cv::INTER_LINEAR
-        );
-    }
-
-    return pyramid;
-}
-
-static bool insideORBDescriptorBorder(
-    const cv::KeyPoint& kp,
-    const cv::Size& imageSize,
-    int border)
-{
-    return kp.pt.x >= border &&
-           kp.pt.y >= border &&
-           kp.pt.x < imageSize.width - border &&
-           kp.pt.y < imageSize.height - border;
-}
-
-static void detectGridFASTAtLevel(
-    const cv::Mat& levelImg,
-    std::vector<cv::KeyPoint>& levelKeypoints,
-    int level,
-    float scaleFactor,
-    int cellSize,
-    int fastThresholdHigh,
-    int fastThresholdLow,
-    int orbPatchSize)
-{
-    levelKeypoints.clear();
-
-    const int border = orbPatchSize;
-
-    for (int y = border; y < levelImg.rows - border; y += cellSize)
-    {
-        for (int x = border; x < levelImg.cols - border; x += cellSize)
-        {
-            int w = std::min(cellSize, levelImg.cols - border - x);
-            int h = std::min(cellSize, levelImg.rows - border - y);
-
-            if (w <= 0 || h <= 0)
-                continue;
-
-            cv::Rect cell(x, y, w, h);
-            cv::Mat roi = levelImg(cell);
-
-            std::vector<cv::KeyPoint> kps;
-
-            cv::FAST(roi, kps, fastThresholdHigh, true);
-
-            if (kps.empty())
-            {
-                cv::FAST(roi, kps, fastThresholdLow, true);
-            }
-
-            for (auto& kp : kps)
-            {
-                kp.pt.x += static_cast<float>(x);
-                kp.pt.y += static_cast<float>(y);
-
-                if (!insideORBDescriptorBorder(kp, levelImg.size(), border))
-                    continue;
-
-                kp.angle = computeICAngle(levelImg, kp.pt, orbPatchSize / 2);
-
-                if(kp.angle < 0.0f)continue;
-
-                kp.octave = level;
-                kp.size = orbPatchSize * std::pow(scaleFactor, level);
-
-                levelKeypoints.push_back(kp);
-            }
-        }
-    }
-}
-
-static std::vector<cv::KeyPoint> detectGridFASTPyramid(
-    const cv::Mat& gray,
-    int nlevels,
-    float scaleFactor,
-    int cellSize,
-    int fastThresholdHigh,
-    int fastThresholdLow,
-    int orbPatchSize)
-{
-    std::vector<cv::Mat> pyramid = buildPyramid(gray, nlevels, scaleFactor);
-    std::vector<cv::KeyPoint> allKeypoints;
-
-    for (int level = 0; level < nlevels; ++level)
-    {
-        std::vector<cv::KeyPoint> levelKeypoints;
-
-        detectGridFASTAtLevel(
-            pyramid[level],
-            levelKeypoints,
-            level,
-            scaleFactor,
-            cellSize,
-            fastThresholdHigh,
-            fastThresholdLow,
-            orbPatchSize
-        );
-
-        float scaleToOriginal = std::pow(scaleFactor, level);
-
-        for (auto& kp : levelKeypoints)
-        {
-            kp.pt.x *= scaleToOriginal;
-            kp.pt.y *= scaleToOriginal;
-
-            kp.octave = level;
-            kp.size = orbPatchSize * scaleToOriginal;
-
-            allKeypoints.push_back(kp);
-        }
-    }
-
-    return allKeypoints;
-}
+#include "../../third-party/ORBSLAM/include/ORBextractor.h"
+#include "../../third-party/ORBSLAM/src/ORBextractor.cc"
 
 static std::vector<cv::DMatch> ratioKnnMatches(
     const cv::Mat& des1,
@@ -316,17 +128,7 @@ int main()
         fastThreshold
     );
 
-    cv::Ptr<cv::ORB> orbForCustomKeypoints = cv::ORB::create(
-        50000,
-        scaleFactor,
-        nlevels,
-        edgeThreshold,
-        0,
-        2,
-        cv::ORB::HARRIS_SCORE,
-        patchSize,
-        fastThreshold
-    );
+    ORB_SLAM::ORBextractor orbpyr{};
 
     cv::BFMatcher matcher(cv::NORM_HAMMING, false);
 
@@ -352,18 +154,9 @@ int main()
         // ------------------------------------------------------------
         // 1. Custom grid FAST over 8-level pyramid, then ORB descriptors
         // ------------------------------------------------------------
-        std::vector<cv::KeyPoint> customKps = detectGridFASTPyramid(
-            gray,
-            nlevels,
-            scaleFactor,
-            cellSize,
-            fastThresholdHigh,
-            fastThresholdLow,
-            patchSize
-        );
-
+        std::vector<cv::KeyPoint> customKps;
         cv::Mat customDesc;
-        orbForCustomKeypoints->compute(gray, customKps, customDesc);
+        orbpyr(gray, {}, customKps, customDesc);
 
         // ------------------------------------------------------------
         // 2. Normal OpenCV ORB with pyramid

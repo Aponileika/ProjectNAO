@@ -9,7 +9,10 @@
 struct SLAM slam;
 
 static cv::Mat __SL_GetNextFrame();
+void __SL_PrintSlam();
 static void __SL_SlamStart();
+void __SL_SlamLoopBundle();
+PointPair2D __SL_SlamLoopPnP();
 
 void SL_InitSlam()
 {
@@ -25,7 +28,7 @@ void SL_InitSlam()
 static cv::Mat __SL_GetNextFrame()
 {
     static auto lastfr = std::chrono::steady_clock::now();
-    const auto waittime = std::chrono::milliseconds(250);
+    const auto waittime = std::chrono::milliseconds(50);
     while(true)
     {
         auto timenow = std::chrono::steady_clock::now();
@@ -61,19 +64,22 @@ static void __SL_SlamStart()
         PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
 
         LG_Log("Getting intrinsics of camera\n");
-        cv::Mat mask;
         LG_Log("Finding essential matrix\n");
         LG_Log("Num points before RANSAC = %lld\n", corrp.first.size());
         if(corrp.first.size() < 5)continue;
-        cv::Mat E = cv::findEssentialMat(corrp.first, corrp.second, K,
-                RANSACMETHOD, PROBECORRECT, RANSACEPIXELT, RANSACMAXITERS, mask);
-
+        cv::Mat mask;
+        fp64 focal = 1.0f;
+        cv::Mat E = cv::findEssentialMat(corrp.first, corrp.second, focal, cv::Point2d(0, 0),
+                    RANSACMETHOD, PROBECORRECT, RANSACEPIXELT, RANSACMAXITERS, mask);
+                
         cv::Mat R, t;
-        int ninliers = cv::countNonZero(mask);
-        LG_Log("ninliers = %d\n", ninliers);
+        cv::Mat poseMask = mask.clone();
+        
         LG_Log("Recovering pose\n");
-        cv::recoverPose(E, corrp.first, corrp.second, K, R, t, mask);
-        int ninliersafterrecover = cv::countNonZero(mask);
+        int ninliersafterrecover = cv::recoverPose(E, corrp.first, corrp.second, R, t, focal, cv::Point2d(0, 0), poseMask);
+
+        int ninliers = cv::countNonZero(mask);
+        LG_Log("ninliers = %d\n", ninliersafterrecover);
         if(ninliersafterrecover < InitFrameThresholdCorrp)
         {
             LG_Log("ninliers too few after recover %d, need %d\n", ninliersafterrecover,
@@ -92,10 +98,10 @@ static void __SL_SlamStart()
         P1 = K * cv::Mat::eye(3, 4, CV_64F);
         P2 = K * Rt;
 
-        PointPair2D filteredcorrp = EP_FilterPointPairByMask(corrp, mask);
+        PointPair2D filteredcorrp = EP_FilterPointPairByMask(corrp, poseMask);
         corrp = std::move(filteredcorrp);
         LG_Log("number of corrp after masking = %lld\n", corrp.first.size());
-        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
+        //EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
         cv::Mat points3d;
         LG_Log("Triangulating\n");
@@ -108,6 +114,35 @@ static void __SL_SlamStart()
         isinit = true;
     }
     __SL_PrintSlam();
+}
+
+void __SL_SlamLoopBundle()
+{
+    OP_BundleAdjust(slam.Tview, slam.Tobs, slam.Tpoints);
+}
+
+PointPair2D __SL_SlamLoopPnP()
+{
+    PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
+    if(corrp.first.size() < NewFrameCorrpThreshold)
+    {
+        LG_Log("not enough points found for new frame found %d, need %d\n", 
+                corrp.first.size(), NewFrameCorrpThreshold);
+        return {};
+    }
+    LG_Log("Solving pnp\n");
+    struct PnPret pnpret = OB_SolvePnP(corrp, slam.Tview, slam.Tobs, slam.Tpoints);
+    if(pnpret.ret == PNP_NOT_ENOUGH_2D3D)
+    {
+        LG_Log("not enough 2d3d in pnp\n");
+        return {};
+    }
+    if(pnpret.ret == PNP_NOT_ENOUGH_NONPNP)
+    {
+        LG_Log("not enough non 2d3d in pnp\n");
+        return {};
+    }
+    return pnpret.nonpnpPoints;
 }
 
 void __SL_SlamLoop()
@@ -128,33 +163,18 @@ void __SL_SlamLoop()
         LG_Log("Getting new frame in SLAM loop\n");
         slam.frame_pair.second = __SL_GetNextFrame();
         LG_Log("Getting corresponding points in SLAM loop\n");
-        PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
-        if(corrp.first.size() < NewFrameCorrpThreshold)
-        {
-            LG_Log("not enough points found for new frame found %d, need %d\n", 
-                    corrp.first.size(), NewFrameCorrpThreshold);
-            added_view = false;
-            continue;
-        }
-        LG_Log("Solving pnp\n");
-        PointPair2D nonpnpcorrp = OB_SolvePnP(corrp, slam.Tview, slam.Tobs, slam.Tpoints);
+        PointPair2D nonpnpcorrp = __SL_SlamLoopPnP();
         if(nonpnpcorrp.first.size() == 0)
         {
-            LG_Log("no pnp solution\n");
+            LG_Log("Pnp block failed, getting new frame\n");
             added_view = false;
-            continue;
-        }
-        if(nonpnpcorrp.first.size() < NonPnpThreshold)
-        {
-            LG_Log("too few new points\n");
-            continue;
         }
         added_view = true;
         LG_Log("Getting cam\n");
         struct Camera cam2 = slam.Tview->views[slam.Tview->last_sz];
         LG_Log("Getting E from cam\n");
         cv::Mat E = EP_EFromRigid(cam2.R, cam2.t);
-        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.first, nonpnpcorrp.first, nonpnpcorrp.second);
+        //EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.first, nonpnpcorrp.first, nonpnpcorrp.second);
         LG_Log("Finding corrp with epipolar constraint\n");
         PointPair2D corr_p = EP_FindCorrpEpipolar(nonpnpcorrp, E);
         LG_Log("Found %lld corresponding points after filtering\n", corr_p.first.size());

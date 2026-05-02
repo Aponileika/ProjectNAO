@@ -3,14 +3,15 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d.hpp>
+#include "../../third-party/ORBSLAM/include/ORBextractor.h"
 #include "CArenaAlloc.h"
 #define NFEATURES 5000 
 #define MATCHRATIO 0.75f
-#define EpiPolarTreshhold 1.0f
+#define EpiPolarTreshhold 1.5f
 
 struct OrbExtractor
 {
-    cv::Ptr<cv::ORB> orb;
+    ORB_SLAM::ORBextractor orb;
     cv::BFMatcher matcher;
     fp64 matchratio;
 };
