@@ -53,6 +53,8 @@ class AutomaticControl(Node):
         self.path = path
         self.curr_node = 1
 
+        self.distanceTraveled = 0
+
         self.timer = self.create_timer(self.Ts, self.control_loop)
 
 
@@ -75,8 +77,10 @@ class AutomaticControl(Node):
 
         self.get_next_node()
 
+
     def state_callback(self, msg):
         pass
+
 
     def update_model(self):
         xdot = self.v * cos(self.theta)
@@ -85,16 +89,18 @@ class AutomaticControl(Node):
 
         self.x += xdot * self.Ts
         self.y += ydot * self.Ts
-        self.theta += theta_dot * self.Ts
+
+        theta = self.theta + theta_dot * self.Ts
+        self.theta = atan2(sin(theta), cos(theta))
 
         return
 
 
     def control_system(self, ed, ey, etheta):
         # Velocity (allow reverse)
-        if ed < 0.1:
+        if ed < 0.01:
             ed = 0
-
+        
         v = self.vmax * min(0.9*cos(etheta) + 0.1, self.kx * ed)
         self.v = self.value_limit(v, self.vmax, -self.vmax)
 
@@ -105,7 +111,7 @@ class AutomaticControl(Node):
         etheta = atan2(sin(etheta), cos(etheta))
 
         # Steering (NO velocity division!)
-        delta = etheta + atan(self.ky * ey)
+        delta = self.ktheta * etheta + self.ky * atan(self.ky * ey)
         self.delta = self.value_limit(delta, self.delta_max, -self.delta_max)
     
 
@@ -113,7 +119,8 @@ class AutomaticControl(Node):
         dx  = self.path[self.curr_node]["x"] - self.x 
         dy  = self.path[self.curr_node]["y"] - self.y
 
-        ed =  sqrt( (self.path[-1]["x"] - self.x)**2 + (self.path[-1]["y"] - self.y)**2)
+        ed =  self.path[-1]['distance'] - self.distanceTraveled
+        #ex =  dx*cos(self.theta) + dy*sin(self.theta)
         ey = -dx*sin(self.theta) + dy*cos(self.theta)
 
         etheta  = self.path[self.curr_node]["theta"] - self.theta
@@ -129,10 +136,12 @@ class AutomaticControl(Node):
             dx  = self.path[self.curr_node]["x"] - self.x 
             dy  = self.path[self.curr_node]["y"] - self.y
 
-            ed = dx*cos(self.theta) + dy*sin(self.theta)
+            ex = dx*cos(self.theta) + dy*sin(self.theta)
 
-            if ed < 0:
+            if ex < 0:
                 self.curr_node += 1
+                self.distanceTraveled = self.path[self.curr_node]['distance']
+
 
 
     def value_limit(self, value, max, min):
@@ -154,18 +163,19 @@ def create_path(type, omega):
 
         for i in range(1000):
             if int(i / omega) % 2 == 0:
-                path.append({"x": i / 100, "y": - 1})
+                path.append({"x": i / 200, "y": - 1})
             else:
-                path.append({"x": i / 100, "y": + 1})
+                path.append({"x": i / 200, "y": + 1})
 
     elif type == "circle":
-        for i in range(180):
+        for i in range(180*5):
             path.append({"x": omega * cos(i * 2*pi / 180), "y": omega * sin(i * 2*pi / 180)})
 
     else:
         for i in range(1000):
-            path.append({"x": i / 100, "y": sin(omega * i)})
+            path.append({"x": i / 200, "y": sin(omega * i)})
 
+    distance = 0
     for i in range(len(path) - 1):
         start_node = path[i]
         next_node = path[i+1]
@@ -173,6 +183,9 @@ def create_path(type, omega):
         angle = atan2(next_node["y"] - start_node["y"],
                       next_node["x"] - start_node["x"])
         
+        distance += sqrt( (next_node['x'] - start_node['x'])**2 + (next_node['x'] - start_node['x'])**2 )
+        
+        next_node["distance"] = distance
         next_node["theta"] = angle
 
     return path
@@ -181,15 +194,15 @@ def create_path(type, omega):
 def main(args=None):
     rclpy.init(args=args)
 
-    path = create_path("circle", 0.5)
+    path = create_path("circle", 1)
 
     node = AutomaticControl(
         Ts=0.1,
         vmax=1,
         delta_max=pi/4,
         kx=1,
-        ky=15,
-        ktheta=1,
+        ky=3,
+        ktheta=2,
         path=path
     )
 
