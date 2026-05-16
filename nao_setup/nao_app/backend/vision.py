@@ -211,20 +211,9 @@ class VisionManager(object):
         return False, 0
 
     def _alarm_loop(self):
-        audio = self.get_proxy("audio")
-        tts = self.get_proxy("tts")
+        """Hold the alarm-active state; speech is fired once in _start_alarm."""
         while self._alarm_active:
-            if audio:
-                try:
-                    audio.setOutputVolume(100)
-                except Exception:
-                    pass
-            if tts:
-                try:
-                    tts.say("destroy")
-                except Exception:
-                    pass
-            time.sleep(0.1)
+            time.sleep(0.5)
 
     def _start_alarm(self):
         self._alarm_active = True
@@ -234,6 +223,19 @@ class VisionManager(object):
                 leds.fadeRGB("AllLeds", 0xFF0000, 0.2)
             except Exception:
                 pass
+        # Say the detection phrase ONCE (not in a tight loop)
+        tts = self.get_proxy("tts")
+        if tts:
+            try:
+                tts.say("Human detected.")
+            except Exception:
+                pass
+        # Fire the external on_human_detected callback (e.g. to trigger dance)
+        if "on_human_detected" in self.ui:
+            try:
+                self.ui["on_human_detected"]()
+            except Exception as e:
+                print("[VisionManager] on_human_detected callback error: %s" % e)
         t = threading.Thread(target=self._alarm_loop)
         t.daemon = True
         t.start()

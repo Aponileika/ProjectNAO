@@ -1179,6 +1179,9 @@ class NaoAppWindow(object):
                     self.conn.motion.setMotionConfig([
                         ["ENABLE_FOOT_CONTACT_PROTECTION", True],
                     ])
+                    # Best-effort extra-safety flags (not available on all firmware)
+                    try: self.conn.motion.setExternalCollisionProtectionEnabled("All", True)
+                    except Exception: pass
                 except Exception:
                     pass
 
@@ -1351,28 +1354,41 @@ class NaoAppWindow(object):
             _vision_backoff_secs  = [30.0]   # starts at 30 s, doubles on each 429
 
             def _do_gemini_check(img_bytes):
+                # Bail immediately if the target was already found
+                if _task_done[0]:
+                    _vision_checking[0] = False
+                    return
                 try:
+                    # Use a strict YES/NO prompt that overrides the mobster personality
+                    # so the model reliably returns one of the two expected tokens.
                     prompt = (
-                        "You are a camera mounted on a small humanoid robot. "
-                        "The camera is currently tilted downward, so you are "
-                        "looking at the floor and the area immediately in front "
-                        "of the robot. "
-                        "Examine this image carefully. "
-                        "Is there a {} clearly visible anywhere in the image? "
-                        "Reply with exactly one word: YES or NO."
+                        "VISION CHECK — answer with ONE word only, either YES or NO. "
+                        "No other text, no punctuation, no mobster slang. "
+                        "Look at this image carefully. "
+                        "Is a '{}' clearly visible anywhere in the image? "
+                        "Reply: YES or NO"
                     ).format(target)
                     result = search_client.generate_text(prompt, image_bytes=img_bytes)
-                    print("[VisionSearch] Gemini (%s): %s" % (
-                        search_client.active_key_label(), result.strip()))
+                    # Bail if the target was found by SDK while we awaited the API
+                    if _task_done[0]:
+                        return
+                    key_lbl = (search_client.active_key_label()
+                               if hasattr(search_client, "active_key_label") else "?")
+                    print("[VisionSearch] Gemini (%s): %s" % (key_lbl, result.strip()))
                     if "429" in result:
                         wait = _vision_backoff_secs[0]
                         _vision_backoff_until[0] = time.time() + wait
                         _vision_backoff_secs[0]  = min(wait * 2.0, 120.0)
                         print("[VisionSearch] All keys exhausted. Pausing vision for %.0f s." % wait)
-                    elif "YES" in result.upper():
-                        _target_found[0] = True
-                        _vision_backoff_secs[0] = 30.0   # reset backoff on success
-                        self.auto_status.set("FOUND: %s!" % target)
+                    else:
+                        # Accept both a plain YES and responses that merely contain YES
+                        # in case the model adds extra punctuation despite instructions.
+                        r_upper = result.upper().strip()
+                        if "YES" in r_upper and "NO" not in r_upper[:3]:
+                            _target_found[0] = True
+                            _task_done[0] = True
+                            _vision_backoff_secs[0] = 30.0
+                            self.auto_status.set("FOUND: %s!" % target)
                 except Exception as e:
                     print("[VisionSearch] Error: %s" % e)
                 finally:
@@ -1400,15 +1416,15 @@ class NaoAppWindow(object):
             # from colliding and to allow ZMP balance.  StepHeight raised to
             # give the foot proper clearance off the floor.
             walk_config = _tuned_walk_config(walk_config, {
-                "Frequency":    0.55,
-                "MaxStepX":     0.035,
-                "MaxStepY":     0.025,
-                "MaxStepTheta": 0.08,
-                "StepHeight":   0.016,
+                "Frequency":    0.48,   # slower gait cycle = more balance time per step
+                "MaxStepX":     0.028,  # shorter forward steps
+                "MaxStepY":     0.020,  # less lateral
+                "MaxStepTheta": 0.06,   # gentler turns
+                "StepHeight":   0.020,  # higher foot lift = less tripping on floor
                 "TorsoWy":      0.00,
             })
 
-            max_fwd           = 0.08
+            max_fwd           = 0.05   # cap forward speed for stability
             wander_turn_bias  = 0.0
             last_bias_t       = time.time()
             next_speech_t     = time.time() + random.uniform(3.0, 20.0)
@@ -1572,7 +1588,7 @@ class NaoAppWindow(object):
                         print("[Novelty] Check error: %s" % e)
 
                 # 3b. Trigger Gemini when novelty fires or timer expires
-                if target and has_api and not _vision_checking[0]:
+                if target and has_api and not _vision_checking[0] and not _task_done[0]:
                     if now < _vision_backoff_until[0]:
                         remaining = int(_vision_backoff_until[0] - now)
                         self.auto_status.set("Rate limited — resuming in %ds..." % remaining)
@@ -1694,8 +1710,8 @@ class NaoAppWindow(object):
                         try: self.conn.tts.post.say(msg)
                         except Exception: pass
 
-                    # Back up
-                    self.conn.motion.moveToward(-0.15, 0.0, 0.0, walk_config)
+                    # Back up slowly
+                    self.conn.motion.moveToward(-0.10, 0.0, 0.0, walk_config)
                     for _ in range(15):
                         if not getattr(self, "_seeking", False): break
                         time.sleep(0.1)
@@ -1902,8 +1918,18 @@ class NaoAppWindow(object):
     def _on_camera_start(self):
         if not self._require_connection(): return
         self._set_controller_details(False)
+        # When the camera sees a person, trigger the celebration dance
+        self.vision.ui["on_human_detected"] = self._on_camera_person_detected
         self.vision.start_camera(self.conn.ip, self.conn.port, self.root.after)
         self._poll_camera()
+
+    def _on_camera_person_detected(self):
+        """Called by VisionManager the first time a human is spotted via live camera."""
+        if not self._require_connection():
+            return
+        t = threading.Thread(target=self._celebrate_found_human)
+        t.daemon = True
+        t.start()
         
     def _poll_camera(self):
         if self.vision._cam_running:
