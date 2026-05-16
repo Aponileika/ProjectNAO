@@ -627,76 +627,79 @@ class NaoAppWindow(object):
         if not self._require_connection(): return
         self._set_status("Waking up for dance...")
         self.root.update_idletasks()
-        def _dance():
-            try:
-                # Wake up and posture
-                if self.conn.motion:
-                    self.conn.motion.wakeUp()
-                if self.conn.posture:
-                    self.conn.posture.goToPosture("StandInit", 0.5)
+        t = threading.Thread(target=self._run_dance)
+        t.daemon = True
+        t.start()
 
-                dance_played = False
+    def _run_dance(self):
+        """Execute the full dance sequence (blocking). Safe to call from any thread."""
+        import time
+        try:
+            if self.conn.motion:
+                self.conn.motion.wakeUp()
+            if self.conn.posture:
+                self.conn.posture.goToPosture("StandInit", 0.5)
 
-                # 1. Try built-in ALAnimationPlayer (Standard Choregraphe animations)
-                anim_proxy = self.conn.get_proxy("ALAnimationPlayer")
-                if anim_proxy:
-                    dances = ["animations/Stand/Gestures/Taichi_1", "animations/Stand/Gestures/Joy_1", "animations/Stand/Gestures/Excited_1"]
-                    for d in dances:
-                        try:
-                            self._set_status("Dancing: %s..." % d.split('/')[-1])
-                            anim_proxy.run(d)
+            dance_played = False
+
+            # 1. Try built-in ALAnimationPlayer (Standard Choregraphe animations)
+            anim_proxy = self.conn.get_proxy("ALAnimationPlayer")
+            if anim_proxy:
+                dances = [
+                    "animations/Stand/Gestures/Taichi_1",
+                    "animations/Stand/Gestures/Joy_1",
+                    "animations/Stand/Gestures/Excited_1",
+                ]
+                for d in dances:
+                    try:
+                        self._set_status("Dancing: %s..." % d.split('/')[-1])
+                        anim_proxy.run(d)
+                        dance_played = True
+                        break
+                    except Exception:
+                        pass
+
+            # 2. Try ALBehaviorManager if animation player failed
+            if not dance_played:
+                behavior = self.conn.get_proxy("ALBehaviorManager")
+                if behavior:
+                    for b in behavior.getInstalledBehaviors():
+                        if "taichi" in b.lower() or "dance" in b.lower() or "macarena" in b.lower():
+                            self._set_status("Executing behavior: %s" % b)
+                            if not behavior.isBehaviorRunning(b):
+                                behavior.runBehavior(b)
                             dance_played = True
                             break
-                        except Exception:
-                            pass
 
-                # 2. Try ALBehaviorManager if animation player failed
-                if not dance_played:
-                    behavior = self.conn.get_proxy("ALBehaviorManager")
-                    if behavior:
-                        for b in behavior.getInstalledBehaviors():
-                            if "taichi" in b.lower() or "dance" in b.lower() or "macarena" in b.lower():
-                                self._set_status("Executing behavior: %s" % b)
-                                if not behavior.isBehaviorRunning(b):
-                                    behavior.runBehavior(b)
-                                dance_played = True
-                                break
-
-                # 3. Fallback: Hardcoded custom python dance!
-                if not dance_played and self.conn.motion:
-                    self._set_status("Doing a custom Python dance!")
-                    import time
-                    m = self.conn.motion
-                    names = ["LShoulderPitch", "RShoulderPitch", "LShoulderRoll", "RShoulderRoll"]
-                    # Arms up
-                    m.setAngles(names, [-1.0, -1.0, 0.5, -0.5], 0.2)
-                    time.sleep(1.0)
-                    # Little hip wiggle
-                    m.moveToward(0.0, 0.0, 0.5)
-                    time.sleep(1.5)
-                    m.moveToward(0.0, 0.0, -0.5)
-                    time.sleep(1.5)
-                    m.stopMove()
-                    # Arms sequence
-                    for _ in range(2):
-                        m.setAngles(["LShoulderPitch", "RShoulderPitch"], [0.0, -1.5], 0.3)
-                        time.sleep(0.5)
-                        m.setAngles(["LShoulderPitch", "RShoulderPitch"], [-1.5, 0.0], 0.3)
-                        time.sleep(0.5)
-                    # Reset
-                    m.setAngles(names, [1.5, 1.5, 0.1, -0.1], 0.2)
+            # 3. Fallback: hardcoded Python dance
+            if not dance_played and self.conn.motion:
+                self._set_status("Doing a custom Python dance!")
+                m = self.conn.motion
+                names = ["LShoulderPitch", "RShoulderPitch", "LShoulderRoll", "RShoulderRoll"]
+                m.setAngles(names, [-1.0, -1.0, 0.5, -0.5], 0.2)
+                time.sleep(1.0)
+                m.moveToward(0.0, 0.0, 0.5)
+                time.sleep(1.5)
+                m.moveToward(0.0, 0.0, -0.5)
+                time.sleep(1.5)
+                m.stopMove()
+                for _ in range(2):
+                    m.setAngles(["LShoulderPitch", "RShoulderPitch"], [0.0, -1.5], 0.3)
                     time.sleep(0.5)
-                    if self.conn.posture:
-                        self.conn.posture.goToPosture("StandInit", 0.5)
-                    dance_played = True
+                    m.setAngles(["LShoulderPitch", "RShoulderPitch"], [-1.5, 0.0], 0.3)
+                    time.sleep(0.5)
+                m.setAngles(names, [1.5, 1.5, 0.1, -0.1], 0.2)
+                time.sleep(0.5)
+                if self.conn.posture:
+                    self.conn.posture.goToPosture("StandInit", 0.5)
+                dance_played = True
 
-                if dance_played:
-                    self._set_status("Finished dance.")
-                else:
-                    self._set_status("Could not dance. No modules available.", False)
-            except Exception as e:
-                self._set_status("Dance error: %s" % e, False)
-        threading.Thread(target=_dance).start()
+            if dance_played:
+                self._set_status("Finished dance.")
+            else:
+                self._set_status("Could not dance. No modules available.", False)
+        except Exception as e:
+            self._set_status("Dance error: %s" % e, False)
 
     def _on_life_on(self):
         if not self._require_connection() or not self.conn.life: return
@@ -1193,19 +1196,29 @@ class NaoAppWindow(object):
             tracker = self.conn.get_proxy("ALTracker")
 
             # --- Floor camera (QQVGA 160x120 for fast color analysis) ---
-            floor_threshold = 0.25   # will be replaced by calibration if boundary mode
+            floor_threshold   = 0.25   # will be replaced by calibration if boundary mode
+            _floor_bottom_cam = False  # True when using NAO's chin cam (no head tilt needed)
             if use_boundary and wander_video:
                 try: wander_video.unsubscribe("wander_floor_cam")
                 except Exception: pass
                 try:
-                    floor_cam_name = wander_video.subscribe("wander_floor_cam", 0, 11, 10)
-                    # Tilt head down at a brisk speed so the floor is in view quickly
-                    if self.conn.motion:
+                    # Prefer the bottom (chin) camera — it always points at the floor
+                    # so the top-camera head is completely free for active scanning.
+                    try:
+                        floor_cam_name = wander_video.subscribeCamera(
+                            "wander_floor_cam", 1, 0, 11, 10)   # 1 = bottom camera
+                        _floor_bottom_cam = True
+                        print("[Floor] Using bottom camera — head free for active scanning")
+                    except Exception:
+                        floor_cam_name = wander_video.subscribe("wander_floor_cam", 0, 11, 10)
+                        print("[Floor] Bottom camera unavailable, will tilt head for calibration")
+
+                    # Only tilt head down for calibration when we must use the top camera
+                    if not _floor_bottom_cam and self.conn.motion:
                         self.conn.motion.setAngles("HeadPitch", 0.45, 0.30)
                     self.auto_status.set("Calibrating floor sensor... stay still")
                     self._set_status("Calibrating floor boundary (2 seconds)...")
 
-                    # Wait for head to reach target angle, then sample baseline
                     time.sleep(2.0)
                     baseline_samples = []
                     for _ in range(6):
@@ -1216,7 +1229,6 @@ class NaoAppWindow(object):
 
                     if baseline_samples:
                         baseline = sum(baseline_samples) / float(len(baseline_samples))
-                        # Trigger if floor coverage drops to less than 50% of what we saw at start
                         floor_threshold = max(0.10, baseline * 0.50)
                         self._set_status(
                             "Floor calibrated: baseline=%.2f, trigger below %.2f" % (
@@ -1226,19 +1238,17 @@ class NaoAppWindow(object):
                     else:
                         self._set_status("Floor calibration failed – using default threshold.", False)
                         print("[Floor] Calibration failed, no valid samples.")
+
+                    # Return head to forward level after top-camera calibration tilt
+                    if not _floor_bottom_cam and self.conn.motion:
+                        try: self.conn.motion.setAngles("HeadPitch", 0.0, 0.20)
+                        except Exception: pass
                 except Exception as e:
                     print("[Wander] Floor camera setup failed: %s" % e)
 
             # --- Head tilt for object search on the floor ---
-            # When hunting a floor-level target, pitch head down so the camera
-            # actually sees the ground in front of the robot.
-            if target and self.conn.motion:
-                try:
-                    self.conn.motion.setAngles("HeadPitch", 0.40, 0.20)
-                    time.sleep(1.0)   # let head settle before first snap
-                    self.auto_status.set("Head tilted down — scanning floor...")
-                except Exception as e:
-                    print("[Wander] Head tilt failed: %s" % e)
+            # Static tilt removed: the active scanning loop below cycles through
+            # all angles, including a floor-facing slot used for boundary checks.
 
             # --- Local novelty detector (no API, runs every second) ---
             # Divides the QQVGA frame into a grid of colour zones.  When enough
@@ -1408,6 +1418,28 @@ class NaoAppWindow(object):
             tilt_high_since   = None
             fall_debounce_s   = 0.6
 
+            # --- Active head-scanning state machine ---
+            # The head cycles through 7 positions so the camera covers the whole
+            # environment: left/right at three elevations, plus one floor-facing
+            # slot used for boundary checks (or always active with bottom cam).
+            _HEAD_SCAN_POSITIONS = [
+                # (yaw, pitch)  — pitch: +ve = look down, −ve = look up
+                ( 0.0,  0.10),   # forward, slight down
+                ( 0.60, 0.05),   # left, level
+                ( 0.60,-0.12),   # left, slightly up
+                ( 0.0, -0.12),   # forward up (human face height)
+                (-0.60, 0.05),   # right, level
+                (-0.60,-0.12),   # right, slightly up
+                ( 0.0,  0.42),   # forward, floor-facing (boundary check slot)
+            ]
+            _FLOOR_SLOT       = len(_HEAD_SCAN_POSITIONS) - 1
+            _HEAD_SCAN_DWELL  = 2.5   # seconds to hold each position
+            _head_scan_idx    = [0]
+            _head_scan_next_t = [time.time() + 1.5]   # first move after settle
+            _head_moved_t     = [time.time()]          # last time head was commanded
+            _head_at_floor    = [False]                # currently in floor slot
+            _head_scan_paused = [False]                # suppressed during avoidance
+
             face_phrases = [
                 "Where is my human?",
                 "I am lonely.",
@@ -1465,17 +1497,23 @@ class NaoAppWindow(object):
                         if has_api:
                             try:
                                 img = self._capture_image_bytes()
+                                obj_prompt = (
+                                    "You are a robot. Your wander mission was to find: '%s'. "
+                                    "You just spotted your target. Say one short excited "
+                                    "sentence confirming the mission is complete and "
+                                    "mention what you were searching for."
+                                ) % target_label
                                 if img:
                                     reply = search_client.generate_text(
-                                        "You just found a human being in front of you. "
-                                        "Say one short excited sentence confirming you found them.",
-                                        image_bytes=img)
+                                        obj_prompt, image_bytes=img)
                                 else:
-                                    reply = "I found you! There you are!"
+                                    reply = search_client.generate_text(obj_prompt)
+                                if not reply or "Error" in reply:
+                                    reply = "Mission complete! I found the %s!" % target_label
                             except Exception:
-                                reply = "I found you! There you are!"
+                                reply = "Mission complete! I found the %s!" % target_label
                         else:
-                            reply = "I found you! There you are!"
+                            reply = "Mission complete! I found the %s!" % target_label
                         if self.conn.tts:
                             try: self.conn.tts.say(reply)
                             except Exception: pass
@@ -1514,7 +1552,8 @@ class NaoAppWindow(object):
                 # 3a. Local novelty check (runs every second, no API)
                 if (target and novelty_cam_name and wander_video
                         and _novelty_baseline[0] is not None
-                        and now - _novelty_last_t[0] >= _NOVELTY_INTERVAL):
+                        and now - _novelty_last_t[0] >= _NOVELTY_INTERVAL
+                        and now - _head_moved_t[0] > 1.2):   # wait for head to settle
                     _novelty_last_t[0] = now
                     try:
                         nimg = wander_video.getImageRemote(novelty_cam_name)
@@ -1553,6 +1592,23 @@ class NaoAppWindow(object):
                                 t.daemon = True
                                 t.start()
 
+                # 3.5. ACTIVE HEAD SCANNING — advance to next position every dwell period
+                now = time.time()
+                if (self.conn.motion and not _head_scan_paused[0]
+                        and now >= _head_scan_next_t[0]):
+                    slot = _head_scan_idx[0] % len(_HEAD_SCAN_POSITIONS)
+                    yaw, pitch        = _HEAD_SCAN_POSITIONS[slot]
+                    _head_at_floor[0]    = (slot == _FLOOR_SLOT)
+                    _head_moved_t[0]     = now
+                    _head_scan_next_t[0] = now + _HEAD_SCAN_DWELL
+                    _head_scan_idx[0]   += 1
+                    _novelty_baseline[0] = None   # reset baseline for new viewpoint
+                    try:
+                        self.conn.motion.setAngles(
+                            ["HeadYaw", "HeadPitch"], [yaw, pitch], 0.20)
+                    except Exception:
+                        pass
+
                 # 4. SONAR check
                 l_dist = r_dist = 1.0
                 if self.conn.memory:
@@ -1563,10 +1619,15 @@ class NaoAppWindow(object):
                             "Device/SubDeviceList/US/Right/Sensor/Value")
                     except Exception: pass
 
-                # 5. FLOOR BOUNDARY check (every 5 ticks ~ 0.5 s)
+                # 5. FLOOR BOUNDARY check
+                # Bottom camera: runs every 5 ticks (~0.5 s) regardless of head angle.
+                # Top camera:    only runs when head is in the floor-facing slot and settled.
                 boundary_ok = True
                 floor_tick += 1
-                if use_boundary and floor_tick >= 5:
+                _do_floor_check = (use_boundary and floor_tick >= 5 and (
+                    _floor_bottom_cam or
+                    (_head_at_floor[0] and now - _head_moved_t[0] > 0.8)))
+                if _do_floor_check:
                     floor_tick = 0
                     boundary_ok, _ = self._check_floor_boundary(
                         floor_cam_name, wander_video, green_threshold=floor_threshold)
@@ -1616,6 +1677,14 @@ class NaoAppWindow(object):
                 obstacle = (l_dist < 0.60 or r_dist < 0.60) or not boundary_ok
 
                 if obstacle:
+                    _head_scan_paused[0] = True
+                    # Center head forward so sonar/camera see the obstacle clearly
+                    try:
+                        if self.conn.motion:
+                            self.conn.motion.setAngles(
+                                ["HeadYaw", "HeadPitch"], [0.0, 0.1], 0.25)
+                    except Exception:
+                        pass
                     self.conn.motion.stopMove()
                     reason_txt = ("boundary" if not boundary_ok else "obstacle")
                     if self.conn.tts:
@@ -1646,6 +1715,10 @@ class NaoAppWindow(object):
                     for _ in range(int(random.uniform(15, 35))):
                         if not getattr(self, "_seeking", False): break
                         time.sleep(0.1)
+
+                    # Resume scanning from current position slot
+                    _head_scan_paused[0] = False
+                    _head_scan_next_t[0] = time.time() + 0.5   # short settle before next move
 
                 else:
                     # Normal wander movement
@@ -1699,63 +1772,63 @@ class NaoAppWindow(object):
                 except Exception: pass
 
     def _celebrate_found_human(self):
-        """High-five gesture: raise right arm, hold, then lower."""
+        """High-five gesture, then full dance sequence."""
         import time
         motion = self.conn.motion
         leds   = self.conn.leds
         if leds:
-            try: leds.fadeRGB("AllLeds", 0x00FF8C00, 0.3)   # warm orange flash
+            try: leds.fadeRGB("AllLeds", 0x00FF8C00, 0.3)
             except Exception: pass
         if motion:
             try:
-                # Right arm straight up, palm forward — classic high-five pose
                 motion.setAngles(
                     ["RShoulderPitch", "RShoulderRoll", "RElbowRoll", "RElbowYaw",
                      "RWristYaw"],
-                    [-1.25, -0.20,  0.03,  1.20,  0.0],
+                    [-1.25, -0.20, 0.03, 1.20, 0.0],
                     0.25)
-                time.sleep(2.5)   # hold for the human to slap it
-                # Lower arm back to rest
+                time.sleep(2.5)
                 motion.setAngles(
                     ["RShoulderPitch", "RShoulderRoll", "RElbowRoll", "RElbowYaw",
                      "RWristYaw"],
-                    [ 1.50, -0.15,  0.85,  1.20,  0.0],
+                    [1.50, -0.15, 0.85, 1.20, 0.0],
                     0.20)
+                time.sleep(0.5)
             except Exception as e:
                 print("[Celebrate] high-five error: %s" % e)
+        self._run_dance()
 
     def _celebrate_found_object(self, target_name):
-        """Victory arm-wave dance after finding an object."""
+        """Victory arm-wave, then full dance sequence."""
         import time
         motion = self.conn.motion
         leds   = self.conn.leds
         if leds:
-            try: leds.fadeRGB("AllLeds", 0x0000FF00, 0.3)   # bright green flash
+            try: leds.fadeRGB("AllLeds", 0x0000FF00, 0.3)
             except Exception: pass
         if motion:
             try:
-                # Two cycles of alternating arm raises
                 for _ in range(2):
                     motion.setAngles(
                         ["LShoulderPitch", "RShoulderPitch",
                          "LShoulderRoll",  "RShoulderRoll"],
-                        [ 0.0, -1.40,  0.40, -0.40],
+                        [0.0, -1.40, 0.40, -0.40],
                         0.30)
                     time.sleep(0.55)
                     motion.setAngles(
                         ["LShoulderPitch", "RShoulderPitch",
                          "LShoulderRoll",  "RShoulderRoll"],
-                        [-1.40,  0.0,  0.40, -0.40],
+                        [-1.40, 0.0, 0.40, -0.40],
                         0.30)
                     time.sleep(0.55)
-                # Reset arms to neutral
                 motion.setAngles(
                     ["LShoulderPitch", "RShoulderPitch",
                      "LShoulderRoll",  "RShoulderRoll"],
                     [1.50, 1.50, 0.15, -0.15],
                     0.20)
+                time.sleep(0.5)
             except Exception as e:
                 print("[Celebrate] object-dance error: %s" % e)
+        self._run_dance()
 
     def _has_fallen(self):
         if not self.conn.memory:
