@@ -1135,6 +1135,10 @@ class NaoAppWindow(object):
         if api_keys is None:
             api_keys = []
 
+        # Friendly display name used in speech and status messages.
+        # Falls back to "human" when no target was typed (pure-wander / human-seek mode).
+        target_label = target.strip() or "human"
+
         sonar          = None
         floor_cam_name = None
         wander_video   = self.conn.video
@@ -1381,14 +1385,29 @@ class NaoAppWindow(object):
                         _vision_backoff_secs[0]  = min(wait * 2.0, 120.0)
                         print("[VisionSearch] All keys exhausted. Pausing vision for %.0f s." % wait)
                     else:
-                        # Accept both a plain YES and responses that merely contain YES
-                        # in case the model adds extra punctuation despite instructions.
                         r_upper = result.upper().strip()
-                        if "YES" in r_upper and "NO" not in r_upper[:3]:
+                        # Explicit YES/NO from the model
+                        explicit_yes = "YES" in r_upper and not r_upper.startswith("NO")
+                        # Implicit confirmation: the model described the target instead
+                        # of answering YES (happens when the mobster personality overrides
+                        # the YES/NO instruction).  Accept if the response mentions the
+                        # target and doesn't open with a clear negative.
+                        _neg_opens = ("NO ", "NOPE", "NOTHING", "NONE", "NOT ", "I DON",
+                                      "CAN'T", "CANNOT", "DON'T SEE", "DO NOT SEE")
+                        is_negative = any(r_upper.startswith(n) for n in _neg_opens)
+                        target_words = [w for w in target_label.lower().split() if len(w) > 2]
+                        implicit_yes = (
+                            not is_negative
+                            and bool(target_words)
+                            and any(w in r_upper.lower() for w in target_words)
+                        )
+                        if explicit_yes or implicit_yes:
                             _target_found[0] = True
                             _task_done[0] = True
                             _vision_backoff_secs[0] = 30.0
-                            self.auto_status.set("FOUND: %s!" % target)
+                            how_det = "explicit" if explicit_yes else "implicit"
+                            print("[VisionSearch] Target confirmed (%s)" % how_det)
+                            self.auto_status.set("FOUND: %s!" % target_label)
                 except Exception as e:
                     print("[VisionSearch] Error: %s" % e)
                 finally:
