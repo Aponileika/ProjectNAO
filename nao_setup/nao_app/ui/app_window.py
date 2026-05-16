@@ -2,6 +2,7 @@
 import Tkinter as tk
 import tkFont
 import threading
+import math
 from nao_app.ui.widgets import make_card, make_btn, BG, FG, ACCENT, SUCCESS, ERROR, WARN, CARD_BG, BTN_BG, BTN_FG
 
 class NaoAppWindow(object):
@@ -37,6 +38,9 @@ class NaoAppWindow(object):
         self.conn = conn
         self.vision = vision
         self.controller = controller
+
+        self.config_ip = ""
+        self.config_port = ""
         
         self.api_key_autofill = ""   # first key (shown in UI entry)
         self.api_keys_list    = []   # all keys, used for rotation
@@ -53,6 +57,15 @@ class NaoAppWindow(object):
                     k = cdata.get("gemini_key", "")
                     if k and k not in self.api_keys_list:
                         self.api_keys_list.append(k)
+                    ip = cdata.get("ip", "")
+                    port = cdata.get("port", "")
+                    if ip:
+                        self.config_ip = ip
+                    if port:
+                        try:
+                            self.config_port = str(int(port))
+                        except Exception:
+                            self.config_port = str(port)
 
             if os.path.isfile(secrets_path):
                 with open(secrets_path, "r") as f:
@@ -134,19 +147,96 @@ class NaoAppWindow(object):
         self._card_controller(right)
         self._card_camera(right)
 
+        self.root.after(500, self._start_ip_scan)
+
     def _card_connection(self, parent):
         card = make_card(parent, "Connection", self.font_head)
         row = tk.Frame(card, bg=CARD_BG)
         row.pack(fill="x")
         tk.Label(row, text="IP:", font=self.font_norm, bg=CARD_BG, fg=FG).pack(side="left")
         self.ip_entry = tk.Entry(row, font=self.font_norm, width=16)
-        self.ip_entry.insert(0, "192.168.0.123")
+        default_ip = self.config_ip or "192.168.0.123"
+        self._ip_default_value = default_ip
+        self.ip_entry.insert(0, default_ip)
         self.ip_entry.pack(side="left", padx=4)
         tk.Label(row, text="Port:", font=self.font_norm, bg=CARD_BG, fg=FG).pack(side="left")
         self.port_entry = tk.Entry(row, font=self.font_norm, width=6)
-        self.port_entry.insert(0, "9559")
+        self.port_entry.insert(0, self.config_port or "9559")
         self.port_entry.pack(side="left", padx=4)
         make_btn(row, "Connect", self._on_connect, width=10, font_norm=self.font_norm).pack(side="left", padx=6)
+
+    def _start_ip_scan(self):
+        if getattr(self, "_ip_scan_running", False):
+            return
+        self._ip_scan_running = True
+
+        def _scan():
+            try:
+                local_ip = self._get_local_ip()
+                if not local_ip:
+                    self.root.after(0, lambda: self._set_status("IP scan failed: local IP not found", False))
+                    return
+                parts = local_ip.split(".")
+                if len(parts) != 4:
+                    self.root.after(0, lambda: self._set_status("IP scan failed: bad local IP", False))
+                    return
+                prefix = ".".join(parts[:3]) + "."
+                try:
+                    port = int(self.port_entry.get().strip() or "9559")
+                except Exception:
+                    port = 9559
+
+                for i in range(1, 255):
+                    if not getattr(self, "_ip_scan_running", False):
+                        break
+                    target = prefix + str(i)
+                    if target == local_ip:
+                        continue
+                    if self._is_port_open(target, port, timeout=0.15):
+                        def _apply():
+                            current = self.ip_entry.get().strip()
+                            if current in ("", self._ip_default_value, self.config_ip, "192.168.0.123"):
+                                self.ip_entry.delete(0, tk.END)
+                                self.ip_entry.insert(0, target)
+                                self._set_status("Suggested IP: %s" % target)
+                        self.root.after(0, _apply)
+                        break
+            finally:
+                self._ip_scan_running = False
+
+        t = threading.Thread(target=_scan)
+        t.daemon = True
+        t.start()
+
+    def _get_local_ip(self):
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            try:
+                return socket.gethostbyname(socket.gethostname())
+            except Exception:
+                return None
+
+    def _is_port_open(self, host, port, timeout=0.15):
+        import socket
+        s = None
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(timeout)
+            return s.connect_ex((host, port)) == 0
+        except Exception:
+            return False
+        finally:
+            if s:
+                try:
+                    s.close()
+                except Exception:
+                    pass
 
     def _card_volume(self, parent):
         card = make_card(parent, "Volume", self.font_head)
@@ -208,6 +298,7 @@ class NaoAppWindow(object):
         m.config(font=self.font_norm, bg=BTN_BG, fg=BTN_FG, activebackground=ACCENT, highlightthickness=0, width=12)
         m.pack(side="left", padx=4)
         make_btn(row, "Go", self._on_posture, width=6, font_norm=self.font_norm).pack(side="left", padx=6)
+        make_btn(row, "Dance", self._on_dance, width=8, font_norm=self.font_norm).pack(side="left", padx=6)
 
     def _card_life(self, parent):
         card = make_card(parent, "Autonomous Life", self.font_head)
@@ -283,6 +374,9 @@ class NaoAppWindow(object):
         
         self.require_face = tk.BooleanVar(value=False)
         tk.Checkbutton(r4, text="Wait for Face", variable=self.require_face, font=self.font_small, bg=CARD_BG, fg=FG, selectcolor=CARD_BG, activebackground=CARD_BG, activeforeground=FG).pack(side="right")
+        
+        self.include_image = tk.BooleanVar(value=True)
+        tk.Checkbutton(r4, text="Include Vision", variable=self.include_image, font=self.font_small, bg=CARD_BG, fg=FG, selectcolor=CARD_BG, activebackground=CARD_BG, activeforeground=FG).pack(side="right")
 
     def _card_autonomous(self, parent):
         card = make_card(parent, "Autonomous Wander", self.font_head)
@@ -529,6 +623,81 @@ class NaoAppWindow(object):
                 self._set_status("Posture error: %s" % e, False)
         threading.Thread(target=_go).start()
 
+    def _on_dance(self):
+        if not self._require_connection(): return
+        self._set_status("Waking up for dance...")
+        self.root.update_idletasks()
+        def _dance():
+            try:
+                # Wake up and posture
+                if self.conn.motion:
+                    self.conn.motion.wakeUp()
+                if self.conn.posture:
+                    self.conn.posture.goToPosture("StandInit", 0.5)
+
+                dance_played = False
+
+                # 1. Try built-in ALAnimationPlayer (Standard Choregraphe animations)
+                anim_proxy = self.conn.get_proxy("ALAnimationPlayer")
+                if anim_proxy:
+                    dances = ["animations/Stand/Gestures/Taichi_1", "animations/Stand/Gestures/Joy_1", "animations/Stand/Gestures/Excited_1"]
+                    for d in dances:
+                        try:
+                            self._set_status("Dancing: %s..." % d.split('/')[-1])
+                            anim_proxy.run(d)
+                            dance_played = True
+                            break
+                        except Exception:
+                            pass
+
+                # 2. Try ALBehaviorManager if animation player failed
+                if not dance_played:
+                    behavior = self.conn.get_proxy("ALBehaviorManager")
+                    if behavior:
+                        for b in behavior.getInstalledBehaviors():
+                            if "taichi" in b.lower() or "dance" in b.lower() or "macarena" in b.lower():
+                                self._set_status("Executing behavior: %s" % b)
+                                if not behavior.isBehaviorRunning(b):
+                                    behavior.runBehavior(b)
+                                dance_played = True
+                                break
+
+                # 3. Fallback: Hardcoded custom python dance!
+                if not dance_played and self.conn.motion:
+                    self._set_status("Doing a custom Python dance!")
+                    import time
+                    m = self.conn.motion
+                    names = ["LShoulderPitch", "RShoulderPitch", "LShoulderRoll", "RShoulderRoll"]
+                    # Arms up
+                    m.setAngles(names, [-1.0, -1.0, 0.5, -0.5], 0.2)
+                    time.sleep(1.0)
+                    # Little hip wiggle
+                    m.moveToward(0.0, 0.0, 0.5)
+                    time.sleep(1.5)
+                    m.moveToward(0.0, 0.0, -0.5)
+                    time.sleep(1.5)
+                    m.stopMove()
+                    # Arms sequence
+                    for _ in range(2):
+                        m.setAngles(["LShoulderPitch", "RShoulderPitch"], [0.0, -1.5], 0.3)
+                        time.sleep(0.5)
+                        m.setAngles(["LShoulderPitch", "RShoulderPitch"], [-1.5, 0.0], 0.3)
+                        time.sleep(0.5)
+                    # Reset
+                    m.setAngles(names, [1.5, 1.5, 0.1, -0.1], 0.2)
+                    time.sleep(0.5)
+                    if self.conn.posture:
+                        self.conn.posture.goToPosture("StandInit", 0.5)
+                    dance_played = True
+
+                if dance_played:
+                    self._set_status("Finished dance.")
+                else:
+                    self._set_status("Could not dance. No modules available.", False)
+            except Exception as e:
+                self._set_status("Dance error: %s" % e, False)
+        threading.Thread(target=_dance).start()
+
     def _on_life_on(self):
         if not self._require_connection() or not self.conn.life: return
         try:
@@ -654,9 +823,11 @@ class NaoAppWindow(object):
             try:
                 client = self._make_gemini_client()
                 
-                image_bytes = self._capture_image_bytes()
-                if image_bytes is None:
-                    self._set_status("No image captured - sending text prompt only.", False)
+                image_bytes = None
+                if getattr(self, 'include_image', None) and self.include_image.get():
+                    image_bytes = self._capture_image_bytes()
+                    if image_bytes is None:
+                        self._set_status("No image captured - sending text prompt only.", False)
 
                 response_text = client.generate_text(prompt, image_bytes=image_bytes)
                 
@@ -710,9 +881,11 @@ class NaoAppWindow(object):
                     prompt = "Please listen to the attached audio recording of my voice. Answer what I say naturally."
                 
                 # Take a picture from the robot's eyes to send to Gemini
-                image_bytes = self._capture_image_bytes()
-                if image_bytes is None:
-                    self._set_status("No image captured - sending audio only.", False)
+                image_bytes = None
+                if getattr(self, 'include_image', None) and self.include_image.get():
+                    image_bytes = self._capture_image_bytes()
+                    if image_bytes is None:
+                        self._set_status("No image captured - sending audio only.", False)
                 
                 response_text = client.generate_text(prompt, audio_bytes=wav_bytes, image_bytes=image_bytes)
                 
@@ -926,6 +1099,7 @@ class NaoAppWindow(object):
 
         target       = getattr(self, 'wander_target_var',   None)
         target       = target.get().strip() if target else ""
+        target_label = target or "human"
         use_boundary = getattr(self, 'wander_boundary_var', None)
         use_boundary = bool(use_boundary.get()) if use_boundary else False
         api_keys     = self._all_api_keys()
@@ -936,6 +1110,11 @@ class NaoAppWindow(object):
         else:
             self.auto_status.set("Wandering & Scanning...")
         self._set_status("Autonomous wander started. Use 'Stop Auto' to abort.")
+        if self.conn.tts:
+            try:
+                self.conn.tts.say("Starting search for %s." % target_label)
+            except Exception:
+                pass
         threading.Thread(target=self._wander_seek_thread,
                          args=(target, use_boundary, api_keys)).start()
 
@@ -964,6 +1143,18 @@ class NaoAppWindow(object):
         search_client.set_api_keys(api_keys)
         has_api = bool(search_client.api_key)
 
+        # Words that indicate the search target is a human being.
+        # When matched, the faster NAO SDK face detection runs alongside Gemini
+        # and whichever fires first wins.
+        _HUMAN_KEYWORDS = (
+            "human", "person", "people", "man", "woman",
+            "boy", "girl", "face", "someone", "anybody",
+        )
+        target_is_human = (not target) or any(
+            k in target.lower() for k in _HUMAN_KEYWORDS)
+        _sdk_found  = [False]
+        _task_done  = [False]   # set True the moment target found; aborts in-flight Gemini checks
+
         try:
             self._set_status("Standing up safely...")
             if hasattr(self.controller, "_stand_safely"):
@@ -977,6 +1168,16 @@ class NaoAppWindow(object):
                 self.conn.motion.wakeUp()
                 if self.conn.posture:
                     self.conn.posture.goToPosture("StandInit", 0.5)
+
+            if self.conn.motion:
+                try:
+                    self.conn.motion.setFallManagerEnabled(True)
+                    self.conn.motion.setMoveArmsEnabled(True, True)
+                    self.conn.motion.setMotionConfig([
+                        ["ENABLE_FOOT_CONTACT_PROTECTION", True],
+                    ])
+                except Exception:
+                    pass
 
             # --- Sonar ---
             sonar = self.conn.get_proxy("ALSonar")
@@ -1169,11 +1370,43 @@ class NaoAppWindow(object):
 
             # --- Walk config & tuning ---
             walk_config       = getattr(self.controller, "_WALK_CONFIG", [])
-            max_fwd           = 0.15
+
+            def _tuned_walk_config(base, overrides):
+                if not base:
+                    return base
+                out = []
+                seen = {}
+                for key, val in base:
+                    if key in overrides:
+                        val = overrides[key]
+                    out.append([key, val])
+                    seen[key] = True
+                for key, val in overrides.items():
+                    if key not in seen:
+                        out.append([key, val])
+                return out
+
+            # MaxStepY must NOT be 0 — NAO requires lateral steps to keep legs
+            # from colliding and to allow ZMP balance.  StepHeight raised to
+            # give the foot proper clearance off the floor.
+            walk_config = _tuned_walk_config(walk_config, {
+                "Frequency":    0.55,
+                "MaxStepX":     0.035,
+                "MaxStepY":     0.025,
+                "MaxStepTheta": 0.08,
+                "StepHeight":   0.016,
+                "TorsoWy":      0.00,
+            })
+
+            max_fwd           = 0.08
             wander_turn_bias  = 0.0
             last_bias_t       = time.time()
             next_speech_t     = time.time() + random.uniform(3.0, 20.0)
+            walk_start_t      = time.time()
             floor_tick        = 0
+            fall_flag_since   = None
+            tilt_high_since   = None
+            fall_debounce_s   = 0.6
 
             face_phrases = [
                 "Where is my human?",
@@ -1194,59 +1427,86 @@ class NaoAppWindow(object):
             # ================================================================
             while getattr(self, "_seeking", False):
 
-                # 1. TARGET FOUND via Gemini?
-                if target and _target_found[0]:
-                    self._seeking = False
-                    self.conn.motion.stopMove()
-                    # Get a confirming description from Gemini
-                    try:
-                        img = self._capture_image_bytes()
-                        if img and has_api:
-                            reply = search_client.generate_text(
-                                "You just found a {}. Briefly describe it.".format(target),
-                                image_bytes=img
-                            )
-                        else:
-                            reply = "I found the {}! Right here, boss.".format(target)
-                    except Exception:
-                        reply = "I found the {}! Right here, boss.".format(target)
-
-                    if self.conn.tts:
-                        try: self.conn.tts.say(reply)
-                        except Exception: pass
-                    if self.conn.leds:
-                        try: self.conn.leds.fadeRGB("AllLeds", 0x0000FF00, 0.5)
-                        except Exception: pass
-                    break
-
-                # 2. FACE DETECTION (face-seek mode only, not target mode)
-                if not target and self.conn.memory:
+                # 1. SDK FACE DETECTION — runs every loop tick for any human-like
+                #    target (including empty target / pure wander mode).  Much
+                #    faster than Gemini; whichever fires first wins.
+                if target_is_human and self.conn.memory and not _sdk_found[0]:
                     try:
                         val = self.conn.memory.getData("FaceDetected")
+                        if (val and isinstance(val, list) and len(val) >= 2
+                                and isinstance(val[1], list) and len(val[1]) > 0):
+                            _sdk_found[0] = True
+                            _task_done[0] = True   # abort any in-flight Gemini image checks
+                            msg = "SDK found %s — task complete." % target_label
+                            print("[WanderSeek] " + msg)
+                            self.root.after(0, lambda m=msg: self.gemini_status.set(m))
                     except Exception:
-                        val = None
-                    if (val and isinstance(val, list) and len(val) >= 2
-                            and isinstance(val[1], list) and len(val[1]) > 0):
-                        self._seeking = False
-                        self.conn.motion.stopMove()
-                        self.auto_status.set("Found Human!")
+                        pass
+
+                # 2. UNIFIED FOUND: SDK spotted a human OR Gemini confirmed the target
+                _any_found = _sdk_found[0] or (target and _target_found[0])
+                if _any_found:
+                    how          = "SDK" if _sdk_found[0] else "Gemini"
+                    found_human  = _sdk_found[0] or target_is_human
+                    label        = "human" if found_human else target
+                    self._seeking = False
+                    self.conn.motion.stopMove()
+                    self.auto_status.set("Found %s! (%s)" % (label, how))
+
+                    if found_human:
+                        # Lock eyes on the face while speaking
                         if tracker:
                             try:
                                 tracker.registerTarget("Face", 0.15)
                                 tracker.setMode("Head")
                                 tracker.track("Face")
-                            except Exception: pass
+                            except Exception:
+                                pass
+                        if has_api:
+                            try:
+                                img = self._capture_image_bytes()
+                                if img:
+                                    reply = search_client.generate_text(
+                                        "You just found a human being in front of you. "
+                                        "Say one short excited sentence confirming you found them.",
+                                        image_bytes=img)
+                                else:
+                                    reply = "I found you! There you are!"
+                            except Exception:
+                                reply = "I found you! There you are!"
+                        else:
+                            reply = "I found you! There you are!"
                         if self.conn.tts:
-                            try: self.conn.tts.say(
-                                "Well well well, there you are. I've been looking all over for you.")
+                            try: self.conn.tts.say(reply)
                             except Exception: pass
-                        time.sleep(2)
+                        self._celebrate_found_human()
+                        time.sleep(1)
                         if tracker:
                             try:
                                 tracker.stopTracker()
                                 tracker.unregisterAllTargets()
+                            except Exception:
+                                pass
+                    else:
+                        if has_api:
+                            try:
+                                img = self._capture_image_bytes()
+                                if img:
+                                    reply = search_client.generate_text(
+                                        "You just found a {}. Briefly describe it "
+                                        "in one sentence.".format(target),
+                                        image_bytes=img)
+                                else:
+                                    reply = "I found the {}! Right here, boss!".format(target)
+                            except Exception:
+                                reply = "I found the {}! Right here, boss!".format(target)
+                        else:
+                            reply = "I found the {}! Right here, boss!".format(target)
+                        if self.conn.tts:
+                            try: self.conn.tts.say(reply)
                             except Exception: pass
-                        break
+                        self._celebrate_found_object(target)
+                    break
 
                 # 3. BACKGROUND GEMINI VISION CHECK (target mode)
                 now = time.time()
@@ -1315,6 +1575,44 @@ class NaoAppWindow(object):
                     break
 
                 # 6. MOVEMENT DECISION
+                now = time.time()
+                fall_flag = self._has_fallen()
+                tilt_high = self._tilt_too_high()
+                if fall_flag:
+                    if fall_flag_since is None:
+                        fall_flag_since = now
+                else:
+                    fall_flag_since = None
+
+                if tilt_high:
+                    if tilt_high_since is None:
+                        tilt_high_since = now
+                else:
+                    tilt_high_since = None
+
+                if fall_flag and tilt_high and tilt_high_since is not None and (now - tilt_high_since) >= fall_debounce_s:
+                    try:
+                        self.conn.motion.stopMove()
+                    except Exception:
+                        pass
+                    self.auto_status.set("Fallen - recovering...")
+                    self._set_status("Fall detected. Sitting and awaiting instructions.", False)
+                    if self.conn.posture:
+                        try:
+                            self.conn.posture.goToPosture("Sit", 0.5)
+                        except Exception:
+                            try:
+                                self.conn.posture.goToPosture("SitRelax", 0.5)
+                            except Exception:
+                                pass
+                    if self.conn.tts:
+                        try:
+                            self.conn.tts.say("I fell. I am sitting now. What should I do next?")
+                        except Exception:
+                            pass
+                    self._seeking = False
+                    break
+
                 obstacle = (l_dist < 0.60 or r_dist < 0.60) or not boundary_ok
 
                 if obstacle:
@@ -1333,11 +1631,10 @@ class NaoAppWindow(object):
                         if not getattr(self, "_seeking", False): break
                         time.sleep(0.1)
 
-                    # Pivot away from obstacle / back onto floor
-                    turn_dir = -(random.uniform(0.20, 0.35))
+                    # Pivot away from obstacle / back onto floor — keep turns gentle
+                    turn_dir = -(random.uniform(0.07, 0.12))
                     if not boundary_ok:
-                        # Always pivot away from the boundary (random direction)
-                        turn_dir = random.choice([-1, 1]) * random.uniform(0.20, 0.40)
+                        turn_dir = random.choice([-1, 1]) * random.uniform(0.07, 0.12)
                     elif l_dist < r_dist:
                         turn_dir = -abs(turn_dir)
                     else:
@@ -1360,13 +1657,16 @@ class NaoAppWindow(object):
                             except Exception: pass
                         next_speech_t = time.time() + random.uniform(8.0, 25.0)
 
-                    # Drift change every 4-8 s
-                    if time.time() - last_bias_t > random.uniform(4.0, 8.0):
-                        wander_turn_bias = random.uniform(-0.15, 0.15)
+                    # Gradual ramp to full speed to avoid sudden jolts
+                    ramp = min(1.0, max(0.0, (time.time() - walk_start_t) / 2.0))
+
+                    # Drift change every 6-10 s
+                    if time.time() - last_bias_t > random.uniform(6.0, 10.0):
+                        wander_turn_bias = random.uniform(-0.06, 0.06)
                         last_bias_t = time.time()
 
-                    turn = math.sin(time.time() * 0.5) * 0.08 + wander_turn_bias
-                    self.conn.motion.moveToward(max_fwd, 0.0, turn, walk_config)
+                    turn = math.sin(time.time() * 0.4) * 0.04 + wander_turn_bias
+                    self.conn.motion.moveToward(max_fwd * ramp, 0.0, turn, walk_config)
 
                 time.sleep(0.1)
 
@@ -1397,6 +1697,85 @@ class NaoAppWindow(object):
             if novelty_cam_name and wander_video:
                 try: wander_video.unsubscribe(novelty_cam_name)
                 except Exception: pass
+
+    def _celebrate_found_human(self):
+        """High-five gesture: raise right arm, hold, then lower."""
+        import time
+        motion = self.conn.motion
+        leds   = self.conn.leds
+        if leds:
+            try: leds.fadeRGB("AllLeds", 0x00FF8C00, 0.3)   # warm orange flash
+            except Exception: pass
+        if motion:
+            try:
+                # Right arm straight up, palm forward — classic high-five pose
+                motion.setAngles(
+                    ["RShoulderPitch", "RShoulderRoll", "RElbowRoll", "RElbowYaw",
+                     "RWristYaw"],
+                    [-1.25, -0.20,  0.03,  1.20,  0.0],
+                    0.25)
+                time.sleep(2.5)   # hold for the human to slap it
+                # Lower arm back to rest
+                motion.setAngles(
+                    ["RShoulderPitch", "RShoulderRoll", "RElbowRoll", "RElbowYaw",
+                     "RWristYaw"],
+                    [ 1.50, -0.15,  0.85,  1.20,  0.0],
+                    0.20)
+            except Exception as e:
+                print("[Celebrate] high-five error: %s" % e)
+
+    def _celebrate_found_object(self, target_name):
+        """Victory arm-wave dance after finding an object."""
+        import time
+        motion = self.conn.motion
+        leds   = self.conn.leds
+        if leds:
+            try: leds.fadeRGB("AllLeds", 0x0000FF00, 0.3)   # bright green flash
+            except Exception: pass
+        if motion:
+            try:
+                # Two cycles of alternating arm raises
+                for _ in range(2):
+                    motion.setAngles(
+                        ["LShoulderPitch", "RShoulderPitch",
+                         "LShoulderRoll",  "RShoulderRoll"],
+                        [ 0.0, -1.40,  0.40, -0.40],
+                        0.30)
+                    time.sleep(0.55)
+                    motion.setAngles(
+                        ["LShoulderPitch", "RShoulderPitch",
+                         "LShoulderRoll",  "RShoulderRoll"],
+                        [-1.40,  0.0,  0.40, -0.40],
+                        0.30)
+                    time.sleep(0.55)
+                # Reset arms to neutral
+                motion.setAngles(
+                    ["LShoulderPitch", "RShoulderPitch",
+                     "LShoulderRoll",  "RShoulderRoll"],
+                    [1.50, 1.50, 0.15, -0.15],
+                    0.20)
+            except Exception as e:
+                print("[Celebrate] object-dance error: %s" % e)
+
+    def _has_fallen(self):
+        if not self.conn.memory:
+            return False
+        try:
+            return bool(self.conn.memory.getData("robotHasFallen"))
+        except Exception:
+            return False
+
+    def _tilt_too_high(self, threshold=0.50):
+        if not self.conn.memory:
+            return False
+        try:
+            ax = float(self.conn.memory.getData(
+                "Device/SubDeviceList/InertialSensor/AngleX/Sensor/Value"))
+            ay = float(self.conn.memory.getData(
+                "Device/SubDeviceList/InertialSensor/AngleY/Sensor/Value"))
+            return math.sqrt(ax * ax + ay * ay) >= threshold
+        except Exception:
+            return False
 
     @staticmethod
     def _check_floor_boundary(floor_cam_name, video_proxy,

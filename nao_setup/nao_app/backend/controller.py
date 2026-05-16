@@ -27,19 +27,22 @@ class GamepadController(object):
         self._ps_prev_down = False
         self._btn_busy = False
 
-        self._MAX_FORWARD  = 0.34
-        self._MAX_BACKWARD = 0.24
-        self._MAX_ROTATE   = 0.16
-        self._SMOOTHING = 0.10
-        self._ROTATE_WHILE_FORWARD_FACTOR = 0.50
-        
+        self._MAX_FORWARD  = 0.25
+        self._MAX_BACKWARD = 0.18
+        self._MAX_ROTATE   = 0.10
+        self._SMOOTHING = 0.12
+        self._ROTATE_WHILE_FORWARD_FACTOR = 0.45
+
+        # Conservative walk: lower frequency gives the balance system more time
+        # between steps.  MaxStepY must NOT be zero — NAO needs lateral steps
+        # to keep the legs from hitting each other and to maintain ZMP balance.
         self._WALK_CONFIG = [
-            ["Frequency", 0.90],
-            ["MaxStepX", 0.055],
-            ["MaxStepY", 0.010],
-            ["MaxStepTheta", 0.18],
-            ["StepHeight", 0.011],
-            ["TorsoWy", 0.01],
+            ["Frequency",     0.60],
+            ["MaxStepX",      0.040],
+            ["MaxStepY",      0.030],
+            ["MaxStepTheta",  0.12],
+            ["StepHeight",    0.016],
+            ["TorsoWy",       0.00],
         ]
 
         self._TILT_WARN = 0.20
