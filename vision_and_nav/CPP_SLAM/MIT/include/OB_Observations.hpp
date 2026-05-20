@@ -15,7 +15,7 @@
 #include "LG_Logging.hpp"
 
 #define PnPRansacIts 800
-#define Reprojerr 1.0f
+#define Reprojerr 3.0f
 #define conf 0.99f
 #define PnPPointCntThreshold 10 
 #define NonPnpThreshold 30 

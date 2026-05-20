@@ -5,9 +5,9 @@
 #include <opencv2/features2d.hpp>
 #include "../../third-party/ORBSLAM/include/ORBextractor.h"
 #include "CArenaAlloc.h"
-#define NFEATURES 5000 
+#define NFEATURES 2000
 #define MATCHRATIO 0.75f
-#define EpiPolarTreshhold 1.5f
+#define EpiPolarTreshhold 1.0f
 
 struct OrbExtractor
 {

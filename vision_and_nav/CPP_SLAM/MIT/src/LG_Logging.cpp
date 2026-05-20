@@ -1,6 +1,5 @@
 #include "../include/LG_Logging.hpp"
 
-
 struct Logger glogger;
 bool gloggerisinit = false;
 

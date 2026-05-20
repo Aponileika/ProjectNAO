@@ -1,5 +1,4 @@
 #include "../include/OP_BA.hpp"
-#include "CM_Camera.hpp"
 
 /*see https://ceres-solver.googlesource.com/ceres-solver/+/master/examples/simple_bundle_adjuster.cc
  *and https://ceres-solver.readthedocs.io/latest/nnls_tutorial.html
@@ -19,8 +18,12 @@ void OP_BundleAdjust(struct ViewSet* views, struct ObservationSet* obs, struct P
     ceres::Problem problem;
     __OP_BuildProblem(views, obs, points, &problem);
     ceres::Solver::Options options;
-    options.linear_solver_type = ceres::DENSE_SCHUR;
+    options.max_num_iterations = 100;
     options.minimizer_progress_to_stdout = true;
+
+    options.linear_solver_type = ceres::DENSE_SCHUR;
+    options.num_threads = 8;
+
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
     for(size_t i = 0; i < views->views.size(); i++)
@@ -66,7 +69,6 @@ void __OP_BuildProblem(struct ViewSet* views, struct ObservationSet* obs, struct
         ceres::CostFunction* costfunc =
             ReprojectionError::Create(px, py, &opintr);
 
-        //Explore options? Could be more robust
         ceres::LossFunction* lossfunc = new ceres::HuberLoss(1.0f);
 
         u64 viewidx = obs->view_indexes[i];
