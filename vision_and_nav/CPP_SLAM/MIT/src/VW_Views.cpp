@@ -6,6 +6,8 @@ struct ViewSet* VW_InitViewSet()
     viewset->views = {};
     viewset->last_sz = 0;
     viewset->observations_indexes = {};
+    viewset->w = Wid;
+    viewset->h = Hei;
     return viewset;
 }
 

@@ -5,26 +5,16 @@
 #include <opencv2/features2d.hpp>
 #include "../../third-party/ORBSLAM/include/ORBextractor.h"
 #include "CArenaAlloc.h"
-#define NFEATURES 2000
-#define MATCHRATIO 0.75f
-#define EpiPolarTreshhold 1.0f
+#include "FEAT_Features.hpp"
+#define EpiPolarTreshhold 2.0f
 
-struct OrbExtractor
+struct CorrespondenceExtractor
 {
-    ORB_SLAM::ORBextractor orb;
-    cv::BFMatcher matcher;
-    fp64 matchratio;
+    void* extractor;
+    PointPair2D (*GetCorrp)(void* extractor, cv::Mat img1, cv::Mat img2);
 };
 
-extern struct OrbExtractor orb;
-
-typedef std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> PointPair2D;
-
-void EP_InitCPointExtractor();
-//TODO, see ORB slam for grid based approach to get a more uniform
-//distribution of points, boils down to basically forcing the detector
-//to detect a more uniform distribution of FAST keypoints before descriptor
-//matching, see if there are improvements to this?
+void EP_InitCPointExtractor(void* extractor, PointPair2D (*GetCorrp)(void* extractor, cv::Mat img1, cv::Mat img2));
 PointPair2D EP_CorrespExtract(cv::Mat img1, cv::Mat img2);
 
 cv::Mat EP_EFromRigid(cv::Mat R, cv::Mat t);

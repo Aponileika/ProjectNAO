@@ -113,7 +113,7 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
     LG_Log("Creating cam\n");
     cv::Mat R;
     cv::Rodrigues(rvec, R);
-    cam = CM_CreateCam(R, t);
+    cam = CM_CreateCam(R, t, -1);
     LG_Log("Adding View\n");
     VW_AddView(TView, cam);
     __OB_AddObsPnP(TView, TObs, TPoints, pnpPoints, pnpPoints3Didx);

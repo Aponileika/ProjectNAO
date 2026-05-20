@@ -4,6 +4,7 @@
 #include <opencv2/opencv.hpp>
 #include <Eigen/Dense>
 #include <opencv2/core/eigen.hpp>
+#include <string>
 #include <Eigen/Geometry>
 #include "CArenaAlloc.h"
 #include "LG_Logging.hpp"
@@ -27,13 +28,14 @@ struct Camera
     cv::Mat R;
     cv::Mat t;
     struct Param* p;
+    std::string image_name;
 };
 
 extern struct CameraIntrinsics* ci;
 
 void CM_SetIntrinsics(std::string path);
 struct CameraIntrinsics* CM_GetIntrinsics();
-struct Camera CM_CreateCam(cv::Mat R, cv::Mat t);
+struct Camera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx);
 void CM_SetParametrization(struct Camera* cam);
 void CM_SetRtfromParam(struct Camera* cam);
 

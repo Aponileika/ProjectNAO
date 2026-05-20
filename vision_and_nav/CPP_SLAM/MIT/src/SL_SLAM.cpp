@@ -1,9 +1,11 @@
 #include "../include/SL_SLAM.hpp"
 #include "CM_Camera.hpp"
 #include "EP_CorrespondingPoints.hpp"
+#include "FEAT_Features.hpp"
 #include "FR_Frames.hpp"
 #include "OB_Observations.hpp"
 #include "OP_BA.hpp"
+#include "VIZ_Visualization.hpp"
 #include <chrono>
 
 struct SLAM slam;
@@ -20,24 +22,23 @@ void SL_InitSlam()
     slam.Tpoints = PT_InitPoints();
     slam.Tobs = OB_InitObs();
     slam.frame_pair = {};
-    EP_InitCPointExtractor();
+    void* extr = static_cast<void*>(AKAZE_InitAKAZE(AKAZEthreshold));
+    EP_InitCPointExtractor(extr, AKAZE_GetMatches);
     FR_InitFrameGetter();
 }
 
 
 static cv::Mat __SL_GetNextFrame()
 {
-    static auto lastfr = std::chrono::steady_clock::now();
-    const auto waittime = std::chrono::milliseconds(50);
-    while(true)
+    i32 curr_frame = slam.Tview->views.size();
+    i32 i = 0;
+    cv::Mat frame = FR_GetFrame(-1);
+    while(i < 60)
     {
-        auto timenow = std::chrono::steady_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(timenow - lastfr);
-        if(duration > waittime)break;
+        frame = FR_GetFrame(curr_frame);
+        i++;
     }
-    cv::Mat frame = FR_GetFrame();
-    lastfr = std::chrono::steady_clock::now();
-    return FR_GetFrame();
+    return frame;
 }
 
 void __SL_PrintSlam()
@@ -62,21 +63,21 @@ static void __SL_SlamStart()
         slam.frame_pair.second = __SL_GetNextFrame();
         LG_Log("Getting corresponding points between frames\n");
         PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
+        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
         LG_Log("Getting intrinsics of camera\n");
         LG_Log("Finding essential matrix\n");
         LG_Log("Num points before RANSAC = %lld\n", corrp.first.size());
         if(corrp.first.size() < 5)continue;
         cv::Mat mask;
-        fp64 focal = 1.0f;
-        cv::Mat E = cv::findEssentialMat(corrp.first, corrp.second, focal, cv::Point2d(0, 0),
+        cv::Mat E = cv::findEssentialMat(corrp.first, corrp.second, K, 
                     RANSACMETHOD, PROBECORRECT, RANSACEPIXELT, RANSACMAXITERS, mask);
                 
         cv::Mat R, t;
         cv::Mat poseMask = mask.clone();
         
         LG_Log("Recovering pose\n");
-        int ninliersafterrecover = cv::recoverPose(E, corrp.first, corrp.second, R, t, focal, cv::Point2d(0, 0), poseMask);
+        int ninliersafterrecover = cv::recoverPose(E, corrp.first, corrp.second, K, R, t, poseMask);
 
         int ninliers = cv::countNonZero(mask);
         LG_Log("ninliers = %d\n", ninliersafterrecover);
@@ -90,9 +91,9 @@ static void __SL_SlamStart()
         cv::Mat Rt;
         cv::hconcat(R, t, Rt);
         LG_Log("Adding first view\n");
-        VW_AddView(slam.Tview, CM_CreateCam(cv::Mat::eye(3, 3, CV_64F), cv::Mat::eye(3, 1, CV_64F)));
+        VW_AddView(slam.Tview, CM_CreateCam(cv::Mat::eye(3, 3, CV_64F), cv::Mat::eye(3, 1, CV_64F), 0));
         LG_Log("Adding second view\n");
-        VW_AddView(slam.Tview, CM_CreateCam(R, t));
+        VW_AddView(slam.Tview, CM_CreateCam(R, t, 1));
 
         cv::Mat P1, P2;
         P1 = K * cv::Mat::eye(3, 4, CV_64F);
@@ -101,7 +102,7 @@ static void __SL_SlamStart()
         PointPair2D filteredcorrp = EP_FilterPointPairByMask(corrp, poseMask);
         corrp = std::move(filteredcorrp);
         LG_Log("number of corrp after masking = %lld\n", corrp.first.size());
-        //EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
+        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
         cv::Mat points3d;
         LG_Log("Triangulating\n");
@@ -114,6 +115,8 @@ static void __SL_SlamStart()
         isinit = true;
     }
     __SL_PrintSlam();
+    const std::string path = "./colmap/sparse/0/";
+    VIZ_WriteColmap(*(slam.Tobs), *(slam.Tpoints), *(slam.Tview), path);
 }
 
 void __SL_SlamLoopBundle()
@@ -209,6 +212,7 @@ void SL_SlamLoop()
 {
     LG_Log(SLAMSTARTMSG);
     __SL_SlamStart();
+    return;
     __SL_SlamLoop();
     return;
 }

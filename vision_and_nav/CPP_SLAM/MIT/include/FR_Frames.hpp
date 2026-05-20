@@ -4,6 +4,6 @@
 #include <opencv2/opencv.hpp>
 
 int FR_InitFrameGetter();
-cv::Mat FR_GetFrame();
+cv::Mat FR_GetFrame(int idx);
 
 #endif //__FR_FRAMES_HPP

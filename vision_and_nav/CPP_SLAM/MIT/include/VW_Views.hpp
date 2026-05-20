@@ -6,12 +6,17 @@
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
 #include "LG_Logging.hpp"
+#define Wid 1280
+#define Hei 720
 
 struct ViewSet
 {
     std::vector<Camera> views;
+    //store descriptors!
+    std::vector<cv::Mat> descriptors;
     size_t last_sz;
     std::vector<std::vector<u64>> observations_indexes;
+    u64 w, h;
 };
 
 struct ViewSet* VW_InitViewSet();

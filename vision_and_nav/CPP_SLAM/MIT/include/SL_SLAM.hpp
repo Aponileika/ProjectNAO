@@ -12,15 +12,18 @@
 #include "EP_CorrespondingPoints.hpp"
 #include "LG_Logging.hpp"
 #include "OP_BA.hpp"
+#include "VIZ_Visualization.hpp"
+#include "FEAT_Features.hpp"
 
 //LOOK INTO USAC
 #define RANSACMETHOD cv::USAC_DEFAULT
 //#define RANSACMETHOD cv::RANSAC
-#define PROBECORRECT 0.97f
+#define PROBECORRECT 0.99f
 #define RANSACEPIXELT 3.0f
-#define RANSACMAXITERS 1000
+#define RANSACMAXITERS 2000
 #define NewFrameCorrpThreshold 30
 #define InitFrameThresholdCorrp 50
+#define AKAZEthreshold 0.0001f
 
 #define SLAMSTARTMSG "\
     --------------------------------\n\
