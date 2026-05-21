@@ -30,14 +30,15 @@ void SL_InitSlam()
 
 static cv::Mat __SL_GetNextFrame()
 {
-    i32 curr_frame = slam.Tview->views.size();
+    static i32 frame_cnt = 0;
     i32 i = 0;
     cv::Mat frame = FR_GetFrame(-1);
     while(i < 60)
     {
-        frame = FR_GetFrame(curr_frame);
+        frame = FR_GetFrame(-1);
         i++;
     }
+    frame = FR_GetFrame(frame_cnt++);
     return frame;
 }
 
@@ -91,7 +92,7 @@ static void __SL_SlamStart()
         cv::Mat Rt;
         cv::hconcat(R, t, Rt);
         LG_Log("Adding first view\n");
-        VW_AddView(slam.Tview, CM_CreateCam(cv::Mat::eye(3, 3, CV_64F), cv::Mat::eye(3, 1, CV_64F), 0));
+        VW_AddView(slam.Tview, CM_CreateCam(cv::Mat::eye(3, 3, CV_64F), cv::Mat::zeros(3, 1, CV_64F), 0));
         LG_Log("Adding second view\n");
         VW_AddView(slam.Tview, CM_CreateCam(R, t, 1));
 

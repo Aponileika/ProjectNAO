@@ -2,6 +2,7 @@
 #define __FR_FRAMES_HPP
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
+#include "LG_Logging.hpp"
 
 int FR_InitFrameGetter();
 cv::Mat FR_GetFrame(int idx);

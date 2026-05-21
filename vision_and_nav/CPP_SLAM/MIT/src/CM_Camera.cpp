@@ -63,13 +63,13 @@ void CM_SetParametrization(struct Camera& cam)
 
 struct Camera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx)
 {
-    std::string path = "./colmap/images/frame" + std::to_string(idx) + ".png";
+    std::string image_name = "frame" + std::to_string(idx) + ".png";
     Camera cam = {
         CM_GetIntrinsics(),
         R, 
         t,
         (struct Param*)malloc(sizeof(struct Param)),
-        path
+        image_name 
     };
     CM_SetParametrization(cam);
     return cam;

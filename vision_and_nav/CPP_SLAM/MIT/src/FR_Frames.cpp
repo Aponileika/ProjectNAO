@@ -34,9 +34,10 @@ cv::Mat FR_GetFrame(int idx)
         std::cerr << "FR_GetFrame failed to get a frame\n";
         return {};
     }
-    if(idx > 0)
+    if(idx >= 0)
     {
         std::string path = "./colmap/images/frame" + std::to_string(idx) + ".png";
+        LG_Log("[FR_GetFrame] writing frame file %s\n", path.c_str());
         bool ret = cv::imwrite(path, frame);
         if(!ret)
         {
