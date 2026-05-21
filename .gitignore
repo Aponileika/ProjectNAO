@@ -9,4 +9,4 @@ logs
 .cache
 compile_commands.json
 main
-DS_Store
+.DS_Store
