@@ -154,7 +154,7 @@ void __SL_SlamLoop()
     const CameraIntrinsics* ci = CM_GetIntrinsics();
     const cv::Matx33d K = ci->K;
     bool added_view = true;
-    for(int i = 0; i < 100; i++)
+    for(int i = 0; i < 5; i++)
     {
         LG_Log("Starting SLAM loop %d\n", i);
         if(added_view)
@@ -213,7 +213,6 @@ void SL_SlamLoop()
 {
     LG_Log(SLAMSTARTMSG);
     __SL_SlamStart();
-    return;
     __SL_SlamLoop();
     return;
 }

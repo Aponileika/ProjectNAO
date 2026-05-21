@@ -8,7 +8,9 @@
 #include "PT_Points.hpp"
 #include "VW_Views.hpp"
 #include "OB_Observations.hpp"
-
+#define MAX_ITER 200
+#define NUM_THREADS 8
+#define HUBER_THRESHOLD 2.0f
 /*see https://ceres-solver.googlesource.com/ceres-solver/+/master/examples/simple_bundle_adjuster.cc
  *and https://ceres-solver.readthedocs.io/latest/nnls_tutorial.html
  *for details into ceres nonlinear solving for BA

@@ -17,8 +17,9 @@
 #define PnPRansacIts 800
 #define Reprojerr 3.0f
 #define conf 0.99f
-#define PnPPointCntThreshold 10 
+#define PnPPointCntThreshold 20
 #define NonPnpThreshold 30 
+#define SEARCHWINDOW2D3D 1
 
 struct ObservationSet
 {
@@ -26,7 +27,7 @@ struct ObservationSet
     std::vector<u64> view_indexes;
     std::vector<u64> point_indexes;
     //Maps 2D image point paired with view to idx
-    std::map<std::pair<std::pair<fp64, fp64>, u64>, u64> imagepoint2idx;
+    std::map<std::pair<std::pair<i64, i64>, u64>, u64> imagepoint2idx;
 };
 
 typedef enum

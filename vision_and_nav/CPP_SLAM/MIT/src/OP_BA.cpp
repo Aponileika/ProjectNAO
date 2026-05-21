@@ -18,11 +18,11 @@ void OP_BundleAdjust(struct ViewSet* views, struct ObservationSet* obs, struct P
     ceres::Problem problem;
     __OP_BuildProblem(views, obs, points, &problem);
     ceres::Solver::Options options;
-    options.max_num_iterations = 100;
+    options.max_num_iterations = MAX_ITER;
     options.minimizer_progress_to_stdout = true;
 
     options.linear_solver_type = ceres::DENSE_SCHUR;
-    options.num_threads = 8;
+    options.num_threads = NUM_THREADS;
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
@@ -69,7 +69,7 @@ void __OP_BuildProblem(struct ViewSet* views, struct ObservationSet* obs, struct
         ceres::CostFunction* costfunc =
             ReprojectionError::Create(px, py, &opintr);
 
-        ceres::LossFunction* lossfunc = new ceres::HuberLoss(1.0f);
+        ceres::LossFunction* lossfunc = new ceres::HuberLoss(HUBER_THRESHOLD);
 
         u64 viewidx = obs->view_indexes[i];
         u64 pidx = obs->point_indexes[i];

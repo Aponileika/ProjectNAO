@@ -41,6 +41,49 @@ void OB_Print(struct ObservationSet* obs)
     }
 }
 
+struct offset
+{
+    i32 dx;
+    i32 dy;
+};
+
+constexpr auto __OB_MakeSearchWindow()
+{
+    const i32 W = SEARCHWINDOW2D3D*2 + 1;
+    const i32 N = W*W;
+
+    std::array<struct offset, N> search_window;
+    for(i32 i = 0; i < W; i++)
+    {
+        for(i32 j = 0; j < W; j++)
+        {
+            search_window[i*W + j] = offset{i - 1, j - 1};
+        }
+    }
+    struct offset temp = search_window[0];
+    search_window[0] = search_window[SEARCHWINDOW2D3D*W + SEARCHWINDOW2D3D];
+    search_window[SEARCHWINDOW2D3D*W + SEARCHWINDOW2D3D] = temp;
+    return search_window;
+}
+
+inline constexpr auto search = __OB_MakeSearchWindow();
+
+auto __OB_Find2D3D(cv::Point2d imagepoint, struct ObservationSet* TObs, u64 vidx)
+{
+    i64 x = static_cast<i64>(round(imagepoint.x));
+    i64 y = static_cast<i64>(round(imagepoint.y));
+    for(const auto& offset : search)
+    {
+        i64 dx = offset.dx;
+        i64 dy = offset.dy;
+        std::pair<i64, i64> point(x + dx, y + dy);
+        std::pair<std::pair<i64, i64>, u64> key(point, vidx);
+        auto it = TObs->imagepoint2idx.find(key);
+        if(it != TObs->imagepoint2idx.end())return it;
+    }
+    return TObs->imagepoint2idx.end();
+}
+
 struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointSet* TPoints)
 {
     /*
@@ -71,9 +114,7 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
     for(size_t i = 0; i < corrp.first.size(); i++)
     {
         cv::Point2d imagepoint = corrp.first[i];
-        std::pair<fp64, fp64> point(imagepoint.x, imagepoint.y);
-        std::pair<std::pair<fp64, fp64>, u64> key(point, vidx);
-        auto it = TObs->imagepoint2idx.find(key);
+        auto it = __OB_Find2D3D(imagepoint, TObs, vidx);
         if(it != TObs->imagepoint2idx.end())
         {
             pnpPoints.push_back(corrp.second[i]);
@@ -99,13 +140,6 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
         ret.ret = PNP_NOT_ENOUGH_2D3D;
         return ret;
     }
-    if(ret.nonpnpPoints.first.size() < (size_t)NonPnpThreshold)
-    {
-        LG_Log("not enough non observed points were found, found %lld, need %d\n",
-            ret.nonpnpPoints.first.size(), NonPnpThreshold);
-        ret.ret = PNP_NOT_ENOUGH_NONPNP;
-        return ret;
-    }
     ret.ret = PNP_SUCCESS;
     cv::solvePnPRansac(pnpPoints3D, pnpPoints, ci->K, ci->distcoeffs, rvec, t,
             false, PnPRansacIts, Reprojerr, conf);
@@ -129,8 +163,9 @@ static void __OB_AddObsPnP(struct ViewSet* views, struct ObservationSet* obs, st
     {
         cv::Point2d p = pnpPoints[i];
         obs->observations.push_back(p);
-        std::pair<fp64, fp64> point(p.x, p.y);
-        std::pair<std::pair<fp64, fp64>, u64> key(point, view_index);
+        //TODO
+        std::pair<i64, i64> point(static_cast<i64>(round(p.x)),static_cast<i64>(round( p.y)));
+        std::pair<std::pair<i64, i64>, u64> key(point, view_index);
         obs->imagepoint2idx[key] = obs->observations.size() - 1;
         obs->view_indexes.push_back(view_index);
         obs->point_indexes.push_back(points3Didx[i]);
@@ -150,8 +185,8 @@ void __OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct Point
         cv::Point2d observation, u64 view_index, u64 point_index)
 {
     obs->observations.push_back(observation);
-    std::pair<fp64, fp64> point(observation.x, observation.y);
-    std::pair<std::pair<fp64, fp64>, u64> key(point, view_index);
+    std::pair<i64, i64> point(static_cast<i64>(round(observation.x)), static_cast<i64>(round(observation.y)));
+    std::pair<std::pair<i64, i64>, u64> key(point, view_index);
     obs->imagepoint2idx[key] = obs->observations.size() - 1;
     PUSHVIEW(obs->view_indexes, views, view_index);
     PUSHPOINT(obs->point_indexes, points, point_index);
