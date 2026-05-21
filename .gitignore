@@ -1,0 +1,12 @@
+main
+*.mp4
+*.venv
+*.png
+__pycache__
+.clangd
+turntableLIU
+logs
+.cache
+compile_commands.json
+main
+DS_Store
