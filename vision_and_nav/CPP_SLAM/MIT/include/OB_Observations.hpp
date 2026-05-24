@@ -15,11 +15,11 @@
 #include "LG_Logging.hpp"
 
 #define PnPRansacIts 2000 
-#define Reprojerr 3.0f
+#define Reprojerr 2.0f
 #define conf 0.99f
 #define PnPPointCntThreshold 20
 #define NonPnpThreshold 30 
-#define SEARCHWINDOW2D3D 2
+#define SEARCHWINDOW2D3D 1
 
 struct ObservationSet
 {

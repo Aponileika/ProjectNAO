@@ -19,7 +19,7 @@
 #define RANSACMETHOD cv::USAC_DEFAULT
 //#define RANSACMETHOD cv::RANSAC
 #define PROBECORRECT 0.99f
-#define RANSACEPIXELT 3.0f
+#define RANSACEPIXELT 2.0f
 #define RANSACMAXITERS 2000
 #define NewFrameCorrpThreshold 30
 #define InitFrameThresholdCorrp 50
@@ -48,6 +48,6 @@ struct SLAM
 };
 
 void SL_InitSlam();
-void SL_SlamLoop();
+void SL_SlamLoop(i32 num_loops);
 
 #endif //__SL__SLAM_HPP_

@@ -27,9 +27,6 @@ void SL_InitSlam()
     void* extr = static_cast<void*>(AKAZE_InitAKAZE(AKAZEthreshold));
     LG_Log("[SL_InitSlam] AKAZE init ptr = %p\n", extr);
     EP_InitCPointExtractor(extr, AKAZE_GetMatches);
-
-    // void* extr = static_cast<void*>(ORB_InitORB());
-    // EP_InitCPointExtractor(extr, ORB_GetMatches);
     FR_InitFrameGetter();
 }
 
@@ -63,9 +60,8 @@ static void __SL_SlamStart()
         PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
         // EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
-        LG_Log("Getting intrinsics of camera\n");
-        LG_Log("Finding essential matrix\n");
-        LG_Log("Num points before RANSAC = %lld\n", corrp.first.size());
+        LG_Log("[__SL_SlamStart]Finding essential matrix\n");
+        LG_Log("[__SL_SlamStart]Num points before RANSAC = %lld\n", corrp.first.size());
         if(corrp.first.size() < 5)continue;
         cv::Mat mask;
         cv::Mat E = cv::findEssentialMat(corrp.first, corrp.second, K, 
@@ -100,10 +96,11 @@ static void __SL_SlamStart()
         PointPair2D filteredcorrp = EP_FilterPointPairByMask(corrp, poseMask);
         corrp = std::move(filteredcorrp);
         LG_Log("number of corrp after masking = %lld\n", corrp.first.size());
-        //EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
+        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
         cv::Mat points3d;
         LG_Log("Triangulating\n");
+        LG_Log("[__SL_SlamStart] first point = (%lf, %lf)\n", corrp.first[0].x, corrp.first[0].y);
         cv::triangulatePoints(P1, P2, corrp.first, corrp.second, points3d);
 
         LG_Log("Adding points\n");
@@ -145,12 +142,12 @@ PointPair2D __SL_SlamLoopPnP()
     return pnpret.nonpnpPoints;
 }
 
-void __SL_SlamLoop()
+void __SL_SlamLoop(i32 num_loops)
 {
     const CameraIntrinsics* ci = CM_GetIntrinsics();
     const cv::Matx33d K = ci->K;
     bool added_view = true;
-    for(int i = 0; i < 1; i++)
+    for(int i = 0; i < num_loops; i++)
     {
         LG_Log("Starting SLAM loop %d\n", i);
         if(added_view)
@@ -162,6 +159,7 @@ void __SL_SlamLoop()
         }
         LG_Log("Getting new frame in SLAM loop\n");
         slam.frame_pair.second = __SL_GetNextFrame(slam.Tview->views.size());
+        if(slam.frame_pair.second.empty())break;
         LG_Log("Getting corresponding points in SLAM loop\n");
         PointPair2D nonpnpcorrp = __SL_SlamLoopPnP();
         if(nonpnpcorrp.first.size() == 0)
@@ -211,14 +209,15 @@ void __SL_SlamLoop()
         OB_AddObs(slam.Tobs, slam.Tview, slam.Tpoints, corr_p);
         __SL_PrintSlam();
     }
+    OP_BundleAdjust(slam.Tview, slam.Tobs, slam.Tpoints);
     const std::string path = "./colmap/sparse/0/";
     VIZ_WriteColmap(*(slam.Tobs), *(slam.Tpoints), *(slam.Tview), path);
 }
 
-void SL_SlamLoop()
+void SL_SlamLoop(i32 num_loops)
 {
     LG_Log(SLAMSTARTMSG);
     __SL_SlamStart();
-    __SL_SlamLoop();
+    __SL_SlamLoop(num_loops);
     return;
 }

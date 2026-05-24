@@ -61,6 +61,14 @@ void __OP_BuildProblem(struct ViewSet* views, struct ObservationSet* obs, struct
         }
     }
 
+    for(size_t i = 0; i < points->points.size(); i++)
+    {
+        Eigen::Vector4d& vec = points->points[i];
+
+        problem->AddParameterBlock(vec.data(), 4);
+        problem->SetManifold(vec.data(), new ceres::SphereManifold<4>());
+    }
+
     for (size_t i = 0; i < obs->observations.size(); ++i) 
     {
         const fp64 px = obs->observations[i].x;

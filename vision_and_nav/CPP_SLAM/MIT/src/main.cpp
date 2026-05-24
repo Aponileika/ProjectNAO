@@ -20,6 +20,7 @@
 #include "../include/OP_BA.hpp"
 #include "../include/VIZ_Visualization.hpp"
 #include "../include/FEAT_Features.hpp"
+#include "../include/PROJ_ProjectiveUtils.hpp"
 #include "../../third-party/ORBSLAM/include/ORBextractor.h"
 
 #include "CArenaAlloc.c"
@@ -36,17 +37,24 @@
 #include "OP_BA.cpp"
 #include "VIZ_Visualization.cpp"
 #include "FEAT_Features.cpp"
+#include "PROJ_ProjectiveUtils.cpp"
 #include "../../third-party/ORBSLAM/src/ORBextractor.cc"
 
-int main(void)
+int main(int argc, char* argv[])
 {
+    i32 num_loops = 10000;
+    if(argc >= 2)
+    {
+        num_loops = std::stoi(argv[1]);
+    }
     setbuf(stdout, NULL);
     LG_InitLogger();
     LG_Log("Initiating SLAM\n");
     SL_InitSlam();
     LG_Log("Setting intrinsics\n");
+    LG_Log("[main] OpenCV is using %lld threads \n", cv::getNumThreads());
     CM_SetIntrinsics("");
     LG_Log("Starting SLAMLoop\n");
-    SL_SlamLoop();
+    SL_SlamLoop(num_loops);
     return 0;
 }

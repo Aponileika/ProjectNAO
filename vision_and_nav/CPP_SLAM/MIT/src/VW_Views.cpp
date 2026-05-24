@@ -7,8 +7,6 @@ struct ViewSet* VW_InitViewSet()
     viewset->views = {};
     viewset->last_sz = 0;
     viewset->observations_indexes = {};
-    viewset->w = Wid;
-    viewset->h = Hei;
     return viewset;
 }
 
@@ -29,7 +27,7 @@ struct Camera* VW_GetTwoLatestCams(struct ViewSet* views)
     struct Camera latest = views->views[views->last_sz];
     struct Camera secondlatest = views->views[views->last_sz - 1];
     struct Camera* ret = new struct Camera[2];
-    LG_Log("Got two latest cameras, (secondlatest, lates) = (%d, %d)\n",views->last_sz,views->last_sz - 1);
+    LG_Log("Got two latest cameras, (secondlatest, latest) = (%d, %d)\n",views->last_sz,views->last_sz - 1);
     ret[0] = secondlatest;
     ret[1] = latest;
     return ret;

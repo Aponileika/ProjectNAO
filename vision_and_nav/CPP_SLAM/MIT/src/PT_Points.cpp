@@ -1,6 +1,6 @@
 #include "../include/PT_Points.hpp"
+#include "PROJ_ProjectiveUtils.hpp"
 
-static inline Eigen::Vector3d __PT_ToCartFromHomog(cv::Mat point);
 static inline void __PT_AddPoint(struct PointSet* pointset, cv::Mat point);
 
 struct PointSet* PT_InitPoints()
@@ -39,33 +39,16 @@ void PT_Print(struct PointSet* points)
     size_t n = std::min<size_t>(points->points.size(), 10);
     for (size_t i = 0; i < n; ++i)
     {
-        const Eigen::Vector3d& p = points->points[i];
+        const Eigen::Vector4d& p = points->points[i];
         LG_Log("  point[%zu] = (%f, %f, %f)\n", i, p.x(), p.y(), p.z());
     }
 }
 
-cv::Mat PT_ToHomogFromCart(cv::Point2d point)
-{
-    return (cv::Mat_<fp64>(3, 1) << 
-            point.x,
-            point.y,
-            1.0f);
-}
 
 static inline void __PT_AddPoint(struct PointSet* pointset, cv::Mat point)
 {
-    Eigen::Vector3d X = __PT_ToCartFromHomog(point);
+    Eigen::Vector4d X = PROJ_CV2NormalizedEigen(point);
     pointset->points.push_back(X);
     pointset->observations_indexes.push_back({});
 }
 
-static inline Eigen::Vector3d __PT_ToCartFromHomog(cv::Mat point)
-{
-    CV_Assert(point.rows == 4 && point.cols == 1);
-    const fp64  w = point.at<double>(3, 0);
-    CV_Assert(std::abs(w) > 1e-12);
-    return Eigen::Vector3d(
-            point.at<double>(0, 0) / w,
-            point.at<double>(1, 0) / w,
-            point.at<double>(2, 0) / w);
-}

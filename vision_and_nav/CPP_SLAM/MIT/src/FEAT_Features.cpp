@@ -62,11 +62,11 @@ PointPair2D ORB_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
         out.second.push_back(kp2[m.trainIdx].pt);
     }
 
-    // std::vector<cv::Point2d> p1d, p2d;
-    // cv::undistortPoints(out.first, p1d, K, distcoeffs);
-    // cv::undistortPoints(out.second, p2d, K, distcoeffs);
+    std::vector<cv::Point2d> p1d, p2d;
+    cv::undistortPoints(out.first, p1d, K, distcoeffs, cv::noArray(), K);
+    cv::undistortPoints(out.second, p2d, K, distcoeffs, cv::noArray(), K);
 
-    // out = PointPair2D(p1d, p2d);
+    out = PointPair2D(p1d, p2d);
     return out;
 }
 
@@ -144,10 +144,10 @@ PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
     }
 
     std::vector<cv::Point2d> p1d, p2d;
-    //cv::undistortPoints(out.first, p1d, K, distcoeffs, cv::noArray(), K);
-    //cv::undistortPoints(out.second, p2d, K, distcoeffs, cv::noArray(), K);
+    cv::undistortPoints(out.first, p1d, K, distcoeffs, cv::noArray(), K);
+    cv::undistortPoints(out.second, p2d, K, distcoeffs, cv::noArray(), K);
 
-    //out = PointPair2D(p1d, p2d);
+    out = PointPair2D(p1d, p2d);
     return out;
 }
 

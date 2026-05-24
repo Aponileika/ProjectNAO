@@ -1,6 +1,7 @@
 #include "VIZ_Visualization.hpp"
 #include "LG_Logging.hpp"
 #include "OB_Observations.hpp"
+#include "PROJ_ProjectiveUtils.hpp"
 #include "VW_Views.hpp"
 
 void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp);
@@ -13,6 +14,16 @@ void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps,
     const std::string cam_path = path + "cameras.bin";
     const std::string image_path = path + "images.bin";
     const std::string point_path = path + "points3D.bin";
+    FILE *fp_point = fopen(point_path.c_str(), "wb+");
+    if (fp_point == NULL) 
+    {
+        perror("Failed to open file");
+        LG_Log("[ERROR] Failed to open file %s\n", point_path.c_str());
+        return;
+    }
+    __VIZ_WritePointsColmap(os, ps, vs, fp_point);
+    fclose(fp_point);
+
     FILE *fp_cam = fopen(cam_path.c_str(), "wb+");
     if (fp_cam == NULL) 
     {
@@ -32,17 +43,9 @@ void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps,
     }
     __VIZ_WriteImagesColmap(os, vs, fp_image);
     fclose(fp_image);
-
-    FILE *fp_point = fopen(point_path.c_str(), "wb+");
-    if (fp_point == NULL) 
-    {
-        perror("Failed to open file");
-        LG_Log("[ERROR] Failed to open file %s\n", point_path.c_str());
-        return;
-    }
-    __VIZ_WritePointsColmap(os, ps, vs, fp_point);
-    fclose(fp_point);
 }
+
+u64 w, h;
 
 void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp) 
 {
@@ -51,8 +54,6 @@ void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp)
     LG_Log("[__VIZ_WriteCamerasColmap] num cameras = %llu\n", num_cameras);
     fwrite(&num_cameras, sizeof(u64), 1, fp);
 
-    const u64 w = vs.w;
-    const u64 h = vs.h;
     const u64 wh[2] = {w, h};
     CameraIntrinsics *ci = vs.views[0].intrinsics;
     const fp64 params[4] = {ci->K(0, 0), ci->K(1, 1), ci->K(0, 2), ci->K(1, 2)};
@@ -89,13 +90,16 @@ void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, struc
         LG_Log("[__VIZ_WritePointsColmap] Getting RGB image index %d\n", i);
         imgs[i] = cv::imread(path, cv::IMREAD_COLOR_RGB);
     }
-
+    w = imgs[0].cols;
+    h = imgs[0].rows;
+    LG_Log("[__VIZ_WritePointsColmap] RGB images have (w, h) = (%lld, %lld)\n", w, h);
     LG_Log("[__VIZ_WritePointsColmap] got all RGB images\n");
     for (u64 i = 0; i < num_points; i++) 
     {
         fwrite(&i, sizeof(u64), 1, fp);
 
-        fwrite(ps.points[i].data(), sizeof(fp64), 3, fp);
+        Eigen::Vector3d point_cart = PROJ_Homog2Cart(ps.points[i]);
+        fwrite(point_cart.data(), sizeof(fp64), 3, fp);
         const size_t num_obs = ps.observations_indexes[i].size();
         fp64 R = 0.0f;
         fp64 G = 0.0f;
@@ -143,7 +147,8 @@ void __VIZ_WriteImagesColmap(struct ObservationSet os, struct ViewSet vs, FILE *
     fwrite(&num_images, sizeof(u64), 1, fp);
     LG_Log("[__VIZ_WriteImagesColmap] num images = %llu\n", num_images);
 
-    for (u64 i = 0; i < num_images; i++) {
+    for (u64 i = 0; i < num_images; i++) 
+    {
         const i32 image_id = static_cast<i32>(i);
         fwrite(&image_id, sizeof(i32), 1, fp);
 
@@ -166,7 +171,7 @@ void __VIZ_WriteImagesColmap(struct ObservationSet os, struct ViewSet vs, FILE *
             q_cw.z()
         };
         fwrite(quat, sizeof(fp64), 4, fp);
-        fwrite(params->t.data(), sizeof(fp64), 3, fp);
+        fwrite(t_cw.data(), sizeof(fp64), 3, fp);
 
         // camera id, now same as image
         fwrite(&image_id, sizeof(i32), 1, fp);

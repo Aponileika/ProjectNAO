@@ -50,142 +50,7 @@ std::pair<cv::Mat, cv::Mat> EP_GetR21t21(cv::Mat R1, cv::Mat t1, cv::Mat R2, cv:
     cv::Mat t21 = t2 - R21 * t1;
     std::pair<cv::Mat, cv::Mat> R21t21(R21, t21);
     return R21t21;
-    // cv::Mat R21 = R1.t() * R2;
-    // cv::Mat t21 = R1.t() * (t2 - t1);
-    // std::pair<cv::Mat, cv::Mat> R21t21(R21, t21);
-    // return R21t21;
 }
-
-// static void EP_LogMat(const char* name, const cv::Mat& M)
-// {
-//     LG_Log("%s: rows=%d, cols=%d, type=%d, channels=%d\n",
-//            name, M.rows, M.cols, M.type(), M.channels());
-//
-//     if (M.empty()) {
-//         LG_Log("%s is empty\n", name);
-//         return;
-//     }
-//
-//     cv::Mat M64;
-//     M.convertTo(M64, CV_64F);
-//
-//     for (int r = 0; r < M64.rows; ++r) {
-//         LG_Log("%s[%d] = ", name, r);
-//         for (int c = 0; c < M64.cols; ++c) {
-//             double v = M64.at<double>(r, c);
-//             LG_Log("%.17g ", v);
-//         }
-//         LG_Log("\n");
-//     }
-// }
-//
-// static void EP_LogMatx33d(const char* name, const cv::Matx33d& M)
-// {
-//     LG_Log("%s Matx33d:\n", name);
-//     for (int r = 0; r < 3; ++r) {
-//         LG_Log("%s[%d] = %.17g %.17g %.17g\n",
-//                name, r, M(r, 0), M(r, 1), M(r, 2));
-//     }
-// }
-//
-// static void EP_LogVec3(const char* name, const cv::Vec3d& v)
-// {
-//     LG_Log("%s = %.17g %.17g %.17g\n", name, v[0], v[1], v[2]);
-// }
-// PointPair2D EP_FindCorrpEpipolar(const PointPair2D& corrp, const cv::Mat& E)
-// {
-//     PointPair2D corr_p;
-//     corr_p.first.reserve(corrp.first.size());
-//     corr_p.second.reserve(corrp.second.size());
-//
-//     LG_Log("[EP_FindCorrpEpipolar] input correspondences = %zu\n", corrp.first.size());
-//
-//     EP_LogMat("[EP_FindCorrpEpipolar] E input before conversion", E);
-//
-//     cv::Matx33d K = CM_GetIntrinsics()->K;
-//     cv::Matx33d K_inv = K.inv();
-//
-//     EP_LogMatx33d("[EP_FindCorrpEpipolar] K", K);
-//     EP_LogMatx33d("[EP_FindCorrpEpipolar] K_inv", K_inv);
-//
-//     cv::Mat E64;
-//     E.convertTo(E64, CV_64F);
-//
-//     EP_LogMat("[EP_FindCorrpEpipolar] E64 after convertTo", E64);
-//
-//     if (E64.rows != 3 || E64.cols != 3) {
-//         LG_Log("[EP_FindCorrpEpipolar] ERROR: E is not 3x3, got %dx%d\n",
-//                E64.rows, E64.cols);
-//         return corr_p;
-//     }
-//
-//     cv::Matx33d Ex(E64);
-//
-//     EP_LogMatx33d("[EP_FindCorrpEpipolar] Ex as Matx33d", Ex);
-//
-//     cv::Matx33d F21 = K_inv.t() * Ex * K_inv;
-//     cv::Matx33d F21_T = F21;
-//
-//     EP_LogMatx33d("[EP_FindCorrpEpipolar] F21 = K_inv.t() * E * K_inv", F21);
-//     EP_LogMatx33d("[EP_FindCorrpEpipolar] F21_T", F21_T);
-//
-//     for (size_t i = 0; i < corrp.first.size(); i++)
-//     {
-//         const cv::Vec3d x1(corrp.first[i].x,  corrp.first[i].y,  1.0);
-//         const cv::Vec3d x2(corrp.second[i].x, corrp.second[i].y, 1.0);
-//
-//         const cv::Vec3d l2 = F21 * x1;
-//         const cv::Vec3d l1 = F21_T * x2;
-//
-//         const double denom2 = std::sqrt(l2[0]*l2[0] + l2[1]*l2[1]);
-//         const double denom1 = std::sqrt(l1[0]*l1[0] + l1[1]*l1[1]);
-//
-//         const double r = x2.dot(l2);
-//
-//         if (i < 10) {
-//             LG_Log("[EP_FindCorrpEpipolar] i=%zu\n", i);
-//             EP_LogVec3("  x1", x1);
-//             EP_LogVec3("  x2", x2);
-//             EP_LogVec3("  l2 = F21*x1", l2);
-//             EP_LogVec3("  l1 = F21_T*x2", l1);
-//             LG_Log("  algebraic r=x2^T F x1 = %.17g\n", r);
-//             LG_Log("  denom2 = %.17g, denom1 = %.17g\n", denom2, denom1);
-//         }
-//
-//         if (!std::isfinite(denom1) || !std::isfinite(denom2) ||
-//             denom1 < 1e-12 || denom2 < 1e-12) {
-//             LG_Log("[EP_FindCorrpEpipolar] skipping i=%zu due to invalid denom: denom1=%.17g denom2=%.17g\n",
-//                    i, denom1, denom2);
-//             continue;
-//         }
-//
-//         const double dist1 = std::abs(r) / denom2;
-//         const double dist2 = std::abs(r) / denom1;
-//         const double dist = 0.5 * (dist1 + dist2);
-//
-//         if (!std::isfinite(dist)) {
-//             LG_Log("[EP_FindCorrpEpipolar] nan/inf distance at i=%zu: dist1=%.17g dist2=%.17g dist=%.17g\n",
-//                    i, dist1, dist2, dist);
-//             continue;
-//         }
-//
-//         if (i < 10) {
-//             LG_Log("[EP_FindCorrpEpipolar] dist1=%.17g, dist2=%.17g, dist=%.17g\n",
-//                    dist1, dist2, dist);
-//         }
-//
-//         if (dist < EpiPolarTreshhold)
-//         {
-//             corr_p.first.push_back(corrp.first[i]);
-//             corr_p.second.push_back(corrp.second[i]);
-//         }
-//     }
-//
-//     LG_Log("[EP_FindCorrpEpipolar] kept %zu / %zu correspondences\n",
-//            corr_p.first.size(), corrp.first.size());
-//
-//     return corr_p;
-// }
 
 PointPair2D EP_FindCorrpEpipolar(const PointPair2D& corrp, const cv::Mat& E)
 {
@@ -203,8 +68,8 @@ PointPair2D EP_FindCorrpEpipolar(const PointPair2D& corrp, const cv::Mat& E)
     for(size_t i = 0; i < corrp.first.size(); i++)
     {
         //To homog
-        cv::Mat firstp = PT_ToHomogFromCart(corrp.first[i]);
-        cv::Mat secondp = PT_ToHomogFromCart(corrp.second[i]);
+        cv::Mat firstp = PROJ_ToHomogFromCart(corrp.first[i]);
+        cv::Mat secondp = PROJ_ToHomogFromCart(corrp.second[i]);
         cv::Mat epline1 = F21 * firstp;
         fp64 a = epline1.at<double>(0,0);
         fp64 b = epline1.at<double>(1,0);

@@ -39,7 +39,7 @@ struct ReprojectionError
                     T* residuals) const{
         Eigen::Map<const Eigen::Quaternion<T>> qwc(qp);
         Eigen::Map<const Eigen::Matrix<T,3,1>> t(tp);
-        Eigen::Map<const Eigen::Matrix<T,3,1>> X(Xp);
+        Eigen::Map<const Eigen::Matrix<T,4,1>> X(Xp);
 
         //Note we do not use homogenous coordinates to project, 
         //Right now we distort all projected points, a more reasonable
@@ -56,7 +56,12 @@ struct ReprojectionError
         const fp64 cy_ = intr_->cy;
 
         //X in camera coordinates is now R^T(X - t)
-        Eigen::Matrix<T, 3, 1> Xc = qcw * (X - t);
+        Eigen::Matrix<T, 3, 1> XYZ(
+                X(0),
+                X(1),
+                X(2));
+        T W = X(3);
+        Eigen::Matrix<T, 3, 1> Xc = qcw * (XYZ - t * W);
 
         //projection
         T x = Xc.x() / Xc.z();
@@ -72,7 +77,7 @@ struct ReprojectionError
     }
     static ceres::CostFunction* Create(const fp64 observed_x, const fp64 observed_y, const struct OPIntrinsics* intr)
     {
-        return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 4, 3, 3>(
+        return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 4, 3, 4>(
             new ReprojectionError(observed_x, observed_y, intr));
     }
 

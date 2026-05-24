@@ -88,6 +88,11 @@ cv::Mat __FR_GetFrameDataSet()
     std::string curr_frame = reader.path + "frame" + std::to_string(reader.curr_frame) + ".png";
     LG_Log("[__FR_GetFrameDataSet] Getting frame %s\n", curr_frame.c_str());
     cv::Mat frame = cv::imread(curr_frame, cv::IMREAD_COLOR);
+    if(frame.empty())
+    {
+        LG_Log("[__FR_GetFrameDataSet] cv::imread returned empty frame\n");
+        return {};
+    }
 
     std::string path_write = "./colmap/images/frame" + std::to_string(reader.curr_frame - 1) + ".png";
     cv::imwrite(path_write, frame);

@@ -1,5 +1,6 @@
 #include "../include/OB_Observations.hpp"
 #include "EP_CorrespondingPoints.hpp"
+#include "PROJ_ProjectiveUtils.hpp"
 
 static void __OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points,
         cv::Point2d observation, u64 view_index, u64 point_index);
@@ -76,7 +77,6 @@ auto __OB_Find2D3D(cv::Point2d imagepoint, struct ObservationSet* TObs, u64 vidx
     {
         i64 dx = offset.dx;
         i64 dy = offset.dy;
-        LG_Log("[__OB_Find2D3D] (dx, dy) = (%lld, %lld)\n", dx, dy);
         std::pair<i64, i64> point(x + dx, y + dy);
         std::pair<std::pair<i64, i64>, u64> key(point, vidx);
         auto it = TObs->imagepoint2idx.find(key);
@@ -106,13 +106,15 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
 
     std::vector<u64> pnpPoints3Didx;
     //This is a bit (very naive).
-    pnpPoints3D.reserve(corrp.second.size());
+    pnpPoints3Didx.reserve(corrp.second.size());
 
     u64 vidx = TView->last_sz;
+    LG_Log("[OB_SolvePnP] TView->last_sz = %llu\n", TView->last_sz);
+    LG_Log("[OB_SolvePnP] TView->views.size() = %zu\n", TView->views.size());
     std::vector<u64> obsidx = TView->observations_indexes[TView->last_sz];
 
     std::vector<bool> used_3D(TObs->point_indexes.size());
-    LG_Log("Finding 2D->3D correspondences\n");
+    LG_Log("[OB_SolvePnP] Finding 2D->3D correspondences, with %lld correspondences\n", corrp.first.size());
     for(size_t i = 0; i < corrp.first.size(); i++)
     {
         cv::Point2d imagepoint = corrp.first[i];
@@ -123,7 +125,7 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
             u64 pidx = TObs->point_indexes[it->second];
             used_3D[it->second] = true;
             pnpPoints3Didx.push_back(pidx);
-            Eigen::Vector3d v = TPoints->points[pidx];
+            Eigen::Vector3d v = PROJ_Homog2Cart(TPoints->points[pidx]);
             pnpPoints3D.emplace_back(v(0), v(1), v(2));
         }
         else
@@ -148,12 +150,11 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
     cv::solvePnPRansac(pnpPoints3D, pnpPoints, ci->K, ci->distcoeffs, rvec, t,
             false, PnPRansacIts, Reprojerr, conf);
     struct Camera cam;
-    LG_Log("Creating cam\n");
     cv::Mat R;
     cv::Rodrigues(rvec, R);
-    LG_Log("[OB_SolvePnP] creating cam with index %llu\n", vidx);
+    LG_Log("[OB_SolvePnP] creating cam with index %llu\n", vidx + 1);
     cam = CM_CreateCam(R, t, vidx + 1);
-    LG_Log("Adding View\n");
+    LG_Log("[OB_SolvePnP] Adding View\n");
     VW_AddView(TView, cam);
     __OB_AddObsPnP(TView, TObs, TPoints, pnpPoints, pnpPoints3Didx);
     return ret;
@@ -168,8 +169,7 @@ static void __OB_AddObsPnP(struct ViewSet* views, struct ObservationSet* obs, st
     {
         cv::Point2d p = pnpPoints[i];
         obs->observations.push_back(p);
-        //TODO
-        std::pair<i64, i64> point(static_cast<i64>(round(p.x)),static_cast<i64>(round( p.y)));
+        std::pair<i64, i64> point(static_cast<i64>(round(p.x)),static_cast<i64>(round(p.y)));
         std::pair<std::pair<i64, i64>, u64> key(point, view_index);
         obs->imagepoint2idx[key] = obs->observations.size() - 1;
         obs->view_indexes.push_back(view_index);
@@ -191,7 +191,7 @@ void __OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct Point
 {
     obs->observations.push_back(observation);
     std::pair<i64, i64> point(static_cast<i64>(round(observation.x)), static_cast<i64>(round(observation.y)));
-    std::pair<std::pair<i64, i64>, u64> key(point, view_index);
+    std::pair<std::pair<i64, i64>, u64> key(point, views->last_sz - 1 +  view_index);
     obs->imagepoint2idx[key] = obs->observations.size() - 1;
     PUSHVIEW(obs->view_indexes, views, view_index);
     PUSHPOINT(obs->point_indexes, points, point_index);
