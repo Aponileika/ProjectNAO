@@ -13,7 +13,7 @@
 
 struct OrbExtractor* ORB_InitORB()
 {
-    struct OrbExtractor* orb = new struct OrbExtractor {};
+    struct OrbExtractor* orb = new struct OrbExtractor{};
     orb->orb = ORB_SLAM::ORBextractor();
     orb->matcher = cv::BFMatcher(cv::NORM_HAMMING, false);
     orb->matchratio = MATCHRATIO;
@@ -27,6 +27,7 @@ void ORB_Destroy(struct OrbExtractor* orb)
 
 PointPair2D ORB_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
 {
+    LG_Log("[ORB_GetMatches] extr void* = %p\n", extractor);
     struct OrbExtractor* orb = static_cast<struct OrbExtractor*>(extractor);
     std::vector<cv::KeyPoint> kp1, kp2;
     cv::Mat des1, des2;
@@ -61,11 +62,11 @@ PointPair2D ORB_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
         out.second.push_back(kp2[m.trainIdx].pt);
     }
 
-    std::vector<cv::Point2d> p1d, p2d;
-    cv::undistortPoints(out.first, p1d, K, distcoeffs);
-    cv::undistortPoints(out.second, p2d, K, distcoeffs);
+    // std::vector<cv::Point2d> p1d, p2d;
+    // cv::undistortPoints(out.first, p1d, K, distcoeffs);
+    // cv::undistortPoints(out.second, p2d, K, distcoeffs);
 
-    out = PointPair2D(p1d, p2d);
+    // out = PointPair2D(p1d, p2d);
     return out;
 }
 
@@ -99,12 +100,21 @@ void AKAZE_destroy(struct OpenCVExtractAKAZE* akaze)
 
 PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
 {
+    LG_Log("[AKAZE_GetMatches] extr void* = %p\n", extractor);
     struct OpenCVExtractAKAZE* akaze = static_cast<struct OpenCVExtractAKAZE*>(extractor);
     std::vector<cv::KeyPoint> kp1, kp2;
     cv::Mat des1, des2;
 
-    akaze->akaze->detectAndCompute(img1, NULL, kp1, des1);
-    akaze->akaze->detectAndCompute(img2, NULL, kp2, des2);
+    LG_Log("[AKAZE_GetMatches] img1 empty=%d rows=%d cols=%d type=%d channels=%d data=%p\n",
+       img1.empty(), img1.rows, img1.cols, img1.type(), img1.channels(), img1.data);
+
+    LG_Log("[AKAZE_GetMatches] img2 empty=%d rows=%d cols=%d type=%d channels=%d data=%p\n",
+       img2.empty(), img2.rows, img2.cols, img2.type(), img2.channels(), img2.data);
+    LG_Log("[AKAZE_GetMatches] detect and compute img1\n");
+    akaze->akaze->detectAndCompute(img1, cv::noArray(), kp1, des1);
+
+    LG_Log("[AKAZE_GetMatches] detect and compute img2\n");
+    akaze->akaze->detectAndCompute(img2, cv::noArray(), kp2, des2);
     struct CameraIntrinsics* ci = CM_GetIntrinsics();
     cv::Matx33d K = ci->K;
     cv::Vec<fp64, 5> distcoeffs = ci->distcoeffs;
@@ -140,3 +150,4 @@ PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
     //out = PointPair2D(p1d, p2d);
     return out;
 }
+

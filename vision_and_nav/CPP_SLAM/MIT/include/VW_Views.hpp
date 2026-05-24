@@ -6,8 +6,8 @@
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
 #include "LG_Logging.hpp"
-#define Wid 1280
-#define Hei 720
+#define Wid 2016
+#define Hei 1512
 
 struct ViewSet
 {
@@ -23,5 +23,6 @@ struct ViewSet* VW_InitViewSet();
 void VW_AddView(struct ViewSet* views, Camera cam);
 void VW_AddObs(struct ViewSet* views, u64 viewidx, u64 obsidx);
 void VW_Print(struct ViewSet* views);
+struct Camera* VW_GetTwoLatestCams(struct ViewSet* views);
 
 #endif //__VW_VIEW_HPP_

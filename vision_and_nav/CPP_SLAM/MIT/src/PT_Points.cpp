@@ -5,7 +5,7 @@ static inline void __PT_AddPoint(struct PointSet* pointset, cv::Mat point);
 
 struct PointSet* PT_InitPoints()
 {
-    struct PointSet* pts = (struct PointSet*) malloc(sizeof(struct PointSet));
+    struct PointSet* pts = new struct PointSet{};
     pts->points = {};
     pts->observations_indexes = {};
     pts->last_sz = 0;

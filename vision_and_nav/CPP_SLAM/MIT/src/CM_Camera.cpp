@@ -1,11 +1,15 @@
 #include "../include/CM_Camera.hpp"
 
-struct CameraIntrinsics* ci;
-static const fp64 fx = 9.747187409387847*100.0f;
-static const fp64 fy = 9.765223334221673*100.0f;
+// static const fp64 fx = 9.747187409387847*100.0f;
+// static const fp64 fy = 9.765223334221673*100.0f;
+// static const fp64 s = 0.0f;
+// static const fp64 cx = 6.663249058750432*100.0f;
+// static const fp64 cy = 3.374737864029501*100.0f;
+static const fp64 fx = 16.90359774744055*100.0f;
+static const fp64 fy = 16.91987717196416*100.0f;
 static const fp64 s = 0.0f;
-static const fp64 cx = 6.663249058750432*100.0f;
-static const fp64 cy = 3.374737864029501*100.0f;
+static const fp64 cx = 9.959879587339067*100.0f;
+static const fp64 cy = 7.523122338718711*100.0f;
 
 static const fp64 k1 = 6.475901025911835*0.01f;
 static const fp64 k2 = -1.903655376657792*0.1f;
@@ -13,20 +17,21 @@ static const fp64 p1 = -3.666863513699757*0.001f;
 static const fp64 p2 = 2.119531347424837*0.001f;
 static const fp64 k3 = 1.113497353924944*0.1f;
 
+
+static struct CameraIntrinsics ci;
 static bool IntrinsicsSet = false;
 
 void CM_SetIntrinsics(std::string path)
 {
     if(IntrinsicsSet)return;
     LG_Log("Setting intrinsics\n");
-    ci = (struct CameraIntrinsics*)malloc(sizeof(struct CameraIntrinsics));
     LG_Log("Setting K\n");
-    ci->K = cv::Matx33d(
+    ci.K = cv::Matx33d(
             fx,   s,    cx,
             0.0f, fy,   cy,
             0.0f, 0.0f, 1.0f);
     LG_Log("Setting distcoeffs\n");
-    ci->distcoeffs = cv::Vec<fp64, 5>(k1, k2, p1, p2, k3);
+    ci.distcoeffs = cv::Vec<fp64, 5>(k1, k2, p1, p2, k3);
     IntrinsicsSet = true;
     LG_Log("Set Intrinsics\n");
 }
@@ -34,7 +39,7 @@ void CM_SetIntrinsics(std::string path)
 struct CameraIntrinsics* CM_GetIntrinsics()
 {
     if(!IntrinsicsSet)CM_SetIntrinsics("");
-    return ci;
+    return &ci;
 }
 
 
@@ -68,7 +73,7 @@ struct Camera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx)
         CM_GetIntrinsics(),
         R, 
         t,
-        (struct Param*)malloc(sizeof(struct Param)),
+        new struct Param{},
         image_name 
     };
     CM_SetParametrization(cam);

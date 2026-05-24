@@ -4,10 +4,8 @@
 #include "VW_Views.hpp"
 
 void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp);
-void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps,
-                             FILE *fp);
-void __VIZ_WriteImagesColmap(struct ObservationSet os, struct PointSet ps,
-                             struct ViewSet vs, FILE *fp);
+void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, struct ViewSet vs, FILE *fp);
+void __VIZ_WriteImagesColmap(struct ObservationSet os, struct ViewSet vs, FILE *fp);
 
 void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps,
                      struct ViewSet vs, std::string path) 
@@ -32,7 +30,7 @@ void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps,
         LG_Log("[ERROR] Failed to open file %s\n", image_path.c_str());
         return;
     }
-    __VIZ_WriteImagesColmap(os, ps, vs, fp_image);
+    __VIZ_WriteImagesColmap(os, vs, fp_image);
     fclose(fp_image);
 
     FILE *fp_point = fopen(point_path.c_str(), "wb+");
@@ -42,7 +40,7 @@ void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps,
         LG_Log("[ERROR] Failed to open file %s\n", point_path.c_str());
         return;
     }
-    __VIZ_WritePointsColmap(os, ps, fp_point);
+    __VIZ_WritePointsColmap(os, ps, vs, fp_point);
     fclose(fp_point);
 }
 
@@ -70,31 +68,60 @@ void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp)
     }
 }
 
-void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, FILE *fp) 
+void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, struct ViewSet vs, FILE *fp) 
 {
     LG_Log("[__VIZ_WritePointsColmap] Writing points colmap\n");
     // dont care
     const fp64 error = 0.0f;
-
-    const u8 R = 0;
-    const u8 G = 255;
-    const u8 B = 0;
-
-    const u8 RGB[3] = {R, G, B};
+    u8 RGB[3] = {0, 0, 0};
 
     const u64 num_points = static_cast<u64>(ps.points.size());
     fwrite(&num_points, sizeof(u64), 1, fp);
     LG_Log("[__VIZ_WritePointsColmap] num points colmap = %llu\n", num_points);
+    const size_t num_imgs = vs.views.size();
+    LG_Log("[__VIZ_WritePointsColmap] Getting RGB images\n");
+    std::vector<cv::Mat> imgs;
+    imgs.resize(num_imgs);
+    for(size_t i = 0; i < num_imgs; i++)
+    {
+        std::string path = "./colmap/images/frame" + std::to_string(i) + ".png";
+        LG_Log("[__VIZ_WritePointsColmap] Getting RGB image %s\n", path.c_str());
+        LG_Log("[__VIZ_WritePointsColmap] Getting RGB image index %d\n", i);
+        imgs[i] = cv::imread(path, cv::IMREAD_COLOR_RGB);
+    }
 
+    LG_Log("[__VIZ_WritePointsColmap] got all RGB images\n");
     for (u64 i = 0; i < num_points; i++) 
     {
         fwrite(&i, sizeof(u64), 1, fp);
 
         fwrite(ps.points[i].data(), sizeof(fp64), 3, fp);
+        const size_t num_obs = ps.observations_indexes[i].size();
+        fp64 R = 0.0f;
+        fp64 G = 0.0f;
+        fp64 B = 0.0f;
+        for(size_t j = 0; j < num_obs; j++)
+        {
+            cv::Mat img_rgb = imgs[os.view_indexes[ps.observations_indexes[i][j]]];
+            cv::Point2d obs = os.observations[ps.observations_indexes[i][j]];
+            i64 x = static_cast<i64>(round(obs.x));
+            i64 y = static_cast<i64>(round(obs.y));
+            //LG_Log("[__VIZ_WritePointsColmap] getting pixel (y, x) = (%lld, %lld)\n", y, x);
+            cv::Vec3b rgb = img_rgb.at<cv::Vec3b>(y, x);
+            R += static_cast<fp64>(rgb[0]);
+            G += static_cast<fp64>(rgb[1]);
+            B += static_cast<fp64>(rgb[2]);
+        }
+        R /= num_obs;
+        G /= num_obs;
+        B /= num_obs;
+
+        RGB[0] = static_cast<u8>(R);
+        RGB[1] = static_cast<u8>(G);
+        RGB[2] = static_cast<u8>(B);
         fwrite(RGB, sizeof(u8), 3, fp);
 
         const auto &obs_idx = ps.observations_indexes[i];
-        const size_t num_obs = obs_idx.size();
         u64 track = static_cast<u64>(num_obs);
 
         fwrite(&error, sizeof(fp64), 1, fp);
@@ -109,8 +136,8 @@ void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, FILE 
     }
 }
 
-void __VIZ_WriteImagesColmap(struct ObservationSet os, struct PointSet ps,
-                             struct ViewSet vs, FILE *fp) {
+void __VIZ_WriteImagesColmap(struct ObservationSet os, struct ViewSet vs, FILE *fp) 
+{
     LG_Log("[__VIZ_WriteImagesColmap] Writing images colmap\n");
     u64 num_images = vs.views.size();
     fwrite(&num_images, sizeof(u64), 1, fp);
@@ -165,15 +192,3 @@ void __VIZ_WriteImagesColmap(struct ObservationSet os, struct PointSet ps,
         }
     }
 }
-
-// fp64 *__VIZ_GetRGB(std::vector<u64> observations_indexes, struct ObservationSet os, struct ViewSet vs) 
-// {
-//     //TODO preload all images into a static global, index by view idx
-//     //Do not want to have to load the image for every point, then set the rgb
-//     //to the mean observation rgb!
-//     size_t num_obs = observations_indexes.size();
-//     for(size_t i = 0; i < num_obs; i++)
-//     {
-//         u64 view_idx = os.view_indexes[observations_indexes[i]];
-//     }
-// }

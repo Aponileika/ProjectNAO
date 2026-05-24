@@ -1,0 +1,5 @@
+some kind of heap corrption going on, works with ORB, crashes with AKAZE, try to debug by just
+ditching the options for feature extraction, put akaze code in EP file, see if that works, if not
+keep looking, check globals? No more mallocs left cant be that, also tested AKAZE independently, works fine,
+try to load two images now?
+g++ testakaze.cpp -O3 -std=c++20 -I$(brew --prefix opencv)/include/opencv4 -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_imgcodecs -lopencv_calib3d -lopencv_videoio -lopencv_features2d

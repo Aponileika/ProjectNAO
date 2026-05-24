@@ -6,11 +6,13 @@
 #include "OB_Observations.hpp"
 #include "OP_BA.hpp"
 #include "VIZ_Visualization.hpp"
+#include "VW_Views.hpp"
 #include <chrono>
+#include <utility>
 
 struct SLAM slam;
 
-static cv::Mat __SL_GetNextFrame();
+static cv::Mat __SL_GetNextFrame(u64 num_views);
 void __SL_PrintSlam();
 static void __SL_SlamStart();
 void __SL_SlamLoopBundle();
@@ -23,22 +25,17 @@ void SL_InitSlam()
     slam.Tobs = OB_InitObs();
     slam.frame_pair = {};
     void* extr = static_cast<void*>(AKAZE_InitAKAZE(AKAZEthreshold));
+    LG_Log("[SL_InitSlam] AKAZE init ptr = %p\n", extr);
     EP_InitCPointExtractor(extr, AKAZE_GetMatches);
+
+    // void* extr = static_cast<void*>(ORB_InitORB());
+    // EP_InitCPointExtractor(extr, ORB_GetMatches);
     FR_InitFrameGetter();
 }
 
-
-static cv::Mat __SL_GetNextFrame()
+static cv::Mat __SL_GetNextFrame(u64 num_views)
 {
-    static i32 frame_cnt = 0;
-    i32 i = 0;
-    cv::Mat frame = FR_GetFrame(-1);
-    while(i < 60)
-    {
-        frame = FR_GetFrame(-1);
-        i++;
-    }
-    frame = FR_GetFrame(frame_cnt++);
+    cv::Mat frame = FR_GetFrame(num_views);
     return frame;
 }
 
@@ -56,15 +53,15 @@ static void __SL_SlamStart()
 {
     const cv::Matx33d K = CM_GetIntrinsics()->K;
     LG_Log("Getting first frame\n");
-    slam.frame_pair.first = __SL_GetNextFrame();
+    slam.frame_pair.first = __SL_GetNextFrame(slam.Tview->views.size());
     LG_Log("Getting second frame\n");
     bool isinit = false;
     while(!isinit)
     {
-        slam.frame_pair.second = __SL_GetNextFrame();
-        LG_Log("Getting corresponding points between frames\n");
+        slam.frame_pair.second = __SL_GetNextFrame(slam.Tview->views.size());
+        LG_Log("[__SL_SlamStart] Getting corresponding points between frames\n");
         PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
-        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
+        // EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
         LG_Log("Getting intrinsics of camera\n");
         LG_Log("Finding essential matrix\n");
@@ -103,7 +100,7 @@ static void __SL_SlamStart()
         PointPair2D filteredcorrp = EP_FilterPointPairByMask(corrp, poseMask);
         corrp = std::move(filteredcorrp);
         LG_Log("number of corrp after masking = %lld\n", corrp.first.size());
-        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
+        //EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
         cv::Mat points3d;
         LG_Log("Triangulating\n");
@@ -116,8 +113,6 @@ static void __SL_SlamStart()
         isinit = true;
     }
     __SL_PrintSlam();
-    const std::string path = "./colmap/sparse/0/";
-    VIZ_WriteColmap(*(slam.Tobs), *(slam.Tpoints), *(slam.Tview), path);
 }
 
 void __SL_SlamLoopBundle()
@@ -128,6 +123,7 @@ void __SL_SlamLoopBundle()
 PointPair2D __SL_SlamLoopPnP()
 {
     PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
+    LG_Log("[__SL_SlamLoopPnP] Found %d correspondences betwen new frame pair\n", corrp.first.size());
     if(corrp.first.size() < NewFrameCorrpThreshold)
     {
         LG_Log("not enough points found for new frame found %d, need %d\n", 
@@ -154,7 +150,7 @@ void __SL_SlamLoop()
     const CameraIntrinsics* ci = CM_GetIntrinsics();
     const cv::Matx33d K = ci->K;
     bool added_view = true;
-    for(int i = 0; i < 5; i++)
+    for(int i = 0; i < 1; i++)
     {
         LG_Log("Starting SLAM loop %d\n", i);
         if(added_view)
@@ -165,7 +161,7 @@ void __SL_SlamLoop()
             slam.frame_pair.first = slam.frame_pair.second;
         }
         LG_Log("Getting new frame in SLAM loop\n");
-        slam.frame_pair.second = __SL_GetNextFrame();
+        slam.frame_pair.second = __SL_GetNextFrame(slam.Tview->views.size());
         LG_Log("Getting corresponding points in SLAM loop\n");
         PointPair2D nonpnpcorrp = __SL_SlamLoopPnP();
         if(nonpnpcorrp.first.size() == 0)
@@ -177,9 +173,17 @@ void __SL_SlamLoop()
         LG_Log("Getting cam\n");
         struct Camera cam2 = slam.Tview->views[slam.Tview->last_sz];
         LG_Log("Getting E from cam\n");
-        cv::Mat E = EP_EFromRigid(cam2.R, cam2.t);
-        //EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.first, nonpnpcorrp.first, nonpnpcorrp.second);
+        struct Camera* two_latest = VW_GetTwoLatestCams(slam.Tview);
+        cv::Mat R1 = two_latest[0].R;
+        cv::Mat t1 = two_latest[0].t;
+
+        cv::Mat R2 = two_latest[1].R;
+        cv::Mat t2 = two_latest[1].t;
+        std::pair<cv::Mat, cv::Mat> R21t21 = EP_GetR21t21(R1, t1, R2, t2);
+        cv::Mat E = EP_EFromRigid(R21t21.first, R21t21.second);
+        // EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, nonpnpcorrp.first, nonpnpcorrp.second);
         LG_Log("Finding corrp with epipolar constraint\n");
+
         PointPair2D corr_p = EP_FindCorrpEpipolar(nonpnpcorrp, E);
         LG_Log("Found %lld corresponding points after filtering\n", corr_p.first.size());
         if(corr_p.first.size() < 1)
@@ -207,6 +211,8 @@ void __SL_SlamLoop()
         OB_AddObs(slam.Tobs, slam.Tview, slam.Tpoints, corr_p);
         __SL_PrintSlam();
     }
+    const std::string path = "./colmap/sparse/0/";
+    VIZ_WriteColmap(*(slam.Tobs), *(slam.Tpoints), *(slam.Tview), path);
 }
 
 void SL_SlamLoop()

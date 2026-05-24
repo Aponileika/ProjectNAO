@@ -8,7 +8,7 @@ static void __OB_AddObsPnP(struct ViewSet* views, struct ObservationSet* obs, st
 
 struct ObservationSet* OB_InitObs()
 {
-    struct ObservationSet* obs = new ObservationSet;
+    struct ObservationSet* obs = new ObservationSet{};
     return obs;
 }
 
@@ -43,8 +43,8 @@ void OB_Print(struct ObservationSet* obs)
 
 struct offset
 {
-    i32 dx;
-    i32 dy;
+    i64 dx;
+    i64 dy;
 };
 
 constexpr auto __OB_MakeSearchWindow()
@@ -52,12 +52,12 @@ constexpr auto __OB_MakeSearchWindow()
     const i32 W = SEARCHWINDOW2D3D*2 + 1;
     const i32 N = W*W;
 
-    std::array<struct offset, N> search_window;
-    for(i32 i = 0; i < W; i++)
+    std::array<struct offset, N> search_window{};
+    for(i64 i = 0; i < W; i++)
     {
-        for(i32 j = 0; j < W; j++)
+        for(i64 j = 0; j < W; j++)
         {
-            search_window[i*W + j] = offset{i - 1, j - 1};
+            search_window[i*W + j] = offset{i - SEARCHWINDOW2D3D, j - SEARCHWINDOW2D3D};
         }
     }
     struct offset temp = search_window[0];
@@ -76,6 +76,7 @@ auto __OB_Find2D3D(cv::Point2d imagepoint, struct ObservationSet* TObs, u64 vidx
     {
         i64 dx = offset.dx;
         i64 dy = offset.dy;
+        LG_Log("[__OB_Find2D3D] (dx, dy) = (%lld, %lld)\n", dx, dy);
         std::pair<i64, i64> point(x + dx, y + dy);
         std::pair<std::pair<i64, i64>, u64> key(point, vidx);
         auto it = TObs->imagepoint2idx.find(key);
@@ -110,15 +111,17 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
     u64 vidx = TView->last_sz;
     std::vector<u64> obsidx = TView->observations_indexes[TView->last_sz];
 
+    std::vector<bool> used_3D(TObs->point_indexes.size());
     LG_Log("Finding 2D->3D correspondences\n");
     for(size_t i = 0; i < corrp.first.size(); i++)
     {
         cv::Point2d imagepoint = corrp.first[i];
         auto it = __OB_Find2D3D(imagepoint, TObs, vidx);
-        if(it != TObs->imagepoint2idx.end())
+        if(it != TObs->imagepoint2idx.end() && used_3D[it->second] != true)
         {
             pnpPoints.push_back(corrp.second[i]);
             u64 pidx = TObs->point_indexes[it->second];
+            used_3D[it->second] = true;
             pnpPoints3Didx.push_back(pidx);
             Eigen::Vector3d v = TPoints->points[pidx];
             pnpPoints3D.emplace_back(v(0), v(1), v(2));
@@ -130,6 +133,7 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
         }
     }
     LG_Log("Found %lld 2D<->3D correspondences\n", pnpPoints3D.size());
+    LG_Log("[OB_SolvePnP] found %lld new correspondences\n", ret.nonpnpPoints.first.size());
     struct CameraIntrinsics* ci = CM_GetIntrinsics();
     cv::Mat rvec, t;
     LG_Log("Solving PnP\n");
@@ -147,7 +151,8 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
     LG_Log("Creating cam\n");
     cv::Mat R;
     cv::Rodrigues(rvec, R);
-    cam = CM_CreateCam(R, t, -1);
+    LG_Log("[OB_SolvePnP] creating cam with index %llu\n", vidx);
+    cam = CM_CreateCam(R, t, vidx + 1);
     LG_Log("Adding View\n");
     VW_AddView(TView, cam);
     __OB_AddObsPnP(TView, TObs, TPoints, pnpPoints, pnpPoints3Didx);

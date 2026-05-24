@@ -23,7 +23,7 @@
 #define RANSACMAXITERS 2000
 #define NewFrameCorrpThreshold 30
 #define InitFrameThresholdCorrp 50
-#define AKAZEthreshold 0.0001f
+#define AKAZEthreshold 0.001f
 
 #define SLAMSTARTMSG "\
     --------------------------------\n\

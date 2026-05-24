@@ -52,5 +52,6 @@ PointPair2D ORB_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2);
 struct OpenCVExtractAKAZE* AKAZE_InitAKAZE(fp64 threshold);
 void AKAZE_destroy(struct OpenCVExtractAKAZE* akaze);
 PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2);
+PointPair2D AKAZE_GetMatchesTest(struct OpenCVExtractAKAZE* extractor, cv::Mat img1, cv::Mat img2);
 
 #endif // __FEAT_FEATURES_HPP_

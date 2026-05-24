@@ -31,8 +31,6 @@ struct Camera
     std::string image_name;
 };
 
-extern struct CameraIntrinsics* ci;
-
 void CM_SetIntrinsics(std::string path);
 struct CameraIntrinsics* CM_GetIntrinsics();
 struct Camera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx);

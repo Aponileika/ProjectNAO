@@ -1,8 +1,9 @@
 #include "../include/VW_Views.hpp"
+#include "LG_Logging.hpp"
 
 struct ViewSet* VW_InitViewSet()
 {
-    struct ViewSet* viewset = (struct ViewSet*)malloc(sizeof(struct ViewSet));
+    struct ViewSet* viewset = new struct ViewSet{};
     viewset->views = {};
     viewset->last_sz = 0;
     viewset->observations_indexes = {};
@@ -21,6 +22,17 @@ void VW_AddView(struct ViewSet* views, Camera camera)
 void VW_AddObs(struct ViewSet* views, u64 viewidx, u64 obsidx)
 {
     views->observations_indexes[views->last_sz - 1 + viewidx].push_back(obsidx);
+}
+
+struct Camera* VW_GetTwoLatestCams(struct ViewSet* views)
+{
+    struct Camera latest = views->views[views->last_sz];
+    struct Camera secondlatest = views->views[views->last_sz - 1];
+    struct Camera* ret = new struct Camera[2];
+    LG_Log("Got two latest cameras, (secondlatest, lates) = (%d, %d)\n",views->last_sz,views->last_sz - 1);
+    ret[0] = secondlatest;
+    ret[1] = latest;
+    return ret;
 }
 
 void VW_Print(struct ViewSet* views)

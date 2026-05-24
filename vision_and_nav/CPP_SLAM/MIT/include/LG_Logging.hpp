@@ -19,8 +19,6 @@ struct Logger
     FILE* fp;
 };
 
-extern struct Logger glogger;
-
 void LG_InitLogger();
 void LG_CloseLogger();
 void LG_Log(const char* fmt, ...);

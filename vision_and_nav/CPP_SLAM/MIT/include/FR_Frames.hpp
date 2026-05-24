@@ -3,6 +3,11 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include "LG_Logging.hpp"
+#include "CArenaAlloc.h"
+
+#define USE_DATASET 1
+#define DATSET_PATH "./datasets/tsbb33-datasets/"
+#define SEQUENCE "turtle/"
 
 int FR_InitFrameGetter();
 cv::Mat FR_GetFrame(int idx);
