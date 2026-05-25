@@ -106,7 +106,7 @@ class AutomaticControl(Node):
 
 
     def calibrate(self):
-        if len(self.calibData) < 50:
+        if len(self.calibData) < 100:
             self.calibData.append({"ax":self.ax, "ay":self.ay, "w":self.w})
         else:
             bxS = 0
@@ -130,8 +130,8 @@ class AutomaticControl(Node):
         ax = self.ax * cos(self.w) + self.ay * sin(self.w)
         ay = -self.ax * sin(self.w) + self.ay * cos(self.w)
 
-        self.x += 0.5 * ax * dt**2
-        self.y += 0.5 * ay * dt**2
+        self.x -= 0.5 * ax * dt**2
+        self.y -= 0.5 * ay * dt**2
 
         theta = self.theta + self.w * dt
         self.theta = atan2(sin(theta), cos(theta))
