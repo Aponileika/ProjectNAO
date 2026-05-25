@@ -114,6 +114,8 @@ class AutomaticControl(Node):
         # Steering (NO velocity division!)
         delta = self.ktheta * etheta + self.ky * atan(self.ky * ey)
         self.delta = self.value_limit(delta, self.delta_max, -self.delta_max)
+
+        self.get_logger().info(f"ed={ed:.3f}, ey={ey:.3f}, etheta={etheta:.3f}")
     
 
     def get_errors(self):
