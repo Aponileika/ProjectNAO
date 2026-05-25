@@ -94,6 +94,8 @@ class AutomaticControl(Node):
         theta = self.theta + theta_dot * self.Ts
         self.theta = atan2(sin(theta), cos(theta))
 
+        self.get_logger().info(f"x={self.x:.3f}, y={self.y:.3f}, theta={self.theta:.3f}")
+
         return
 
 
@@ -200,7 +202,7 @@ def main(args=None):
     path = create_path("circle", 1)
 
     node = AutomaticControl(
-        Ts=0.1,
+        Ts=0.05,
         vmax=1,
         delta_max=pi/4,
         kx=1,
