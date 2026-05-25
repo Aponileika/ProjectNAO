@@ -127,8 +127,8 @@ class AutomaticControl(Node):
         
 
     def update_model(self, dt):
-        ax = self.ax * cos(self.w) + self.ay * sin(self.w)
-        ay = -self.ax * sin(self.w) + self.ay * cos(self.w)
+        ax = self.ax * cos(self.theta) + self.ay * sin(self.theta)
+        ay = -self.ax * sin(self.theta) + self.ay * cos(self.theta)
 
         self.x += 0.5 * ax * dt**2
         self.y -= 0.5 * ay * dt**2
