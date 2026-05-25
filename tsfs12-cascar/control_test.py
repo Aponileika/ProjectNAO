@@ -8,7 +8,7 @@ from cascar_msgs.msg import CarCommand, CarMeasurement
 
 
 class AutomaticControl(Node):
-    def __init__(self, Ts: int, vmax: float, delta_max:float, kx: float, ky: float, ktheta:float, path:list):
+    def __init__(self, Ts: flaot, vmax: float, delta_max:float, kx: float, ky: float, ktheta:float, path:list):
 
         #Start node
         super().__init__("automatic_control")
@@ -30,10 +30,7 @@ class AutomaticControl(Node):
         #Constants
         self.Ts = Ts
         self.vmax = vmax
-        self.delta_max = delta_max
-
-        self.max_speed: float = 100.0       #Actual command max
-        self.max_steer: float = 95.0        
+        self.delta_max = delta_max      
 
         self.D = 0.15
         self.L = 0.285
@@ -66,12 +63,16 @@ class AutomaticControl(Node):
         self.control_system(ed, ey, etheta)
 
         msg = CarCommand()
+        self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
 
-        speed_norm = self.value_limit(self.v / self.vmax, 1.0, -1.0)
-        steer_norm = self.value_limit(self.delta / self.delta_max, 1.0, -1.0)
+        speed_norm = self.v / self.vmax
+        steer_norm = self.delta / self.delta_max
 
-        msg.speed = speed_norm * self.max_speed
-        msg.steer = steer_norm * self.max_steer
+        max_speed = 100.0       #Actual command max
+        max_steer = 95.0  
+
+        msg.speed = speed_norm * max_speed
+        msg.steer = steer_norm * max_steer
 
         self.car_publisher_.publish(msg)
 
@@ -113,6 +114,8 @@ class AutomaticControl(Node):
         # Steering (NO velocity division!)
         delta = self.ktheta * etheta + self.ky * atan(self.ky * ey)
         self.delta = self.value_limit(delta, self.delta_max, -self.delta_max)
+
+        self.get_logger().info(f"ed={ed:.3f}, ey={ey:.3f}, etheta={etheta:.3f}")
     
 
     def get_errors(self):
