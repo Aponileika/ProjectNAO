@@ -646,9 +646,13 @@ class NaoAppWindow(object):
             anim_proxy = self.conn.get_proxy("ALAnimationPlayer")
             if anim_proxy:
                 dances = [
-                    "animations/Stand/Gestures/Taichi_1",
-                    "animations/Stand/Gestures/Joy_1",
                     "animations/Stand/Gestures/Excited_1",
+                    "animations/Stand/Gestures/Joy_1",
+                    "animations/Stand/Emotions/Positive/Excited_1",
+                    "animations/Stand/Emotions/Positive/Happy_4",
+                    "animations/Stand/Gestures/Enthusiastic_5",
+                    "animations/Stand/Gestures/Taichi_1",
+                    "animations/Stand/Gestures/ComeOn_1",
                 ]
                 for d in dances:
                     try:
@@ -1520,8 +1524,14 @@ class NaoAppWindow(object):
                     self.conn.motion.stopMove()
                     self.auto_status.set("Found %s! (%s)" % (label, how))
 
+                    # --- Immediate acknowledgment: shout NOW, don't block on Gemini ---
+                    shout = "I found the %s! Yes! Mission complete!" % target_label
+                    if self.conn.tts:
+                        try: self.conn.tts.post.say(shout)   # non-blocking: plays while robot moves
+                        except Exception: pass
+
                     if found_human:
-                        # Lock eyes on the face while speaking
+                        # Lock eyes on the face while celebrating
                         if tracker:
                             try:
                                 tracker.registerTarget("Face", 0.15)
@@ -1529,31 +1539,8 @@ class NaoAppWindow(object):
                                 tracker.track("Face")
                             except Exception:
                                 pass
-                        if has_api:
-                            try:
-                                img = self._capture_image_bytes()
-                                obj_prompt = (
-                                    "You are a robot. Your wander mission was to find: '%s'. "
-                                    "You just spotted your target. Say one short excited "
-                                    "sentence confirming the mission is complete and "
-                                    "mention what you were searching for."
-                                ) % target_label
-                                if img:
-                                    reply = search_client.generate_text(
-                                        obj_prompt, image_bytes=img)
-                                else:
-                                    reply = search_client.generate_text(obj_prompt)
-                                if not reply or "Error" in reply:
-                                    reply = "Mission complete! I found the %s!" % target_label
-                            except Exception:
-                                reply = "Mission complete! I found the %s!" % target_label
-                        else:
-                            reply = "Mission complete! I found the %s!" % target_label
-                        if self.conn.tts:
-                            try: self.conn.tts.say(reply)
-                            except Exception: pass
+                        # Celebrate immediately — dance runs alongside/after the speech above
                         self._celebrate_found_human()
-                        time.sleep(1)
                         if tracker:
                             try:
                                 tracker.stopTracker()
@@ -1561,24 +1548,25 @@ class NaoAppWindow(object):
                             except Exception:
                                 pass
                     else:
-                        if has_api:
-                            try:
-                                img = self._capture_image_bytes()
-                                if img:
-                                    reply = search_client.generate_text(
-                                        "You just found a {}. Briefly describe it "
-                                        "in one sentence.".format(target),
-                                        image_bytes=img)
-                                else:
-                                    reply = "I found the {}! Right here, boss!".format(target)
-                            except Exception:
-                                reply = "I found the {}! Right here, boss!".format(target)
-                        else:
-                            reply = "I found the {}! Right here, boss!".format(target)
-                        if self.conn.tts:
-                            try: self.conn.tts.say(reply)
-                            except Exception: pass
                         self._celebrate_found_object(target)
+
+                    # --- Follow-up: ask for next instructions (Gemini or fallback) ---
+                    follow_up = "What would you like me to do next?"
+                    if has_api:
+                        try:
+                            fu_prompt = (
+                                "You are a friendly robot. You just completed a search "
+                                "mission and found '%s'. Ask the user in one short excited "
+                                "sentence what they would like you to do next."
+                            ) % target_label
+                            fu = search_client.generate_text(fu_prompt)
+                            if fu and "Error" not in fu:
+                                follow_up = fu
+                        except Exception:
+                            pass
+                    if self.conn.tts:
+                        try: self.conn.tts.say(follow_up)
+                        except Exception: pass
                     break
 
                 # 3. BACKGROUND GEMINI VISION CHECK (target mode)
@@ -1816,12 +1804,17 @@ class NaoAppWindow(object):
             except Exception: pass
         if motion:
             try:
+                # Ensure stiffness is on before moving (stopMove may have relaxed walk engine)
+                motion.setStiffnesses(["Body"], [1.0])
+                time.sleep(0.2)
+                # Raise right arm high for high-five
                 motion.setAngles(
                     ["RShoulderPitch", "RShoulderRoll", "RElbowRoll", "RElbowYaw",
                      "RWristYaw"],
                     [-1.25, -0.20, 0.03, 1.20, 0.0],
                     0.25)
                 time.sleep(2.5)
+                # Lower arm back down
                 motion.setAngles(
                     ["RShoulderPitch", "RShoulderRoll", "RElbowRoll", "RElbowYaw",
                      "RWristYaw"],
@@ -1842,6 +1835,10 @@ class NaoAppWindow(object):
             except Exception: pass
         if motion:
             try:
+                # Ensure stiffness is on before moving
+                motion.setStiffnesses(["Body"], [1.0])
+                time.sleep(0.2)
+                # Victory wave: alternate arm raises
                 for _ in range(2):
                     motion.setAngles(
                         ["LShoulderPitch", "RShoulderPitch",
