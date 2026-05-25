@@ -36,9 +36,9 @@ class AutomaticControl(Node):
         self.L = 0.285
 
         #System state
-        self.theta = pi*3/4
-        self.x = 0.5 / sqrt(2)
-        self.y = 0.5 / sqrt(2)
+        self.theta = pi/2
+        self.x = 1
+        self.y = 0
 
         #Control system data
         self.v = 0
