@@ -11,6 +11,10 @@ docker run -it --rm \
   -v /run/user/$(id -u):/run/user/$(id -u) \
   -e PULSE_SERVER=unix:/run/user/$(id -u)/pulse/native \
   -v /run/user/$(id -u)/pulse:/run/user/$(id -u)/pulse \
+  -v $(pwd):/cascar_ws \
+  --device=/dev/i2c-1 \
+  --device=/dev/arduino \
+  --device=/dev/rplidar \
   --device /dev/snd \
   --hostname cascar \
   --name cascar cascar:latest

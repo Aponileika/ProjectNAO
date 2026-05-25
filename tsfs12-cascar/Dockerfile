@@ -1,5 +1,5 @@
 # Use an official ROS2 Jazzy base image
-FROM osrf/ros:jazzy-desktop
+FROM ghcr.io/sloretz/ros:jazzy-desktop
 
 # Install necessary dependencies for vcs import and ROS workspace
 RUN apt update && apt install -y \
