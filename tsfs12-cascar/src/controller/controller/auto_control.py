@@ -106,7 +106,7 @@ class AutomaticControl(Node):
 
 
     def calibrate(self):
-        if len(self.calibData) < 100:
+        if len(self.calibData) < 50:
             self.calibData.append({"ax":self.ax, "ay":self.ay, "w":self.w})
         else:
             bxS = 0
@@ -123,14 +123,15 @@ class AutomaticControl(Node):
 
             self.calibDone = True
             self.get_logger().info("CALIBRATION COMPLETE")
+            self.get_logger().info(f"Found biases: bx={self.bx:.3f}, by={self.by:.3f}, bw={self.bw:.3f}")
         
 
     def update_model(self, dt):
         ax = self.ax * cos(self.w) + self.ay * sin(self.w)
-        ay = -self.ax * sin(self.w) + self.ay * sin(self.w)
+        ay = -self.ax * sin(self.w) + self.ay * cos(self.w)
 
-        self.x += 0.5 * ax * self.Ts**2
-        self.y += 0.5 * ay * self.Ts**2
+        self.x += 0.5 * ax * dt**2
+        self.y += 0.5 * ay * dt**2
 
         theta = self.theta + self.w * self.Ts
         self.theta = atan2(sin(theta), cos(theta))
