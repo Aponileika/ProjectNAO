@@ -32,7 +32,7 @@ class AutomaticControl(Node):
         self.vmax = vmax
         self.delta_max = delta_max      
 
-        self.D = 0.15
+        self.D = 0.08
         self.L = 0.285
 
         #System state
@@ -199,14 +199,14 @@ def create_path(type, omega):
 def main(args=None):
     rclpy.init(args=args)
 
-    path = create_path("circle", 2)
+    path = create_path("circle", 1)
 
     node = AutomaticControl(
         Ts=0.05,
         vmax=0.75,
         delta_max=pi/4,
         kx=1,
-        ky=1.5,
+        ky=2,
         ktheta=1,
         path=path
     )
