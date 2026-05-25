@@ -64,7 +64,7 @@ class AutomaticControl(Node):
 
         msg = CarCommand()
         #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
-        self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}")
+        self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}")
 
         speed_norm = self.v / self.vmax
         steer_norm = self.delta / self.delta_max
