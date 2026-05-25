@@ -63,7 +63,8 @@ class AutomaticControl(Node):
         self.control_system(ed, ey, etheta)
 
         msg = CarCommand()
-        self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
+        #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
+        self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}")
 
         speed_norm = self.v / self.vmax
         steer_norm = self.delta / self.delta_max
@@ -94,7 +95,7 @@ class AutomaticControl(Node):
         theta = self.theta + theta_dot * self.Ts
         self.theta = atan2(sin(theta), cos(theta))
 
-        self.get_logger().info(f"x={self.x:.3f}, y={self.y:.3f}, theta={self.theta:.3f}")
+        #self.get_logger().info(f"x={self.x:.3f}, y={self.y:.3f}, theta={self.theta:.3f}")
 
         return
 
@@ -117,7 +118,7 @@ class AutomaticControl(Node):
         delta = self.ktheta * etheta + self.ky * atan(self.ky * ey)
         self.delta = self.value_limit(delta, self.delta_max, -self.delta_max)
 
-        self.get_logger().info(f"ed={ed:.3f}, ey={ey:.3f}, etheta={etheta:.3f}")
+        #self.get_logger().info(f"ed={ed:.3f}, ey={ey:.3f}, etheta={etheta:.3f}")
     
 
     def get_errors(self):
@@ -206,7 +207,7 @@ def main(args=None):
         vmax=0.75,
         delta_max=pi/4,
         kx=1,
-        ky=2,
+        ky=3,
         ktheta=1,
         path=path
     )
