@@ -74,13 +74,13 @@ class AutomaticControl(Node):
 
 
     def control_loop(self):
+        now = self.get_clock().now()
+        dt = (now - self.last_time).nanoseconds / 1e9
+        self.last_time = now
+
         if not self.calibDone:
             self.calibrate()
         else:
-            now = self.get_clock().now()
-            dt = (now - self.last_time).nanoseconds / 1e9
-            self.last_time = now
-
             self.update_model(dt)
 
             ed, ey, etheta = self.get_errors()
