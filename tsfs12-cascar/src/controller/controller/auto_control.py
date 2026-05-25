@@ -4,6 +4,7 @@ from time import sleep
 
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from cascar_msgs.msg import CarCommand, CarMeasurement
 
 
@@ -21,8 +22,8 @@ class AutomaticControl(Node):
         #Subscribe to measurements
         self.state_sub = self.create_subscription(
             CarMeasurement,
-            "sensor/cascar",
-            self.state_callback,
+            "sensor/imu",
+            self.imu_callback,
             10
         )
 
@@ -34,6 +35,17 @@ class AutomaticControl(Node):
 
         self.D = 0.08
         self.L = 0.285
+
+        #Sensor readings
+        self.ax = 0
+        self.ay = 0
+        self.w = 0
+        self.calibDone = False
+        self.calibData = []
+        self.bx = 0
+        self.by = 0
+        self.bw = 0
+        self.last_time = self.get_clock().now()
 
         #System state
         self.theta = pi/2
@@ -55,44 +67,72 @@ class AutomaticControl(Node):
         self.timer = self.create_timer(self.Ts, self.control_loop)
 
 
+    def imu_callback(self, msg):
+        self.ax = msg.a_x - self.bx
+        self.ay = msg.a_y - self.by
+        self.w = msg.w - self.bw
+
+
     def control_loop(self):
-        self.update_model()
+        if not self.calibDone:
+            self.calibrate()
+        else:
+            now = self.get_clock().now()
+            dt = (now - self.last_time).nanoseconds / 1e9
+            self.last_time = now
 
-        ed, ey, etheta = self.get_errors()
+            self.update_model(dt)
 
-        self.control_system(ed, ey, etheta)
+            ed, ey, etheta = self.get_errors()
 
-        msg = CarCommand()
-        #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
-        self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}")
+            self.control_system(ed, ey, etheta)
 
-        speed_norm = self.v / self.vmax
-        steer_norm = self.delta / self.delta_max
+            msg = CarCommand()
+            #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
+            self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}")
 
-        max_speed = 100.0       #Actual command max
-        max_steer = 95.0  
+            speed_norm = self.v / self.vmax
+            steer_norm = self.delta / self.delta_max
 
-        msg.speed = speed_norm * max_speed
-        msg.steer = steer_norm * max_steer
+            max_speed = 100.0       #Actual command max
+            max_steer = 95.0  
 
-        self.car_publisher_.publish(msg)
+            msg.speed = speed_norm * max_speed
+            msg.steer = steer_norm * max_steer
 
-        self.get_next_node()
+            self.car_publisher_.publish(msg)
 
-
-    def state_callback(self, msg):
-        pass
+            self.get_next_node()
 
 
-    def update_model(self):
-        xdot = self.v * cos(self.theta)
-        ydot = self.v * sin(self.theta)
-        theta_dot = self.v / self.L * tan(self.delta)
+    def calibrate(self):
+        if len(self.calibData) < 100:
+            self.calibData.append({"ax":self.ax, "ay":self.ay, "w":self.w})
+        else:
+            bxS = 0
+            byS = 0
+            bwS = 0
+            for data in self.calibData:
+                bxS += data["ax"]
+                byS += data["ay"]
+                bwS += data["w"]
 
-        self.x += xdot * self.Ts
-        self.y += ydot * self.Ts
+            self.bx = bxS / len(self.calibData)
+            self.by = byS / len(self.calibData)
+            self.bw = bwS / len(self.calibData)
 
-        theta = self.theta + theta_dot * self.Ts
+            self.calibDone = True
+            self.get_logger().info("CALIBRATION COMPLETE")
+        
+
+    def update_model(self, dt):
+        ax = self.ax * cos(self.w) + self.ay * sin(self.w)
+        ay = -self.ax * sin(self.w) + self.ay * sin(self.w)
+
+        self.x += 0.5 * ax * self.Ts**2
+        self.y += 0.5 * ay * self.Ts**2
+
+        theta = self.theta + self.w * self.Ts
         self.theta = atan2(sin(theta), cos(theta))
 
         #self.get_logger().info(f"x={self.x:.3f}, y={self.y:.3f}, theta={self.theta:.3f}")
