@@ -199,15 +199,15 @@ def create_path(type, omega):
 def main(args=None):
     rclpy.init(args=args)
 
-    path = create_path("circle", 1)
+    path = create_path("circle", 2)
 
     node = AutomaticControl(
         Ts=0.05,
-        vmax=1,
+        vmax=0.75,
         delta_max=pi/4,
         kx=1,
-        ky=3,
-        ktheta=2,
+        ky=1.5,
+        ktheta=1,
         path=path
     )
 
