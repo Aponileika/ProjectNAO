@@ -130,7 +130,7 @@ class AutomaticControl(Node):
         ax = self.ax * cos(self.w) + self.ay * sin(self.w)
         ay = -self.ax * sin(self.w) + self.ay * cos(self.w)
 
-        self.x -= 0.5 * ax * dt**2
+        self.x += 0.5 * ax * dt**2
         self.y -= 0.5 * ay * dt**2
 
         theta = self.theta + self.w * dt
