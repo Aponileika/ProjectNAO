@@ -51,6 +51,8 @@ class AutomaticControl(Node):
         self.theta = pi/2
         self.x = 1
         self.y = 0
+        self.vx = 0
+        self.vy = 0
 
         #Control system data
         self.v = 0
@@ -130,8 +132,11 @@ class AutomaticControl(Node):
         ax = self.ax * cos(self.theta) + self.ay * sin(self.theta)
         ay = -self.ax * sin(self.theta) + self.ay * cos(self.theta)
 
-        self.x += 0.5 * ax * dt**2
-        self.y -= 0.5 * ay * dt**2
+        self.vx = ax * dt
+        self.vy = ay * dt
+
+        self.x += self.vx * dt
+        self.y -= self.vy * dt
 
         theta = self.theta + self.w * dt
         self.theta = atan2(sin(theta), cos(theta))
