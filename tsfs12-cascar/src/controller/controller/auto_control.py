@@ -89,7 +89,7 @@ class AutomaticControl(Node):
 
             msg = CarCommand()
             #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
-            self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}")
+            #self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}")
 
             speed_norm = self.v / self.vmax
             steer_norm = self.delta / self.delta_max
@@ -133,10 +133,10 @@ class AutomaticControl(Node):
         self.x += 0.5 * ax * dt**2
         self.y += 0.5 * ay * dt**2
 
-        theta = self.theta + self.w * self.Ts
+        theta = self.theta + self.w * dt
         self.theta = atan2(sin(theta), cos(theta))
 
-        #self.get_logger().info(f"x={self.x:.3f}, y={self.y:.3f}, theta={self.theta:.3f}")
+        self.get_logger().info(f"dt={dt:.4f}s, x={self.x:.3f}, ax={ax:.3f}, y={self.y:.3f}, ay={ay:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
 
         return
 
