@@ -1,6 +1,7 @@
 #include "../include/OB_Observations.hpp"
 #include "EP_CorrespondingPoints.hpp"
 #include "PROJ_ProjectiveUtils.hpp"
+#include "VT_VecUtils.hpp"
 
 static void __OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points,
         cv::Point2d observation, u64 view_index, u64 point_index);
@@ -25,6 +26,23 @@ void OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSe
         __OB_AddObs(obs, views, points, img1points[i], 0, i);
         __OB_AddObs(obs, views, points, img2points[i], 1, i);
     }
+}
+
+void OB_RemoveObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points, u64 idx)
+{
+    
+// struct ObservationSet
+// {
+//     std::vector<cv::Point2d> observations;
+//     std::vector<u64> view_indexes;
+//     std::vector<u64> point_indexes;
+//     //Maps 2D image point paired with view to idx
+//     std::map<std::pair<std::pair<i64, i64>, u64>, u64> imagepoint2idx;
+// };
+//
+    VT_EraseUnordered(obs->observations, idx);
+    VT_EraseUnordered(obs->view_indexes, idx);
+    VT_EraseUnordered(obs->point_indexes, idx);
 }
 
 void OB_Print(struct ObservationSet* obs)

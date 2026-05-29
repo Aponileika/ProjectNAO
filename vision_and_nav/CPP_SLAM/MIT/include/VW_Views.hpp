@@ -10,7 +10,7 @@
 struct ViewSet
 {
     std::vector<Camera> views;
-    //store descriptors!
+    //store descriptor, for keyframes
     std::vector<cv::Mat> descriptors;
     size_t last_sz;
     std::vector<std::vector<u64>> observations_indexes;

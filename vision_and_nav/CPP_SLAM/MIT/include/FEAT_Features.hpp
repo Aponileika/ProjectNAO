@@ -4,6 +4,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d.hpp>
 #include "../../third-party/ORBSLAM/include/ORBextractor.h"
+#include "../../third-party/ANMS-Codes/C++/include/anms.h"
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
 #include "LG_Logging.hpp"

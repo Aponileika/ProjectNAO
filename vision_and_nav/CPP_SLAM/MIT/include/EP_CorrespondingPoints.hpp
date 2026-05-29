@@ -7,7 +7,7 @@
 #include "CArenaAlloc.h"
 #include "FEAT_Features.hpp"
 #include "PROJ_ProjectiveUtils.hpp"
-#define EpiPolarTreshhold 4.0f
+#define EpiPolarTreshhold 3.0f
 
 struct CorrespondenceExtractor
 {

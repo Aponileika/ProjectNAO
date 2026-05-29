@@ -10,6 +10,7 @@
 #include <opencv2/core/eigen.hpp>
 #include "CArenaAlloc.h"
 #include "VW_Views.hpp"
+#include "VT_VecUtils.hpp"
 #include "PT_Points.hpp"
 #include "EP_CorrespondingPoints.hpp"
 #include "LG_Logging.hpp"
@@ -45,6 +46,8 @@ struct PnPret
 
 struct ObservationSet* OB_InitObs();
 void OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points, PointPair2D corrp);
+//TODO
+void OB_RemoveObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points, PointPair2D corrp);
 void OB_Print(struct ObservationSet* obs);
 struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TObs, PointSet* TPoints);
 

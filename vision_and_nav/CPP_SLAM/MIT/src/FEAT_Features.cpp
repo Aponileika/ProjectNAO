@@ -1,6 +1,8 @@
 #include "FEAT_Features.hpp"
 #include "LG_Logging.hpp"
 
+static std::vector<cv::KeyPoint> FEAT_Anms(const cv::Ptr<cv::Feature2D> detector, cv::Mat img);
+
 /*
  *************************************************************
  *************************************************************
@@ -111,22 +113,30 @@ PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
     LG_Log("[AKAZE_GetMatches] img2 empty=%d rows=%d cols=%d type=%d channels=%d data=%p\n",
        img2.empty(), img2.rows, img2.cols, img2.type(), img2.channels(), img2.data);
     LG_Log("[AKAZE_GetMatches] detect and compute img1\n");
-    akaze->akaze->detectAndCompute(img1, cv::noArray(), kp1, des1);
+
+    // akaze->akaze->detectAndCompute(img1, cv::noArray(), kp1, des1);
+    std::vector<cv::KeyPoint> kp1_anms = FEAT_Anms(akaze->akaze, img1);
+    cv::Mat desanms1;
+    akaze->akaze->compute(img1, kp1_anms, desanms1);
+    LG_Log("[AKAZE_GetMatches] num kp1 b4 = %d, after %d\n", kp1.size(), kp1_anms.size());
 
     LG_Log("[AKAZE_GetMatches] detect and compute img2\n");
-    akaze->akaze->detectAndCompute(img2, cv::noArray(), kp2, des2);
+    // akaze->akaze->detectAndCompute(img2, cv::noArray(), kp2, des2);
+    std::vector<cv::KeyPoint> kp2_anms = FEAT_Anms(akaze->akaze, img2);
+    cv::Mat desanms2;
+    akaze->akaze->compute(img2, kp2_anms, desanms2);
     struct CameraIntrinsics* ci = CM_GetIntrinsics();
     cv::Matx33d K = ci->K;
     cv::Vec<fp64, 5> distcoeffs = ci->distcoeffs;
 
-    if(des1.empty() || des2.empty())
+    if(desanms1.empty() || desanms2.empty())
     {
         std::cerr << "No descriptors found inf EP_CorrespExtract\n";
         return {};
     }
 
     std::vector<std::vector<cv::DMatch>> matches;
-    akaze->matcher.knnMatch(des1, des2, matches, 2);
+    akaze->matcher.knnMatch(desanms1, desanms2, matches, 2);
 
     std::vector<cv::DMatch> good;
     for(const auto&m : matches)
@@ -139,15 +149,43 @@ PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
     PointPair2D out;
 
     for (const auto& m : good) {
-        out.first.push_back(kp1[m.queryIdx].pt);
-        out.second.push_back(kp2[m.trainIdx].pt);
+        out.first.push_back(kp1_anms[m.queryIdx].pt);
+        out.second.push_back(kp2_anms[m.trainIdx].pt);
     }
 
+    LG_Log("[AKAZE_GetMatches] num corrp akaze = %d\n", out.first.size());
     std::vector<cv::Point2d> p1d, p2d;
     cv::undistortPoints(out.first, p1d, K, distcoeffs, cv::noArray(), K);
     cv::undistortPoints(out.second, p2d, K, distcoeffs, cv::noArray(), K);
-
     out = PointPair2D(p1d, p2d);
+
     return out;
 }
 
+/*
+ *************************************************************
+ *************************************************************
+ *************************************************************
+ *                      GENERAL HELPER 
+ *************************************************************
+ *************************************************************
+ *************************************************************
+ * */
+
+static std::vector<cv::KeyPoint> FEAT_Anms(const cv::Ptr<cv::Feature2D> detector, cv::Mat img)
+{
+    std::vector<cv::KeyPoint> kp;
+    detector->detect(img, kp, cv::noArray());
+    std::sort(kp.begin(), kp.end(), [](cv::KeyPoint a, cv::KeyPoint b)
+                                    {
+                                        return a.response <= b.response;
+                                    });
+    std::vector<int> anmskp_mask = ssc(kp, kp.size(), 0.5, img.cols, img.rows);
+    std::vector<cv::KeyPoint> kp_anms;
+    kp_anms.resize(anmskp_mask.size());
+    for(std::size_t i = 0; i < anmskp_mask.size(); i++)
+    {
+        kp_anms[i] = kp[anmskp_mask[i]];
+    }
+    return kp_anms;
+}

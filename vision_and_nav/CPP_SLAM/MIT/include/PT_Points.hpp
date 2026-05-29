@@ -27,6 +27,7 @@ struct PointSet
 struct PointSet* PT_InitPoints();
 void PT_AddPoints(struct PointSet* pointset, cv::Mat points);
 void PT_AddObs(struct PointSet* points, u64 pointidx, u64 obsidx);
+void PT_RemovePoint(struct PointSet* points, u64 pointidx, u64 obsidx);
 void PT_Print(struct PointSet* points);
 
 #endif //__PT__Points_HPP_

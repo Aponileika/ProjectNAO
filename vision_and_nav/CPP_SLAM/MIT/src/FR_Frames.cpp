@@ -16,6 +16,7 @@ namespace
     {
         std::string path;
         i32 curr_frame;
+        i32 frame_idx;
     };
     struct dataset_read reader;
 }
@@ -29,6 +30,7 @@ int FR_InitFrameGetter()
     {
         reader.path = std::string(DATSET_PATH) + std::string(SEQUENCE);
         reader.curr_frame = 1;
+        reader.frame_idx = 0;
     }
     else
     {
@@ -94,10 +96,11 @@ cv::Mat __FR_GetFrameDataSet()
         return {};
     }
 
-    std::string path_write = "./colmap/images/frame" + std::to_string(reader.curr_frame - 1) + ".png";
+    std::string path_write = "./colmap/images/frame" + std::to_string(reader.frame_idx) + ".png";
     cv::imwrite(path_write, frame);
     cv::Mat gray;
     cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-    reader.curr_frame++;
+    reader.curr_frame+=30;
+    reader.frame_idx++;
     return gray;
 }
