@@ -20,7 +20,7 @@
 #define conf 0.99f
 #define PnPPointCntThreshold 20
 #define NonPnpThreshold 30 
-#define SEARCHWINDOW2D3D 1
+#define SEARCHWINDOW2D3D 2
 
 struct ObservationSet
 {

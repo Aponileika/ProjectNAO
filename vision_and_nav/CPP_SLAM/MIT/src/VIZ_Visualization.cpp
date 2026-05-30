@@ -108,8 +108,8 @@ void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, struc
         {
             cv::Mat img_rgb = imgs[os.view_indexes[ps.observations_indexes[i][j]]];
             cv::Point2d obs = os.observations[ps.observations_indexes[i][j]];
-            i64 x = static_cast<i64>(round(obs.x));
-            i64 y = static_cast<i64>(round(obs.y));
+            i64 x = static_cast<i64>(floor(obs.x));
+            i64 y = static_cast<i64>(floor(obs.y));
             //LG_Log("[__VIZ_WritePointsColmap] getting pixel (y, x) = (%lld, %lld)\n", y, x);
             cv::Vec3b rgb = img_rgb.at<cv::Vec3b>(y, x);
             R += static_cast<fp64>(rgb[0]);

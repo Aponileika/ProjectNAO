@@ -28,6 +28,8 @@ struct OpenCVExtractAKAZE
     fp64 matchratio;
 };
 
+typedef std::pair<PointPair2D, std::pair<cv::Mat, cv::Mat>> CorrPReturn;
+
 /*
  *************************************************************
  *************************************************************
@@ -52,7 +54,6 @@ PointPair2D ORB_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2);
  * */
 struct OpenCVExtractAKAZE* AKAZE_InitAKAZE(fp64 threshold);
 void AKAZE_destroy(struct OpenCVExtractAKAZE* akaze);
-PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2);
-PointPair2D AKAZE_GetMatchesTest(struct OpenCVExtractAKAZE* extractor, cv::Mat img1, cv::Mat img2);
+CorrPReturn AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2);
 
 #endif // __FEAT_FEATURES_HPP_

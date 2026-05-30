@@ -89,8 +89,8 @@ inline constexpr auto search = __OB_MakeSearchWindow();
 
 auto __OB_Find2D3D(cv::Point2d imagepoint, struct ObservationSet* TObs, u64 vidx)
 {
-    i64 x = static_cast<i64>(round(imagepoint.x));
-    i64 y = static_cast<i64>(round(imagepoint.y));
+    i64 x = static_cast<i64>(floor(imagepoint.x));
+    i64 y = static_cast<i64>(floor(imagepoint.y));
     for(const auto& offset : search)
     {
         i64 dx = offset.dx;
@@ -187,7 +187,7 @@ static void __OB_AddObsPnP(struct ViewSet* views, struct ObservationSet* obs, st
     {
         cv::Point2d p = pnpPoints[i];
         obs->observations.push_back(p);
-        std::pair<i64, i64> point(static_cast<i64>(round(p.x)),static_cast<i64>(round(p.y)));
+        std::pair<i64, i64> point(static_cast<i64>(floor(p.x)),static_cast<i64>(floor(p.y)));
         std::pair<std::pair<i64, i64>, u64> key(point, view_index);
         obs->imagepoint2idx[key] = obs->observations.size() - 1;
         obs->view_indexes.push_back(view_index);
@@ -208,7 +208,7 @@ void __OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct Point
         cv::Point2d observation, u64 view_index, u64 point_index)
 {
     obs->observations.push_back(observation);
-    std::pair<i64, i64> point(static_cast<i64>(round(observation.x)), static_cast<i64>(round(observation.y)));
+    std::pair<i64, i64> point(static_cast<i64>(floor(observation.x)), static_cast<i64>(floor(observation.y)));
     std::pair<std::pair<i64, i64>, u64> key(point, views->last_sz - 1 +  view_index);
     obs->imagepoint2idx[key] = obs->observations.size() - 1;
     PUSHVIEW(obs->view_indexes, views, view_index);

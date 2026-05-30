@@ -100,11 +100,10 @@ void AKAZE_destroy(struct OpenCVExtractAKAZE* akaze)
     delete(akaze);
 }
 
-PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
+CorrPReturn AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
 {
     LG_Log("[AKAZE_GetMatches] extr void* = %p\n", extractor);
     struct OpenCVExtractAKAZE* akaze = static_cast<struct OpenCVExtractAKAZE*>(extractor);
-    std::vector<cv::KeyPoint> kp1, kp2;
     cv::Mat des1, des2;
 
     LG_Log("[AKAZE_GetMatches] img1 empty=%d rows=%d cols=%d type=%d channels=%d data=%p\n",
@@ -118,13 +117,13 @@ PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
     std::vector<cv::KeyPoint> kp1_anms = FEAT_Anms(akaze->akaze, img1);
     cv::Mat desanms1;
     akaze->akaze->compute(img1, kp1_anms, desanms1);
-    LG_Log("[AKAZE_GetMatches] num kp1 b4 = %d, after %d\n", kp1.size(), kp1_anms.size());
 
     LG_Log("[AKAZE_GetMatches] detect and compute img2\n");
     // akaze->akaze->detectAndCompute(img2, cv::noArray(), kp2, des2);
     std::vector<cv::KeyPoint> kp2_anms = FEAT_Anms(akaze->akaze, img2);
     cv::Mat desanms2;
     akaze->akaze->compute(img2, kp2_anms, desanms2);
+
     struct CameraIntrinsics* ci = CM_GetIntrinsics();
     cv::Matx33d K = ci->K;
     cv::Vec<fp64, 5> distcoeffs = ci->distcoeffs;
@@ -147,10 +146,14 @@ PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
         }
     }
     PointPair2D out;
+    cv::Mat des1_out, des2_out;
+    std::pair<cv::Mat, cv::Mat> out_des(des1_out, des2_out);
 
     for (const auto& m : good) {
         out.first.push_back(kp1_anms[m.queryIdx].pt);
         out.second.push_back(kp2_anms[m.trainIdx].pt);
+        out_des.first.push_back(desanms1.row(m.queryIdx));
+        out_des.second.push_back(desanms2.row(m.trainIdx));
     }
 
     LG_Log("[AKAZE_GetMatches] num corrp akaze = %d\n", out.first.size());
@@ -158,8 +161,9 @@ PointPair2D AKAZE_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2)
     cv::undistortPoints(out.first, p1d, K, distcoeffs, cv::noArray(), K);
     cv::undistortPoints(out.second, p2d, K, distcoeffs, cv::noArray(), K);
     out = PointPair2D(p1d, p2d);
+    CorrPReturn out_corrp(out, out_des);
 
-    return out;
+    return out_corrp;
 }
 
 /*
@@ -180,7 +184,7 @@ static std::vector<cv::KeyPoint> FEAT_Anms(const cv::Ptr<cv::Feature2D> detector
                                     {
                                         return a.response <= b.response;
                                     });
-    std::vector<int> anmskp_mask = ssc(kp, kp.size(), 0.5, img.cols, img.rows);
+    std::vector<int> anmskp_mask = ssc(kp, kp.size(), 0.2, img.cols, img.rows);
     std::vector<cv::KeyPoint> kp_anms;
     kp_anms.resize(anmskp_mask.size());
     for(std::size_t i = 0; i < anmskp_mask.size(); i++)

@@ -14,30 +14,30 @@
 // static const fp64 k3 = 1.113497353924944*0.1f;
 
 // LIU turntable
-// static const fp64 fx = 16.90359774744055*100.0f;
-// static const fp64 fy = 16.91987717196416*100.0f;
-// static const fp64 s = 0.0f;
-// static const fp64 cx = 9.959879587339067*100.0f;
-// static const fp64 cy = 7.523122338718711*100.0f;
-//
-// static const fp64 k1 = 0.0f;
-// static const fp64 k2 = 0.0f;
-// static const fp64 p1 = 0.0f;
-// static const fp64 k3 = 0.0f;
-// static const fp64 p2 = 0.0f;
+static const fp64 fx = 16.90359774744055*100.0f;
+static const fp64 fy = 16.91987717196416*100.0f;
+static const fp64 s = 0.0f;
+static const fp64 cx = 9.959879587339067*100.0f;
+static const fp64 cy = 7.523122338718711*100.0f;
+
+static const fp64 k1 = 0.0f;
+static const fp64 k2 = 0.0f;
+static const fp64 p1 = 0.0f;
+static const fp64 k3 = 0.0f;
+static const fp64 p2 = 0.0f;
 
 // freighburg 1 xyz
-static const fp64 fx = 517.3f;
-static const fp64 fy = 516.5f;
-static const fp64 s = 0.0f;
-static const fp64 cx = 318.6f;
-static const fp64 cy = 255.3f;
-
-static const fp64 k1 = 0.2624f;
-static const fp64 k2 = -0.9531f;
-static const fp64 p1 = -0.0054f;
-static const fp64 p2 = 0.0026f;
-static const fp64 k3 = 1.1633f;
+// static const fp64 fx = 517.3f;
+// static const fp64 fy = 516.5f;
+// static const fp64 s = 0.0f;
+// static const fp64 cx = 318.6f;
+// static const fp64 cy = 255.3f;
+//
+// static const fp64 k1 = 0.2624f;
+// static const fp64 k2 = -0.9531f;
+// static const fp64 p1 = -0.0054f;
+// static const fp64 p2 = 0.0026f;
+// static const fp64 k3 = 1.1633f;
 
 
 static struct CameraIntrinsics ci;

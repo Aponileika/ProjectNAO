@@ -410,9 +410,9 @@ std::vector<int> ssc(std::vector<cv::KeyPoint> keyPoints, int numRetPoints,
 
     for (unsigned int i = 0; i < keyPoints.size(); ++i) {
       int row =
-          floor(keyPoints[i].pt.y /
-                c); // get position of the cell current point is located at
-      int col = floor(keyPoints[i].pt.x / c);
+          static_cast<int>(floor(keyPoints[i].pt.y /
+                c)); // get position of the cell current point is located at
+      int col = static_cast<int>(floor(keyPoints[i].pt.x / c));
       if (coveredVec[row][col] == false) { // if the cell is not covered
         result.push_back(i);
         int rowMin = ((row - floor(width / c)) >= 0)

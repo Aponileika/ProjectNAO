@@ -100,7 +100,7 @@ cv::Mat __FR_GetFrameDataSet()
     cv::imwrite(path_write, frame);
     cv::Mat gray;
     cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-    reader.curr_frame+=30;
+    reader.curr_frame+=1;
     reader.frame_idx++;
     return gray;
 }

@@ -96,7 +96,7 @@ static void __SL_SlamStart()
         PointPair2D filteredcorrp = EP_FilterPointPairByMask(corrp, poseMask);
         corrp = std::move(filteredcorrp);
         LG_Log("number of corrp after masking = %lld\n", corrp.first.size());
-        // EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
+        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
         cv::Mat points3d;
         LG_Log("Triangulating\n");
@@ -182,7 +182,7 @@ void __SL_SlamLoop(i32 num_loops)
         LG_Log("Finding corrp with epipolar constraint\n");
 
         PointPair2D corr_p = EP_FindCorrpEpipolar(nonpnpcorrp, E);
-        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corr_p.first, corr_p.second);
+        // EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corr_p.first, corr_p.second);
         LG_Log("Found %lld corresponding points after filtering\n", corr_p.first.size());
         if(corr_p.first.size() < 1)
         {
