@@ -20,10 +20,16 @@ class AutomaticControl(Node):
         self.car_publisher_ = self.create_publisher(CarCommand, "car_command", 1)
 
         #Subscribe to measurements
-        self.state_sub = self.create_subscription(
+        self.imu_sub = self.create_subscription(
             CarMeasurement,
             "sensor/imu",
             self.imu_callback,
+            10
+        )
+        self.odo_sub = self.create_subscription(
+            CarMeasurement,
+            "sensor/cascar",
+            self.odo_callback,
             10
         )
 
@@ -47,12 +53,15 @@ class AutomaticControl(Node):
         self.bw = 0
         self.last_time = self.get_clock().now()
 
+        self.Vodo = 0
+        self.oldVodo = 0
+        self.VodoTime = None
+        self.oldVodoTime = None
+
         #System state
         self.theta = pi/2
         self.x = 1
         self.y = 0
-        self.vx = 0
-        self.vy = 0
 
         #Control system data
         self.v = 0
@@ -71,8 +80,17 @@ class AutomaticControl(Node):
 
     def imu_callback(self, msg):
         self.ax = msg.a_x - self.bx
-        self.ay = -(msg.a_y - self.by) #Negative since imu is mounted incorrectly
+        self.ay = msg.a_y - self.by
         self.w = msg.w - self.bw
+
+    def odo_callback(self, msg):
+        self.Vodo = msg.v
+        stamp = msg.header.stamp
+        self.VodoTime = stamp.sec + 1e-9*stamp.nanosec
+
+        if self.oldVodo == None:
+            self.oldVodo = self.Vodo
+            self.oldVodoTime = self.VodoTime
 
 
     def control_loop(self):
@@ -129,16 +147,14 @@ class AutomaticControl(Node):
         
 
     def update_model(self, dt):
-        ax = self.ax * cos(self.theta) - self.ay * sin(self.theta)
-        ay = self.ax * sin(self.theta) + self.ay * cos(self.theta)
+        if self.Vodo != self.oldVodo:
+            odoT = self.VodoTime- self.oldVodoTime
 
-        self.x += self.vx * dt + 0.5*ax*dt*dt
-        self.y += self.vy * dt + 0.5*ay*dt*dt
+            self.oldVodoTime = self.VodoTime
+            self.oldVodo = self.Vodo
 
-        self.vx += ax * dt
-        self.vy += - ay * dt
-        self.vx = self.value_limit(self.vx, self.vmax, -self.vmax)
-        self.vy = self.value_limit(self.vy, self.vmax, -self.vmax)
+            self.x += self.Vodo * odoT * cos(self.theta)
+            self.y += self.Vodo * odoT * sin(self.theta)
 
         theta = self.theta + self.w * dt
         self.theta = atan2(sin(theta), cos(theta))
