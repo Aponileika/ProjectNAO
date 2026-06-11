@@ -147,8 +147,8 @@ class AutomaticControl(Node):
         
 
     def update_model(self, dt):
-        if self.Vodo != self.oldVodo:
-            odoT = self.VodoTime- self.oldVodoTime
+        if self.Vodo != self.oldVodo and self.oldVodo != None:
+            odoT = self.VodoTime - self.oldVodoTime
 
             self.oldVodoTime = self.VodoTime
             self.oldVodo = self.Vodo
