@@ -143,7 +143,7 @@ class AutomaticControl(Node):
         theta = self.theta + self.w * dt
         self.theta = atan2(sin(theta), cos(theta))
 
-        self.get_logger().info(f"dt={dt:.4f}s, x={self.x:.3f}, vx= {self.vx:,3f}, ax={ax:.3f}, y={self.y:.3f}, vy={self.vy:,3f}, ay={ay:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
+        self.get_logger().info(f"dt={dt:.4f}s, x={self.x:.3f}, vx= {self.vx:.3f}, ax={ax:.3f}, y={self.y:.3f}, vy={self.vy:.3f}, ay={ay:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
 
         return
 
