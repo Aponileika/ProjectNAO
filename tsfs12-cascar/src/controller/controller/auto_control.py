@@ -134,6 +134,8 @@ class AutomaticControl(Node):
 
         self.vx += ax * dt
         self.vy += - ay * dt
+        self.vx = self.value_limit(self.vx, self.vmax, -self.vmax)
+        self.vy = self.value_limit(self.vy, self.vmax, -self.vmax)
 
         self.x += self.vx * dt
         self.y += self.vy * dt
@@ -141,7 +143,7 @@ class AutomaticControl(Node):
         theta = self.theta + self.w * dt
         self.theta = atan2(sin(theta), cos(theta))
 
-        self.get_logger().info(f"dt={dt:.4f}s, x={self.x:.3f}, ax={ax:.3f}, y={self.y:.3f}, ay={ay:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
+        self.get_logger().info(f"dt={dt:.4f}s, x={self.x:.3f}, vx= {self.vx:,3f}, ax={ax:.3f}, y={self.y:.3f}, vy={self.vy:,3f}, ay={ay:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
 
         return
 
