@@ -71,7 +71,7 @@ class AutomaticControl(Node):
 
     def imu_callback(self, msg):
         self.ax = msg.a_x - self.bx
-        self.ay = msg.a_y - self.by
+        self.ay = -(msg.a_y - self.by) #Negative since imu is mounted incorrectly
         self.w = msg.w - self.bw
 
 
@@ -129,16 +129,16 @@ class AutomaticControl(Node):
         
 
     def update_model(self, dt):
-        ax = self.ax * cos(self.theta) + self.ay * sin(self.theta)
-        ay = -self.ax * sin(self.theta) + self.ay * cos(self.theta)
+        ax = self.ax * cos(self.theta) - self.ay * sin(self.theta)
+        ay = self.ax * sin(self.theta) + self.ay * cos(self.theta)
+
+        self.x += self.vx * dt + 0.5*ax*dt*dt
+        self.y += self.vy * dt + 0.5*ay*dt*dt
 
         self.vx += ax * dt
         self.vy += - ay * dt
         self.vx = self.value_limit(self.vx, self.vmax, -self.vmax)
         self.vy = self.value_limit(self.vy, self.vmax, -self.vmax)
-
-        self.x += self.vx * dt
-        self.y += self.vy * dt
 
         theta = self.theta + self.w * dt
         self.theta = atan2(sin(theta), cos(theta))
