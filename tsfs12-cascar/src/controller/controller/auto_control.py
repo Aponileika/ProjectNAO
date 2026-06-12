@@ -84,6 +84,7 @@ class AutomaticControl(Node):
         self.w = msg.w - self.bw
 
     def odo_callback(self, msg):
+
         self.Vodo = msg.v
         stamp = msg.header.stamp
         self.VodoTime = stamp.sec + 1e-9*stamp.nanosec
@@ -91,6 +92,9 @@ class AutomaticControl(Node):
         if self.oldVodo == None:
             self.oldVodo = self.Vodo
             self.oldVodoTime = self.VodoTime
+
+        print(stamp.sec + 1e-9*stamp.nanosec)
+        print(msg.v)
 
 
     def control_loop(self):
