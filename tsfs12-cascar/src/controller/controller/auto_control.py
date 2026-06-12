@@ -54,8 +54,8 @@ class AutomaticControl(Node):
         self.last_time = self.get_clock().now()
 
         self.Vodo = 0
-        self.oldVodo = 0
-        self.VodoTime = None
+        self.oldVodo = None
+        self.VodoTime = 0
         self.oldVodoTime = None
 
         #System state
@@ -92,9 +92,6 @@ class AutomaticControl(Node):
         if self.oldVodo == None:
             self.oldVodo = self.Vodo
             self.oldVodoTime = self.VodoTime
-
-        print(stamp.sec + 1e-9*stamp.nanosec)
-        print(msg.v)
 
 
     def control_loop(self):
