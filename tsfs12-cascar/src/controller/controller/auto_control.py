@@ -269,7 +269,7 @@ def main(args=None):
 
     node = AutomaticControl(
         Ts=0.05,
-        vmax=0.75,
+        vmax=1,
         delta_max=pi/4,
         kx=1,
         ky=3,
