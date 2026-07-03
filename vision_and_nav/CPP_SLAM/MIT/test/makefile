@@ -50,11 +50,11 @@ endif
 
 .PHONY: FORCE clean
 
-orbtest: FORCE $(sourcedir)orbtest.cpp  
-	$(CXX)  -o orbtest $(sourcedir)orbtest.cpp \
+orbtest: FORCE $(sourcedir)test.cpp  
+	$(CXX)  -o test $(sourcedir)test.cpp \
 	$(CXXFLAGS) \
 	$(LDFLAGS) \
 	$(LDLIBS)
 
 clean :
-	rm -f orbtest 
+	rm -f test 

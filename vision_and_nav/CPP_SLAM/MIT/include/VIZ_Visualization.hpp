@@ -6,8 +6,7 @@
 #include "VW_Views.hpp"
 #include "CM_Camera.hpp"
 #include "PROJ_ProjectiveUtils.hpp"
-
-#define MODEL_ID 1 //pinhole
+#include "Config.hpp"
 
 void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps, struct ViewSet vs,
                     std::string path);

@@ -36,7 +36,7 @@ void LG_InitLogger()
 {
     if (gloggerisinit) return;
 
-    std::string logPath = LOGPATH;
+    std::string logPath = PANTO_LOGPATH;
 
     if (std::filesystem::exists(logPath))
     {
@@ -53,8 +53,8 @@ void LG_InitLogger()
 
     gloggerisinit = true;
 
-    LG_Log("Logger initiated\n");
-    LG_Log("Log file: %s\n", logPath.c_str());
+    LG_Log(LogSeverity::DBG, "Logger initiated\n");
+    LG_Log(LogSeverity::DBG, "Log file: %s\n", logPath.c_str());
 }
 
 void LG_CloseLogger()

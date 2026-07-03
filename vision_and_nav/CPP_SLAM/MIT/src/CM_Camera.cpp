@@ -46,16 +46,16 @@ static bool IntrinsicsSet = false;
 void CM_SetIntrinsics(std::string path)
 {
     if(IntrinsicsSet)return;
-    LG_Log("Setting intrinsics\n");
-    LG_Log("Setting K\n");
+    LG_Log(LogSeverity::DBG, "Setting intrinsics\n");
+    LG_Log(LogSeverity::DBG, "Setting K\n");
     ci.K = cv::Matx33d(
             fx,   s,    cx,
             0.0f, fy,   cy,
             0.0f, 0.0f, 1.0f);
-    LG_Log("Setting distcoeffs\n");
+    LG_Log(LogSeverity::DBG, "Setting distcoeffs\n");
     ci.distcoeffs = cv::Vec<fp64, 5>(k1, k2, p1, p2, k3);
     IntrinsicsSet = true;
-    LG_Log("Set Intrinsics\n");
+    LG_Log(LogSeverity::DBG, "Set Intrinsics\n");
 }
 
 struct CameraIntrinsics* CM_GetIntrinsics()

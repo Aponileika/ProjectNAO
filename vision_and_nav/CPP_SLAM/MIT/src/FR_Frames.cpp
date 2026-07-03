@@ -26,10 +26,10 @@ cv::Mat __FR_GetFrameWebCam(i32 idx);
 
 int FR_InitFrameGetter()
 {
-    if(USE_DATASET == 1)
+    if(PANTO_USE_DATASET == true)
     {
-        reader.path = std::string(DATSET_PATH) + std::string(SEQUENCE);
-        reader.curr_frame = 1;
+        reader.path = panto_sequence_path;
+        reader.curr_frame = 0;
         reader.frame_idx = 0;
     }
     else
@@ -46,7 +46,7 @@ int FR_InitFrameGetter()
 
 cv::Mat FR_GetFrame(int idx)
 {
-    if(USE_DATASET == 1)
+    if(PANTO_USE_DATASET == true)
     {
         cv::Mat frame = __FR_GetFrameDataSet();
         return frame;
@@ -72,7 +72,7 @@ cv::Mat __FR_GetFrameWebCam(i32 idx)
     if(idx >= 0)
     {
         std::string path = "./colmap/images/frame" + std::to_string(idx) + ".png";
-        LG_Log("[FR_GetFrame] writing frame file %s\n", path.c_str());
+        LG_Log(LogSeverity::DBG, "[FR_GetFrame] writing frame file %s\n", path.c_str());
         bool ret = cv::imwrite(path, frame);
         if(!ret)
         {
@@ -88,11 +88,11 @@ cv::Mat __FR_GetFrameWebCam(i32 idx)
 cv::Mat __FR_GetFrameDataSet()
 {
     std::string curr_frame = reader.path + "frame" + std::to_string(reader.curr_frame) + ".png";
-    LG_Log("[__FR_GetFrameDataSet] Getting frame %s\n", curr_frame.c_str());
+    LG_Log(LogSeverity::DBG, "[__FR_GetFrameDataSet] Getting frame %s\n", curr_frame.c_str());
     cv::Mat frame = cv::imread(curr_frame, cv::IMREAD_COLOR);
     if(frame.empty())
     {
-        LG_Log("[__FR_GetFrameDataSet] cv::imread returned empty frame\n");
+        LG_Log(LogSeverity::DBG, "[__FR_GetFrameDataSet] cv::imread returned empty frame\n");
         return {};
     }
 
@@ -100,7 +100,7 @@ cv::Mat __FR_GetFrameDataSet()
     cv::imwrite(path_write, frame);
     cv::Mat gray;
     cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-    reader.curr_frame+=1;
+    reader.curr_frame++;
     reader.frame_idx++;
     return gray;
 }

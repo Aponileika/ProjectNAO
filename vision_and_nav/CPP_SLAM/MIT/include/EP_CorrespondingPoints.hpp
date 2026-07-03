@@ -3,16 +3,15 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d.hpp>
-#include "../../third-party/ORBSLAM/include/ORBextractor.h"
 #include "CArenaAlloc.h"
 #include "FEAT_Features.hpp"
 #include "PROJ_ProjectiveUtils.hpp"
-#define EpiPolarTreshhold 4.0f
+#include "Config.hpp"
 
 struct CorrespondenceExtractor
 {
     void* extractor = nullptr;
-    PointPair2D (*GetCorrp)(void* extractor, cv::Mat img1, cv::Mat img2);
+    CorrPReturn (*GetCorrp)(void* extractor, cv::Mat img1, cv::Mat img2);
 };
 
 void EP_InitCPointExtractor(void* extractor, PointPair2D (*GetCorrp)(void* extractor, cv::Mat img1, cv::Mat img2));

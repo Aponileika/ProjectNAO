@@ -31,16 +31,16 @@ void PT_AddObs(struct PointSet* pointset, u64 pointidx, u64 obsidx)
 
 void PT_Print(struct PointSet* points)
 {
-    LG_Log("PointSet\n");
-    LG_Log("points.size(): %lld\n", points->points.size());
-    LG_Log("observations_indexes.size(): %lld\n", points->observations_indexes.size());
-    LG_Log("last_sz: %lld\n", points->last_sz);
+    LG_Log(LogSeverity::DBG, "PointSet\n");
+    LG_Log(LogSeverity::DBG, "points.size(): %lld\n", points->points.size());
+    LG_Log(LogSeverity::DBG, "observations_indexes.size(): %lld\n", points->observations_indexes.size());
+    LG_Log(LogSeverity::DBG, "last_sz: %lld\n", points->last_sz);
 
     size_t n = std::min<size_t>(points->points.size(), 10);
     for (size_t i = 0; i < n; ++i)
     {
         const Eigen::Vector4d& p = points->points[i];
-        LG_Log("  point[%zu] = (%f, %f, %f)\n", i, p.x(), p.y(), p.z());
+        LG_Log(LogSeverity::DBG, "  point[%zu] = (%f, %f, %f)\n", i, p.x(), p.y(), p.z());
     }
 }
 

@@ -21,7 +21,7 @@
 #include "../include/VIZ_Visualization.hpp"
 #include "../include/FEAT_Features.hpp"
 #include "../include/PROJ_ProjectiveUtils.hpp"
-#include "../../third-party/ORBSLAM/include/ORBextractor.h"
+#include "../include/Config.hpp"
 
 #include "CArenaAlloc.c"
 #include "CM_Camera.cpp"
@@ -38,7 +38,6 @@
 #include "VIZ_Visualization.cpp"
 #include "FEAT_Features.cpp"
 #include "PROJ_ProjectiveUtils.cpp"
-#include "../../third-party/ORBSLAM/src/ORBextractor.cc"
 
 int main(int argc, char* argv[])
 {
@@ -49,12 +48,12 @@ int main(int argc, char* argv[])
     }
     setbuf(stdout, NULL);
     LG_InitLogger();
-    LG_Log("Initiating SLAM\n");
+    LG_Log(LogSeverity::DBG, "Initiating SLAM\n");
     SL_InitSlam();
-    LG_Log("Setting intrinsics\n");
-    LG_Log("[main] OpenCV is using %lld threads \n", cv::getNumThreads());
+    LG_Log(LogSeverity::DBG, "Setting intrinsics\n");
+    LG_Log(LogSeverity::DBG, "[main] OpenCV is using %lld threads \n", cv::getNumThreads());
     CM_SetIntrinsics("");
-    LG_Log("Starting SLAMLoop\n");
+    LG_Log(LogSeverity::DBG, "Starting SLAMLoop\n");
     SL_SlamLoop(num_loops);
     return 0;
 }

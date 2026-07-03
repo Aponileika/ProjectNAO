@@ -24,8 +24,8 @@ void SL_InitSlam()
     slam.Tpoints = PT_InitPoints();
     slam.Tobs = OB_InitObs();
     slam.frame_pair = {};
-    void* extr = static_cast<void*>(AKAZE_InitAKAZE(AKAZEthreshold));
-    LG_Log("[SL_InitSlam] AKAZE init ptr = %p\n", extr);
+    void* extr = static_cast<void*>(AKAZE_InitAKAZE(OPENCV_AKAZETHRESHOLD));
+    LG_Log(LogSeverity::DBG, "[SL_InitSlam] AKAZE init ptr = %p\n", extr);
     EP_InitCPointExtractor(extr, AKAZE_GetMatches);
     FR_InitFrameGetter();
 }
@@ -38,55 +38,55 @@ static cv::Mat __SL_GetNextFrame(u64 num_views)
 
 void __SL_PrintSlam()
 {
-    LG_Log("Printing views\n");
+    LG_Log(LogSeverity::DBG, "Printing views\n");
     VW_Print(slam.Tview);
-    LG_Log("Printing observations\n");
+    LG_Log(LogSeverity::DBG, "Printing observations\n");
     OB_Print(slam.Tobs);
-    LG_Log("Printing points\n");
+    LG_Log(LogSeverity::DBG, "Printing points\n");
     PT_Print(slam.Tpoints);
 }
 
 static void __SL_SlamStart()
 {
     const cv::Matx33d K = CM_GetIntrinsics()->K;
-    LG_Log("Getting first frame\n");
+    LG_Log(LogSeverity::DBG, "Getting first frame\n");
     slam.frame_pair.first = __SL_GetNextFrame(slam.Tview->views.size());
-    LG_Log("Getting second frame\n");
+    LG_Log(LogSeverity::DBG, "Getting second frame\n");
     bool isinit = false;
     while(!isinit)
     {
         slam.frame_pair.second = __SL_GetNextFrame(slam.Tview->views.size());
-        LG_Log("[__SL_SlamStart] Getting corresponding points between frames\n");
+        LG_Log(LogSeverity::DBG, "[__SL_SlamStart] Getting corresponding points between frames\n");
         PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
         // EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
-        LG_Log("[__SL_SlamStart]Finding essential matrix\n");
-        LG_Log("[__SL_SlamStart]Num points before RANSAC = %lld\n", corrp.first.size());
+        LG_Log(LogSeverity::DBG, "[__SL_SlamStart]Finding essential matrix\n");
+        LG_Log(LogSeverity::DBG, "[__SL_SlamStart]Num points before RANSAC = %lld\n", corrp.first.size());
         if(corrp.first.size() < 5)continue;
         cv::Mat mask;
         cv::Mat E = cv::findEssentialMat(corrp.first, corrp.second, K, 
-                    RANSACMETHOD, PROBECORRECT, RANSACEPIXELT, RANSACMAXITERS, mask);
+                    OPENCV_RANSACMETHOD, OPENCV_PROBECORRECT, OPENCV_RANSACEPIXELT, OPENCV_RANSACMAXITERS, mask);
                 
         cv::Mat R, t;
         cv::Mat poseMask = mask.clone();
         
-        LG_Log("Recovering pose\n");
+        LG_Log(LogSeverity::DBG, "Recovering pose\n");
         int ninliersafterrecover = cv::recoverPose(E, corrp.first, corrp.second, K, R, t, poseMask);
 
         int ninliers = cv::countNonZero(mask);
-        LG_Log("ninliers = %d\n", ninliersafterrecover);
-        if(ninliersafterrecover < InitFrameThresholdCorrp)
+        LG_Log(LogSeverity::DBG, "ninliers = %d\n", ninliersafterrecover);
+        if(ninliersafterrecover < PANTO_INITFRAMETHRESHOLDCORRP)
         {
-            LG_Log("ninliers too few after recover %d, need %d\n", ninliersafterrecover,
-                    InitFrameThresholdCorrp);
+            LG_Log(LogSeverity::DBG, "ninliers too few after recover %d, need %d\n", ninliersafterrecover,
+                    PANTO_INITFRAMETHRESHOLDCORRP);
             continue;
         }
-        LG_Log("ninliers b4 recover = %d, after = %d\n", ninliers, ninliersafterrecover);
+        LG_Log(LogSeverity::DBG, "ninliers b4 recover = %d, after = %d\n", ninliers, ninliersafterrecover);
         cv::Mat Rt;
         cv::hconcat(R, t, Rt);
-        LG_Log("Adding first view\n");
+        LG_Log(LogSeverity::DBG, "Adding first view\n");
         VW_AddView(slam.Tview, CM_CreateCam(cv::Mat::eye(3, 3, CV_64F), cv::Mat::zeros(3, 1, CV_64F), 0));
-        LG_Log("Adding second view\n");
+        LG_Log(LogSeverity::DBG, "Adding second view\n");
         VW_AddView(slam.Tview, CM_CreateCam(R, t, 1));
 
         cv::Mat P1, P2;
@@ -95,17 +95,17 @@ static void __SL_SlamStart()
 
         PointPair2D filteredcorrp = EP_FilterPointPairByMask(corrp, poseMask);
         corrp = std::move(filteredcorrp);
-        LG_Log("number of corrp after masking = %lld\n", corrp.first.size());
+        LG_Log(LogSeverity::DBG, "number of corrp after masking = %lld\n", corrp.first.size());
         EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
 
         cv::Mat points3d;
-        LG_Log("Triangulating\n");
-        LG_Log("[__SL_SlamStart] first point = (%lf, %lf)\n", corrp.first[0].x, corrp.first[0].y);
+        LG_Log(LogSeverity::DBG, "Triangulating\n");
+        LG_Log(LogSeverity::DBG, "[__SL_SlamStart] first point = (%lf, %lf)\n", corrp.first[0].x, corrp.first[0].y);
         cv::triangulatePoints(P1, P2, corrp.first, corrp.second, points3d);
 
-        LG_Log("Adding points\n");
+        LG_Log(LogSeverity::DBG, "Adding points\n");
         PT_AddPoints(slam.Tpoints, points3d);
-        LG_Log("Adding observations\n");
+        LG_Log(LogSeverity::DBG, "Adding observations\n");
         OB_AddObs(slam.Tobs, slam.Tview, slam.Tpoints, corrp);
         isinit = true;
     }
@@ -120,23 +120,23 @@ void __SL_SlamLoopBundle()
 PointPair2D __SL_SlamLoopPnP()
 {
     PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
-    LG_Log("[__SL_SlamLoopPnP] Found %d correspondences betwen new frame pair\n", corrp.first.size());
-    if(corrp.first.size() < NewFrameCorrpThreshold)
+    LG_Log(LogSeverity::DBG, "[__SL_SlamLoopPnP] Found %d correspondences betwen new frame pair\n", corrp.first.size());
+    if(corrp.first.size() < PANTO_NEWFRAMECORRPTHRESHOLD)
     {
-        LG_Log("not enough points found for new frame found %d, need %d\n", 
-                corrp.first.size(), NewFrameCorrpThreshold);
+        LG_Log(LogSeverity::DBG, "not enough points found for new frame found %d, need %d\n", 
+                corrp.first.size(), PANTO_NEWFRAMECORRPTHRESHOLD);
         return {};
     }
-    LG_Log("Solving pnp\n");
+    LG_Log(LogSeverity::DBG, "Solving pnp\n");
     struct PnPret pnpret = OB_SolvePnP(corrp, slam.Tview, slam.Tobs, slam.Tpoints);
     if(pnpret.ret == PNP_NOT_ENOUGH_2D3D)
     {
-        LG_Log("not enough 2d3d in pnp\n");
+        LG_Log(LogSeverity::DBG, "not enough 2d3d in pnp\n");
         return {};
     }
     if(pnpret.ret == PNP_NOT_ENOUGH_NONPNP)
     {
-        LG_Log("not enough non 2d3d in pnp\n");
+        LG_Log(LogSeverity::DBG, "not enough non 2d3d in pnp\n");
         return {};
     }
     return pnpret.nonpnpPoints;
@@ -149,28 +149,28 @@ void __SL_SlamLoop(i32 num_loops)
     bool added_view = true;
     for(int i = 0; i < num_loops; i++)
     {
-        LG_Log("Starting SLAM loop %d\n", i);
+        LG_Log(LogSeverity::DBG, "Starting SLAM loop %d\n", i);
         if(added_view)
         {
             OP_BundleAdjust(slam.Tview, slam.Tobs, slam.Tpoints);
-            LG_Log("Printing views after BA\n");
+            LG_Log(LogSeverity::DBG, "Printing views after BA\n");
             VW_Print(slam.Tview);
             slam.frame_pair.first = slam.frame_pair.second;
         }
-        LG_Log("Getting new frame in SLAM loop\n");
+        LG_Log(LogSeverity::DBG, "Getting new frame in SLAM loop\n");
         slam.frame_pair.second = __SL_GetNextFrame(slam.Tview->views.size());
         if(slam.frame_pair.second.empty())break;
-        LG_Log("Getting corresponding points in SLAM loop\n");
+        LG_Log(LogSeverity::DBG, "Getting corresponding points in SLAM loop\n");
         PointPair2D nonpnpcorrp = __SL_SlamLoopPnP();
         if(nonpnpcorrp.first.size() == 0)
         {
-            LG_Log("Pnp block failed, getting new frame\n");
+            LG_Log(LogSeverity::DBG, "Pnp block failed, getting new frame\n");
             added_view = false;
         }
         added_view = true;
-        LG_Log("Getting cam\n");
+        LG_Log(LogSeverity::DBG, "Getting cam\n");
         struct Camera cam2 = slam.Tview->views[slam.Tview->last_sz];
-        LG_Log("Getting E from cam\n");
+        LG_Log(LogSeverity::DBG, "Getting E from cam\n");
         struct Camera* two_latest = VW_GetTwoLatestCams(slam.Tview);
         cv::Mat R1 = two_latest[0].R;
         cv::Mat t1 = two_latest[0].t;
@@ -179,14 +179,14 @@ void __SL_SlamLoop(i32 num_loops)
         cv::Mat t2 = two_latest[1].t;
         std::pair<cv::Mat, cv::Mat> R21t21 = EP_GetR21t21(R1, t1, R2, t2);
         cv::Mat E = EP_EFromRigid(R21t21.first, R21t21.second);
-        LG_Log("Finding corrp with epipolar constraint\n");
+        LG_Log(LogSeverity::DBG, "Finding corrp with epipolar constraint\n");
 
         PointPair2D corr_p = EP_FindCorrpEpipolar(nonpnpcorrp, E);
         // EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corr_p.first, corr_p.second);
-        LG_Log("Found %lld corresponding points after filtering\n", corr_p.first.size());
+        LG_Log(LogSeverity::DBG, "Found %lld corresponding points after filtering\n", corr_p.first.size());
         if(corr_p.first.size() < 1)
         {
-            LG_Log("Found no corresponding points after filtering\n");
+            LG_Log(LogSeverity::DBG, "Found no corresponding points after filtering\n");
             continue;
         }
 
@@ -201,11 +201,11 @@ void __SL_SlamLoop(i32 num_loops)
         P2 = K * Rt2nd;
 
         cv::Mat points3d;
-        LG_Log("Triangulating new points\n");
+        LG_Log(LogSeverity::DBG, "Triangulating new points\n");
         cv::triangulatePoints(P1, P2, corr_p.first, corr_p.second, points3d);
-        LG_Log("Adding points\n");
+        LG_Log(LogSeverity::DBG, "Adding points\n");
         PT_AddPoints(slam.Tpoints, points3d);
-        LG_Log("Adding observations\n");
+        LG_Log(LogSeverity::DBG, "Adding observations\n");
         OB_AddObs(slam.Tobs, slam.Tview, slam.Tpoints, corr_p);
         __SL_PrintSlam();
     }
@@ -216,7 +216,7 @@ void __SL_SlamLoop(i32 num_loops)
 
 void SL_SlamLoop(i32 num_loops)
 {
-    LG_Log(SLAMSTARTMSG);
+    LG_Log(LogSeverity::DBG, PANTO_SLAMSTARTMSG);
     __SL_SlamStart();
     __SL_SlamLoop(num_loops);
     return;

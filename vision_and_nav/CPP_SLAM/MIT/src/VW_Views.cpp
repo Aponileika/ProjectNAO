@@ -27,7 +27,7 @@ struct Camera* VW_GetTwoLatestCams(struct ViewSet* views)
     struct Camera latest = views->views[views->last_sz];
     struct Camera secondlatest = views->views[views->last_sz - 1];
     struct Camera* ret = new struct Camera[2];
-    LG_Log("Got two latest cameras, (secondlatest, latest) = (%d, %d)\n",views->last_sz,views->last_sz - 1);
+    LG_Log(LogSeverity::DBG, "Got two latest cameras, (secondlatest, latest) = (%d, %d)\n",views->last_sz,views->last_sz - 1);
     ret[0] = secondlatest;
     ret[1] = latest;
     return ret;
@@ -35,10 +35,10 @@ struct Camera* VW_GetTwoLatestCams(struct ViewSet* views)
 
 void VW_Print(struct ViewSet* views)
 {
-    LG_Log("ViewSet\n");
-    LG_Log("views.size(): %zu\n", views->views.size());
-    LG_Log("observations_indexes.size(): %zu\n", views->observations_indexes.size());
-    LG_Log("last_sz: %zu\n", views->last_sz);
+    LG_Log(LogSeverity::DBG, "ViewSet\n");
+    LG_Log(LogSeverity::DBG, "views.size(): %zu\n", views->views.size());
+    LG_Log(LogSeverity::DBG, "observations_indexes.size(): %zu\n", views->observations_indexes.size());
+    LG_Log(LogSeverity::DBG, "last_sz: %zu\n", views->last_sz);
 
     size_t n = views->views.size();
 
@@ -46,22 +46,22 @@ void VW_Print(struct ViewSet* views)
     {
         const Camera& cam = views->views[i];
 
-        LG_Log("view[%zu]\n", i);
-        LG_Log("  obs count: %zu\n", views->observations_indexes[i].size());
-        LG_Log("  intrinsics: %s\n", cam.intrinsics ? "set" : "null");
-        LG_Log("  p: %s\n", cam.p ? "set" : "null");
+        LG_Log(LogSeverity::DBG, "view[%zu]\n", i);
+        LG_Log(LogSeverity::DBG, "  obs count: %zu\n", views->observations_indexes[i].size());
+        LG_Log(LogSeverity::DBG, "  intrinsics: %s\n", cam.intrinsics ? "set" : "null");
+        LG_Log(LogSeverity::DBG, "  p: %s\n", cam.p ? "set" : "null");
 
         if (cam.p)
         {
             const Eigen::Quaterniond& q_wc = cam.p->q;
             const Eigen::Vector3d& C_world_param = cam.p->t;
 
-            LG_Log("  parametrized world pose:\n");
+            LG_Log(LogSeverity::DBG, "  parametrized world pose:\n");
 
-            LG_Log("    q_wc (w,x,y,z) = (%.15f, %.15f, %.15f, %.15f)\n",
+            LG_Log(LogSeverity::DBG, "    q_wc (w,x,y,z) = (%.15f, %.15f, %.15f, %.15f)\n",
                    q_wc.w(), q_wc.x(), q_wc.y(), q_wc.z());
 
-            LG_Log("    C_world param = (%.15f, %.15f, %.15f)\n",
+            LG_Log(LogSeverity::DBG, "    C_world param = (%.15f, %.15f, %.15f)\n",
                    C_world_param.x(),
                    C_world_param.y(),
                    C_world_param.z());
@@ -69,52 +69,52 @@ void VW_Print(struct ViewSet* views)
 
         if (!cam.R.empty())
         {
-            LG_Log("  OpenCV extrinsics:\n");
-            LG_Log("    R_cw, world-to-camera =\n");
+            LG_Log(LogSeverity::DBG, "  OpenCV extrinsics:\n");
+            LG_Log(LogSeverity::DBG, "    R_cw, world-to-camera =\n");
 
             for (int r = 0; r < cam.R.rows; ++r)
             {
-                LG_Log("      ");
+                LG_Log(LogSeverity::DBG, "      ");
                 for (int c = 0; c < cam.R.cols; ++c)
                 {
-                    LG_Log("%.15f ", cam.R.at<double>(r, c));
+                    LG_Log(LogSeverity::DBG, "%.15f ", cam.R.at<double>(r, c));
                 }
-                LG_Log("\n");
+                LG_Log(LogSeverity::DBG, "\n");
             }
         }
         else
         {
-            LG_Log("  R_cw: empty\n");
+            LG_Log(LogSeverity::DBG, "  R_cw: empty\n");
         }
 
         if (!cam.t.empty())
         {
-            LG_Log("    t_cw / t_cv = (");
+            LG_Log(LogSeverity::DBG, "    t_cw / t_cv = (");
 
             if (cam.t.rows == 3 && cam.t.cols == 1)
             {
-                LG_Log("%.15f, %.15f, %.15f",
+                LG_Log(LogSeverity::DBG, "%.15f, %.15f, %.15f",
                        cam.t.at<double>(0, 0),
                        cam.t.at<double>(1, 0),
                        cam.t.at<double>(2, 0));
             }
             else if (cam.t.rows == 1 && cam.t.cols == 3)
             {
-                LG_Log("%.15f, %.15f, %.15f",
+                LG_Log(LogSeverity::DBG, "%.15f, %.15f, %.15f",
                        cam.t.at<double>(0, 0),
                        cam.t.at<double>(0, 1),
                        cam.t.at<double>(0, 2));
             }
             else
             {
-                LG_Log("shape=(%d x %d)", cam.t.rows, cam.t.cols);
+                LG_Log(LogSeverity::DBG, "shape=(%d x %d)", cam.t.rows, cam.t.cols);
             }
 
-            LG_Log(")\n");
+            LG_Log(LogSeverity::DBG, ")\n");
         }
         else
         {
-            LG_Log("    t_cw / t_cv: empty\n");
+            LG_Log(LogSeverity::DBG, "    t_cw / t_cv: empty\n");
         }
 
         if (!cam.R.empty() && !cam.t.empty() &&
@@ -140,20 +140,20 @@ void VW_Print(struct ViewSet* views)
             cv::Mat R_wc = R_cw.t();
             cv::Mat C_world = -R_wc * t_cw;
 
-            LG_Log("  world pose:\n");
+            LG_Log(LogSeverity::DBG, "  world pose:\n");
 
-            LG_Log("    R_wc, camera-to-world =\n");
+            LG_Log(LogSeverity::DBG, "    R_wc, camera-to-world =\n");
             for (int r = 0; r < R_wc.rows; ++r)
             {
-                LG_Log("      ");
+                LG_Log(LogSeverity::DBG, "      ");
                 for (int c = 0; c < R_wc.cols; ++c)
                 {
-                    LG_Log("%.15f ", R_wc.at<double>(r, c));
+                    LG_Log(LogSeverity::DBG, "%.15f ", R_wc.at<double>(r, c));
                 }
-                LG_Log("\n");
+                LG_Log(LogSeverity::DBG, "\n");
             }
 
-            LG_Log("    C_world / camera center = (%.15f, %.15f, %.15f)\n",
+            LG_Log(LogSeverity::DBG, "    C_world / camera center = (%.15f, %.15f, %.15f)\n",
                    C_world.at<double>(0, 0),
                    C_world.at<double>(1, 0),
                    C_world.at<double>(2, 0));
@@ -162,7 +162,7 @@ void VW_Print(struct ViewSet* views)
             {
                 const Eigen::Vector3d& C_param = cam.p->t;
 
-                LG_Log("    C_world - C_param = (%.15f, %.15f, %.15f)\n",
+                LG_Log(LogSeverity::DBG, "    C_world - C_param = (%.15f, %.15f, %.15f)\n",
                        C_world.at<double>(0, 0) - C_param.x(),
                        C_world.at<double>(1, 0) - C_param.y(),
                        C_world.at<double>(2, 0) - C_param.z());
@@ -170,7 +170,7 @@ void VW_Print(struct ViewSet* views)
         }
         else
         {
-            LG_Log("  world pose: unavailable\n");
+            LG_Log(LogSeverity::DBG, "  world pose: unavailable\n");
         }
     }
 }

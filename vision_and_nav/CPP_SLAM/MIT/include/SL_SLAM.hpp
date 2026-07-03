@@ -15,26 +15,6 @@
 #include "VIZ_Visualization.hpp"
 #include "FEAT_Features.hpp"
 
-//LOOK INTO USAC
-#define RANSACMETHOD cv::USAC_DEFAULT
-//#define RANSACMETHOD cv::RANSAC
-#define PROBECORRECT 0.99f
-#define RANSACEPIXELT 2.0f
-#define RANSACMAXITERS 2000
-#define NewFrameCorrpThreshold 30
-#define InitFrameThresholdCorrp 50
-#define AKAZEthreshold 0.0005f
-
-#define SLAMSTARTMSG "\
-    --------------------------------\n\
-    --------------------------------\n\
-    --------------------------------\n\
-            SLAM IS STARTING\n\
-    --------------------------------\n\
-    --------------------------------\n\
-    --------------------------------\n\
-"
-
 struct SLAM
 {
     struct ViewSet* Tview;

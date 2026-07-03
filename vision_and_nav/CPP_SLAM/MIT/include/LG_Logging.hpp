@@ -10,8 +10,8 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
-
-#define LOGPATH "/Users/Jonathan/Programmering/FIA/ProjectNAO/vision_and_nav/CPP_SLAM/logs/log.txt"
+#include "Config.hpp"
+#include "CArenaAlloc.h"
 
 struct Logger
 {
@@ -19,8 +19,15 @@ struct Logger
     FILE* fp;
 };
 
+enum class LogSeverity : u8
+{
+    DBG = 0, // Everything is fine
+    ERROR = 1 // Must reset SLAM
+};
+
+
 void LG_InitLogger();
 void LG_CloseLogger();
-void LG_Log(const char* fmt, ...);
+void LG_Log(LogSeverity severity, const char* fmt, ...);
 
 #endif //__LG_LOGGING_HPP_

@@ -3,22 +3,12 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d.hpp>
-#include "../../third-party/ORBSLAM/include/ORBextractor.h"
 #include "../../third-party/ANMS-Codes/C++/include/anms.h"
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
 #include "LG_Logging.hpp"
-#define NFEATURES 2000
-#define MATCHRATIO 0.8f
 
 typedef std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> PointPair2D;
-
-struct OrbExtractor
-{
-    ORB_SLAM::ORBextractor orb;
-    cv::BFMatcher matcher;
-    fp64 matchratio;
-};
 
 struct OpenCVExtractAKAZE
 {
@@ -29,19 +19,6 @@ struct OpenCVExtractAKAZE
 };
 
 typedef std::pair<PointPair2D, std::pair<cv::Mat, cv::Mat>> CorrPReturn;
-
-/*
- *************************************************************
- *************************************************************
- *************************************************************
- *                          ORB
- *************************************************************
- *************************************************************
- *************************************************************
- * */
-struct OrbExtractor* ORB_InitORB();
-void ORB_Destroy(struct OrbExtractor* orb);
-PointPair2D ORB_GetMatches(void* extractor, cv::Mat img1, cv::Mat img2);
 
 /*
  *************************************************************

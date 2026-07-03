@@ -1,11 +1,12 @@
 #include "../include/EP_CorrespondingPoints.hpp"
 #include "CM_Camera.hpp"
+#include "FEAT_Features.hpp"
 #include "LG_Logging.hpp"
 #include "PT_Points.hpp"
 
 static struct CorrespondenceExtractor ext;
 
-void EP_InitCPointExtractor(void* extractor, PointPair2D (*GetCorrp)(void* extractor, cv::Mat img1, cv::Mat img2))
+void EP_InitCPointExtractor(void* extractor, CorrPReturn (*GetCorrp)(void* extractor, cv::Mat img1, cv::Mat img2))
 {
     //extractor must be initiated
     ext.extractor = extractor;
@@ -14,8 +15,8 @@ void EP_InitCPointExtractor(void* extractor, PointPair2D (*GetCorrp)(void* extra
 
 PointPair2D EP_CorrespExtract(cv::Mat img1, cv::Mat img2)
 {
-    LG_Log("[EP_CorrespExtract] Getting corrp\n");
-    PointPair2D out = ext.GetCorrp(ext.extractor, img1, img2);
+    LG_Log(LogSeverity::DBG, "[EP_CorrespExtract] Getting corrp\n");
+    PointPair2D out = ext.GetCorrp(ext.extractor, img1, img2).first;
     return out;
 }
 
@@ -104,8 +105,8 @@ PointPair2D EP_FindCorrpEpipolar(const PointPair2D& corrp, const cv::Mat& E)
         normc = c * normfactor;
         fp64 dist2 = abs(norma*p1 + normb*p2 + normc*p3);
         fp64 dist = (dist1 + dist2) / 2.0f;
-        LG_Log("[EP_FindCorrpEpipolar] dist1 = %lf, dist2 = %lf, dist = %lf\n", dist1, dist2, dist);
-        if(dist < EpiPolarTreshhold)
+        LG_Log(LogSeverity::DBG, "[EP_FindCorrpEpipolar] dist1 = %lf, dist2 = %lf, dist = %lf\n", dist1, dist2, dist);
+        if(dist < PANTO_EPIPOLARTRESHOLD)
         {
             corr_p.first.push_back(corrp.first[i]);
             corr_p.second.push_back(corrp.second[i]);

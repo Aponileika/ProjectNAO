@@ -30,16 +30,42 @@ void OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSe
 
 void OB_RemoveObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points, u64 idx)
 {
-    
-// struct ObservationSet
-// {
-//     std::vector<cv::Point2d> observations;
-//     std::vector<u64> view_indexes;
-//     std::vector<u64> point_indexes;
-//     //Maps 2D image point paired with view to idx
-//     std::map<std::pair<std::pair<i64, i64>, u64>, u64> imagepoint2idx;
-// };
-//
+    const u64 pt_idx = obs->point_indexes[idx];
+    const std::vector<u64> obs_idxs_pts = points->observations_indexes[pt_idx];
+    u64 idx_in_ob_idxs = u64_max;
+    for(const auto& i : obs_idxs_pts)
+    {
+        if(obs_idxs_pts[i] == idx) 
+        {
+            idx_in_ob_idxs = i;
+            break;
+        }
+    }
+    if(idx_in_ob_idxs == u64_max)
+    {
+        LG_Log(LogSeverity::ERROR, "[OB_RemoveObs] Non existing observation in point");
+        std::exit(-1);
+    }
+    VT_EraseUnordered(points->observations_indexes[pt_idx], idx_in_ob_idxs);
+
+    const u64 vw_idx = obs->view_indexes[idx];
+    const std::vector<u64> obs_idxs_vws = views->observations_indexes[vw_idx];
+    idx_in_ob_idxs = u64_max;
+    for(const auto& i : obs_idxs_vws)
+    {
+        if(obs_idxs_vws[i] == idx) 
+        {
+            idx_in_ob_idxs = i;
+            break;
+        }
+    }
+    if(idx_in_ob_idxs == u64_max)
+    {
+        LG_Log(LogSeverity::ERROR, "[OB_RemoveObs] Non existing observation in view");
+        std::exit(-1);
+    }
+    VT_EraseUnordered(views->observations_indexes[vw_idx], idx_in_ob_idxs);
+
     VT_EraseUnordered(obs->observations, idx);
     VT_EraseUnordered(obs->view_indexes, idx);
     VT_EraseUnordered(obs->point_indexes, idx);
@@ -47,15 +73,15 @@ void OB_RemoveObs(struct ObservationSet* obs, struct ViewSet* views, struct Poin
 
 void OB_Print(struct ObservationSet* obs)
 {
-    LG_Log("ObservationSet\n");
-    LG_Log("observations.size() = %lld\n", obs->observations.size());
-    LG_Log("view_indexes.size() = %lld\n", obs->view_indexes.size());
-    LG_Log("point_indexes.size() = %lld\n", obs->point_indexes.size());
+    LG_Log(LogSeverity::DBG, "ObservationSet\n");
+    LG_Log(LogSeverity::DBG, "observations.size() = %lld\n", obs->observations.size());
+    LG_Log(LogSeverity::DBG, "view_indexes.size() = %lld\n", obs->view_indexes.size());
+    LG_Log(LogSeverity::DBG, "point_indexes.size() = %lld\n", obs->point_indexes.size());
 
     size_t n = std::min<size_t>(obs->observations.size(), 10);
     for (size_t i = 0; i < n; ++i)
     {
-        LG_Log("obs[%lld] = (%f, %f), view=%llu, point=%llu\n", i, obs->observations[i].x, obs->observations[i].y,
+        LG_Log(LogSeverity::DBG, "obs[%lld] = (%f, %f), view=%llu, point=%llu\n", i, obs->observations[i].x, obs->observations[i].y,
                    obs->view_indexes[i], obs->point_indexes[i]);
     }
 }
@@ -68,7 +94,7 @@ struct offset
 
 constexpr auto __OB_MakeSearchWindow()
 {
-    const i32 W = SEARCHWINDOW2D3D*2 + 1;
+    const i32 W = PANTO_SEARCHWINDOW2D3D*2 + 1;
     const i32 N = W*W;
 
     std::array<struct offset, N> search_window{};
@@ -76,12 +102,12 @@ constexpr auto __OB_MakeSearchWindow()
     {
         for(i64 j = 0; j < W; j++)
         {
-            search_window[i*W + j] = offset{i - SEARCHWINDOW2D3D, j - SEARCHWINDOW2D3D};
+            search_window[i*W + j] = offset{i - PANTO_SEARCHWINDOW2D3D, j - PANTO_SEARCHWINDOW2D3D};
         }
     }
     struct offset temp = search_window[0];
-    search_window[0] = search_window[SEARCHWINDOW2D3D*W + SEARCHWINDOW2D3D];
-    search_window[SEARCHWINDOW2D3D*W + SEARCHWINDOW2D3D] = temp;
+    search_window[0] = search_window[PANTO_SEARCHWINDOW2D3D*W + PANTO_SEARCHWINDOW2D3D];
+    search_window[PANTO_SEARCHWINDOW2D3D*W + PANTO_SEARCHWINDOW2D3D] = temp;
     return search_window;
 }
 
@@ -127,12 +153,12 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
     pnpPoints3Didx.reserve(corrp.second.size());
 
     u64 vidx = TView->last_sz;
-    LG_Log("[OB_SolvePnP] TView->last_sz = %llu\n", TView->last_sz);
-    LG_Log("[OB_SolvePnP] TView->views.size() = %zu\n", TView->views.size());
+    LG_Log(LogSeverity::DBG, "[OB_SolvePnP] TView->last_sz = %llu\n", TView->last_sz);
+    LG_Log(LogSeverity::DBG, "[OB_SolvePnP] TView->views.size() = %zu\n", TView->views.size());
     std::vector<u64> obsidx = TView->observations_indexes[TView->last_sz];
 
     std::vector<bool> used_3D(TObs->point_indexes.size());
-    LG_Log("[OB_SolvePnP] Finding 2D->3D correspondences, with %lld correspondences\n", corrp.first.size());
+    LG_Log(LogSeverity::DBG, "[OB_SolvePnP] Finding 2D->3D correspondences, with %lld correspondences\n", corrp.first.size());
     for(size_t i = 0; i < corrp.first.size(); i++)
     {
         cv::Point2d imagepoint = corrp.first[i];
@@ -152,27 +178,27 @@ struct PnPret OB_SolvePnP(PointPair2D corrp, ViewSet* TView, ObservationSet* TOb
             ret.nonpnpPoints.second.push_back(corrp.second[i]);
         }
     }
-    LG_Log("Found %lld 2D<->3D correspondences\n", pnpPoints3D.size());
-    LG_Log("[OB_SolvePnP] found %lld new correspondences\n", ret.nonpnpPoints.first.size());
+    LG_Log(LogSeverity::DBG, "Found %lld 2D<->3D correspondences\n", pnpPoints3D.size());
+    LG_Log(LogSeverity::DBG, "[OB_SolvePnP] found %lld new correspondences\n", ret.nonpnpPoints.first.size());
     struct CameraIntrinsics* ci = CM_GetIntrinsics();
     cv::Mat rvec, t;
-    LG_Log("Solving PnP\n");
-    if(pnpPoints3D.size() < (size_t)PnPPointCntThreshold)
+    LG_Log(LogSeverity::DBG, "Solving PnP\n");
+    if(pnpPoints3D.size() < (size_t)PANTO_PNPPOINTCNTTHRESHOLD)
     {
-        LG_Log("not enough observed points were found for pnp, found %lld, need %d\n",
-            pnpPoints3D.size(), PnPPointCntThreshold);
+        LG_Log(LogSeverity::DBG, "not enough observed points were found for pnp, found %lld, need %d\n",
+            pnpPoints3D.size(), PANTO_PNPPOINTCNTTHRESHOLD);
         ret.ret = PNP_NOT_ENOUGH_2D3D;
         return ret;
     }
     ret.ret = PNP_SUCCESS;
     cv::solvePnPRansac(pnpPoints3D, pnpPoints, ci->K, ci->distcoeffs, rvec, t,
-            false, PnPRansacIts, Reprojerr, conf);
+            false, CV_PNPRANSACITS, CV_REPROJERR, CV_CONF);
     struct Camera cam;
     cv::Mat R;
     cv::Rodrigues(rvec, R);
-    LG_Log("[OB_SolvePnP] creating cam with index %llu\n", vidx + 1);
+    LG_Log(LogSeverity::DBG, "[OB_SolvePnP] creating cam with index %llu\n", vidx + 1);
     cam = CM_CreateCam(R, t, vidx + 1);
-    LG_Log("[OB_SolvePnP] Adding View\n");
+    LG_Log(LogSeverity::DBG, "[OB_SolvePnP] Adding View\n");
     VW_AddView(TView, cam);
     __OB_AddObsPnP(TView, TObs, TPoints, pnpPoints, pnpPoints3Didx);
     return ret;

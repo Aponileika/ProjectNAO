@@ -18,7 +18,7 @@ void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps,
     if (fp_point == NULL) 
     {
         perror("Failed to open file");
-        LG_Log("[ERROR] Failed to open file %s\n", point_path.c_str());
+        LG_Log(LogSeverity::DBG, "[ERROR] Failed to open file %s\n", point_path.c_str());
         return;
     }
     __VIZ_WritePointsColmap(os, ps, vs, fp_point);
@@ -28,7 +28,7 @@ void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps,
     if (fp_cam == NULL) 
     {
         perror("Failed to open file");
-        LG_Log("[ERROR] Failed to open file %s\n", cam_path.c_str());
+        LG_Log(LogSeverity::DBG, "[ERROR] Failed to open file %s\n", cam_path.c_str());
         return;
     }
     __VIZ_WriteCamerasColmap(vs, fp_cam);
@@ -38,7 +38,7 @@ void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps,
     if (fp_image == NULL) 
     {
         perror("Failed to open file");
-        LG_Log("[ERROR] Failed to open file %s\n", image_path.c_str());
+        LG_Log(LogSeverity::DBG, "[ERROR] Failed to open file %s\n", image_path.c_str());
         return;
     }
     __VIZ_WriteImagesColmap(os, vs, fp_image);
@@ -49,9 +49,9 @@ u64 w, h;
 
 void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp) 
 {
-    LG_Log("[__VIZ_WriteCamerasColmap] Writing cameras colmap\n");
+    LG_Log(LogSeverity::DBG, "[__VIZ_WriteCamerasColmap] Writing cameras colmap\n");
     const u64 num_cameras = static_cast<u64>(vs.views.size());
-    LG_Log("[__VIZ_WriteCamerasColmap] num cameras = %llu\n", num_cameras);
+    LG_Log(LogSeverity::DBG, "[__VIZ_WriteCamerasColmap] num cameras = %llu\n", num_cameras);
     fwrite(&num_cameras, sizeof(u64), 1, fp);
 
     const u64 wh[2] = {w, h};
@@ -62,7 +62,7 @@ void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp)
         const i32 j = static_cast<i32>(i);
         fwrite(&j, sizeof(i32), 1, fp);
 
-        const i32 model_id = MODEL_ID;
+        const i32 model_id = PANTO_CAMERA_MODEL_ID;
         fwrite(&model_id, sizeof(i32), 1, fp);
         fwrite(wh, sizeof(u64), 2, fp);
         fwrite(params, sizeof(fp64), 4, fp);
@@ -71,29 +71,29 @@ void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp)
 
 void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, struct ViewSet vs, FILE *fp) 
 {
-    LG_Log("[__VIZ_WritePointsColmap] Writing points colmap\n");
+    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] Writing points colmap\n");
     // dont care
     const fp64 error = 0.0f;
     u8 RGB[3] = {0, 0, 0};
 
     const u64 num_points = static_cast<u64>(ps.points.size());
     fwrite(&num_points, sizeof(u64), 1, fp);
-    LG_Log("[__VIZ_WritePointsColmap] num points colmap = %llu\n", num_points);
+    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] num points colmap = %llu\n", num_points);
     const size_t num_imgs = vs.views.size();
-    LG_Log("[__VIZ_WritePointsColmap] Getting RGB images\n");
+    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] Getting RGB images\n");
     std::vector<cv::Mat> imgs;
     imgs.resize(num_imgs);
     for(size_t i = 0; i < num_imgs; i++)
     {
         std::string path = "./colmap/images/frame" + std::to_string(i) + ".png";
-        LG_Log("[__VIZ_WritePointsColmap] Getting RGB image %s\n", path.c_str());
-        LG_Log("[__VIZ_WritePointsColmap] Getting RGB image index %d\n", i);
+        LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] Getting RGB image %s\n", path.c_str());
+        LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] Getting RGB image index %d\n", i);
         imgs[i] = cv::imread(path, cv::IMREAD_COLOR_RGB);
     }
     w = imgs[0].cols;
     h = imgs[0].rows;
-    LG_Log("[__VIZ_WritePointsColmap] RGB images have (w, h) = (%lld, %lld)\n", w, h);
-    LG_Log("[__VIZ_WritePointsColmap] got all RGB images\n");
+    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] RGB images have (w, h) = (%lld, %lld)\n", w, h);
+    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] got all RGB images\n");
     for (u64 i = 0; i < num_points; i++) 
     {
         fwrite(&i, sizeof(u64), 1, fp);
@@ -110,7 +110,7 @@ void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, struc
             cv::Point2d obs = os.observations[ps.observations_indexes[i][j]];
             i64 x = static_cast<i64>(floor(obs.x));
             i64 y = static_cast<i64>(floor(obs.y));
-            //LG_Log("[__VIZ_WritePointsColmap] getting pixel (y, x) = (%lld, %lld)\n", y, x);
+            //LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] getting pixel (y, x) = (%lld, %lld)\n", y, x);
             cv::Vec3b rgb = img_rgb.at<cv::Vec3b>(y, x);
             R += static_cast<fp64>(rgb[0]);
             G += static_cast<fp64>(rgb[1]);
@@ -142,10 +142,10 @@ void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, struc
 
 void __VIZ_WriteImagesColmap(struct ObservationSet os, struct ViewSet vs, FILE *fp) 
 {
-    LG_Log("[__VIZ_WriteImagesColmap] Writing images colmap\n");
+    LG_Log(LogSeverity::DBG, "[__VIZ_WriteImagesColmap] Writing images colmap\n");
     u64 num_images = vs.views.size();
     fwrite(&num_images, sizeof(u64), 1, fp);
-    LG_Log("[__VIZ_WriteImagesColmap] num images = %llu\n", num_images);
+    LG_Log(LogSeverity::DBG, "[__VIZ_WriteImagesColmap] num images = %llu\n", num_images);
 
     for (u64 i = 0; i < num_images; i++) 
     {
@@ -175,11 +175,11 @@ void __VIZ_WriteImagesColmap(struct ObservationSet os, struct ViewSet vs, FILE *
 
         // camera id, now same as image
         fwrite(&image_id, sizeof(i32), 1, fp);
-        LG_Log("[__VIZ_WriteImagesColmap] image id = %d\n", image_id);
+        LG_Log(LogSeverity::DBG, "[__VIZ_WriteImagesColmap] image id = %d\n", image_id);
 
         const std::string img_name = vs.views[i].image_name;
         fwrite(img_name.c_str(), sizeof(char), img_name.size() + 1, fp);
-        LG_Log("[__VIZ_WriteImagesColmap] image name = %s\n", img_name.c_str());
+        LG_Log(LogSeverity::DBG, "[__VIZ_WriteImagesColmap] image name = %s\n", img_name.c_str());
 
         const u64 num_2d_points = vs.observations_indexes[i].size();
         fwrite(&num_2d_points, sizeof(fp64), 1, fp);
