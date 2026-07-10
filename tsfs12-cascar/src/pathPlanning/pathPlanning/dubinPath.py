@@ -80,12 +80,12 @@ class dubinsPath(Node):
         circleEndCCW = endPos + R * perp
         circleEndCW = endPos - R * perp
 
-        LSL = {"startTang": circleStartCCW + R*self.rot(-startEndNorm), "endTang": circleEndCCW + R*rot(-startEndNorm), 
+        LSL = {"startTang": circleStartCCW + R*self.rot(-startEndNorm), "endTang": circleEndCCW + R*self.rot(-startEndNorm), 
             "startPos":startPos, "endPos":endPos, "startCircle": circleStartCCW, "endCircle":circleEndCCW,
             "startDir":1, "endDir":1}
         LSL["length"] = self.getPathLength(LSL, R)
 
-        RSR = {"startTang": circleStartCW - R*self.rot(-startEndNorm), "endTang": circleEndCW - R*rot(-startEndNorm),
+        RSR = {"startTang": circleStartCW - R*self.rot(-startEndNorm), "endTang": circleEndCW - R*self.rot(-startEndNorm),
             "startPos":startPos, "endPos":endPos, "startCircle": circleStartCW, "endCircle":circleEndCW,
             "startDir":-1, "endDir":-1}
         RSR["length"] = self.getPathLength(RSR, R)
