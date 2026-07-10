@@ -31,6 +31,8 @@ class Localization(Node):
             10
         )
 
+        self.Ts = Ts
+
         self.calibDone = False
         self.calibData = []
         self.w = 0
