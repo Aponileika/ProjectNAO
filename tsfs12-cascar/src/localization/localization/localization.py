@@ -78,9 +78,9 @@ class Localization(Node):
 
             #PUBLISH DATA
             msg = Pose2D()
-            msg.x = self.x
-            msg.y = self.y
-            msg.theta = self.theta
+            msg.x = float(self.x)
+            msg.y = float(self.y)
+            msg.theta = float(self.theta)
 
             self.pos_publisher.publish(msg)
 
