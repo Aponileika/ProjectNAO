@@ -238,12 +238,12 @@ class dubinsPath(Node):
     def getPathLength(self, path, R):
         tangentLength = np.sqrt( (path['endTang'][0]-path['startTang'][0])**2 + (path['endTang'][1]-path['startTang'][1])**2 )
 
-        start_angle = np.atan2(path['startPos'][1]-path['startCircle'][1], path['startPos'][0]-path['startCircle'][0])
-        end_angle = np.atan2(path['startTang'][1]-path['startCircle'][1], path['startTang'][0]-path['startCircle'][0])
+        start_angle = atan2(path['startPos'][1]-path['startCircle'][1], path['startPos'][0]-path['startCircle'][0])
+        end_angle = atan2(path['startTang'][1]-path['startCircle'][1], path['startTang'][0]-path['startCircle'][0])
         arcLengthStart = R * self.mod2pi(path['startDir'] * (end_angle - start_angle))
 
-        start_angle = np.atan2(path['endTang'][1]-path['endCircle'][1], path['endTang'][0]-path['endCircle'][0])
-        end_angle = np.atan2(path['endPos'][1]-path['endCircle'][1], path['endPos'][0]-path['endCircle'][0])
+        start_angle = atan2(path['endTang'][1]-path['endCircle'][1], path['endTang'][0]-path['endCircle'][0])
+        end_angle = atan2(path['endPos'][1]-path['endCircle'][1], path['endPos'][0]-path['endCircle'][0])
         arcLengthEnd = R * self.mod2pi(path['endDir'] * (end_angle - start_angle))
 
         print(2*R*np.pi)
