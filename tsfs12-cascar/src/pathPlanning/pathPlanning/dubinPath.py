@@ -6,6 +6,7 @@ from math import *
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
+import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
 from geometry_msgs.msg import Pose2D
@@ -258,6 +259,11 @@ class dubinsPath(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+
+    node = dubinsPath()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":

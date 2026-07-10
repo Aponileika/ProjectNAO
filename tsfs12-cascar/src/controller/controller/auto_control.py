@@ -12,7 +12,7 @@ from std_msgs.msg import String
 
 
 class AutomaticControl(Node):
-    def __init__(self, Ts: float, vmax: float, delta_max:float, kx: float, ky: float, ktheta:float, path:list):
+    def __init__(self, Ts: float, vmax: float, delta_max:float, kx: float, ky: float, ktheta:float):
 
         #Start node
         super().__init__("automatic_control")
@@ -205,16 +205,13 @@ def create_path(type, omega):
 def main(args=None):
     rclpy.init(args=args)
 
-    path = create_path("circle", 1)
-
     node = AutomaticControl(
         Ts=0.05,
         vmax=1,
         delta_max=pi/4,
         kx=1,
         ky=3,
-        ktheta=1,
-        path=path
+        ktheta=1
     )
 
     rclpy.spin(node)
