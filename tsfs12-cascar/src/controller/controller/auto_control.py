@@ -56,7 +56,7 @@ class AutomaticControl(Node):
         self.timer = self.create_timer(self.Ts, self.control_loop)
 
 
-    def imu_callback(self, msg):
+    def pos_callback(self, msg):
         self.x = msg.x
         self.y = msg.y
         self.theta = msg.theta
