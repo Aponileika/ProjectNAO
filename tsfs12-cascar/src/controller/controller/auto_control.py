@@ -63,9 +63,9 @@ class AutomaticControl(Node):
 
 
     def control_loop(self):
-        now = self.get_clock().now()
-        dt = (now - self.last_time).nanoseconds / 1e9
-        self.last_time = now
+        #now = self.get_clock().now()
+        #dt = (now - self.last_time).nanoseconds / 1e9
+        #self.last_time = now
 
         ed, ey, etheta = self.get_errors()
 
