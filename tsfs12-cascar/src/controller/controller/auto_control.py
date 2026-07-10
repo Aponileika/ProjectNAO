@@ -6,6 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
 from cascar_msgs.msg import CarCommand, CarMeasurement
+from geometry_msgs.msg import Pose2D
 
 
 class AutomaticControl(Node):
@@ -20,19 +21,12 @@ class AutomaticControl(Node):
         self.car_publisher_ = self.create_publisher(CarCommand, "car_command", 1)
 
         #Subscribe to measurements
-        self.imu_sub = self.create_subscription(
-            CarMeasurement,
-            "sensor/imu",
-            self.imu_callback,
+        self.pos_sub = self.create_subscription(
+            Pose2D,
+            "pose",
+            self.pos_callback,
             10
         )
-        self.odo_sub = self.create_subscription(
-            CarMeasurement,
-            "sensor/cascar",
-            self.odo_callback,
-            10
-        )
-
 
         #Constants
         self.Ts = Ts
@@ -42,26 +36,10 @@ class AutomaticControl(Node):
         self.D = 0.08
         self.L = 0.285
 
-        #Sensor readings
-        self.ax = 0
-        self.ay = 0
-        self.w = 0
-        self.calibDone = False
-        self.calibData = []
-        self.bx = 0
-        self.by = 0
-        self.bw = 0
-        self.last_time = self.get_clock().now()
-
-        self.Vodo = 0
-        self.oldVodo = None
-        self.VodoTime = 0
-        self.oldVodoTime = None
-
         #System state
-        self.theta = pi/2
         self.x = 1
         self.y = 0
+        self.theta = pi/2
 
         #Control system data
         self.v = 0
@@ -79,19 +57,9 @@ class AutomaticControl(Node):
 
 
     def imu_callback(self, msg):
-        self.ax = msg.a_x - self.bx
-        self.ay = msg.a_y - self.by
-        self.w = msg.w - self.bw
-
-    def odo_callback(self, msg):
-
-        self.Vodo = msg.v
-        stamp = msg.header.stamp
-        self.VodoTime = stamp.sec + 1e-9*stamp.nanosec
-
-        if self.oldVodo == None:
-            self.oldVodo = self.Vodo
-            self.oldVodoTime = self.VodoTime
+        self.x = msg.x
+        self.y = msg.y
+        self.theta = msg.theta
 
 
     def control_loop(self):
@@ -99,70 +67,26 @@ class AutomaticControl(Node):
         dt = (now - self.last_time).nanoseconds / 1e9
         self.last_time = now
 
-        if not self.calibDone:
-            self.calibrate()
-        else:
-            self.update_model(dt)
+        ed, ey, etheta = self.get_errors()
 
-            ed, ey, etheta = self.get_errors()
+        self.control_system(ed, ey, etheta)
 
-            self.control_system(ed, ey, etheta)
+        msg = CarCommand()
+        #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
+        self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}, et={etheta:.3f}, v={self.v:.3f}")
 
-            msg = CarCommand()
-            #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
-            self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}, et={etheta:.3f}, v={self.v:.3f}")
+        speed_norm = self.v / self.vmax
+        steer_norm = self.delta / self.delta_max
 
-            speed_norm = self.v / self.vmax
-            steer_norm = self.delta / self.delta_max
+        max_speed = 100.0       #Actual command max
+        max_steer = 95.0  
 
-            max_speed = 100.0       #Actual command max
-            max_steer = 95.0  
+        msg.speed = speed_norm * max_speed
+        msg.steer = steer_norm * max_steer
 
-            msg.speed = speed_norm * max_speed
-            msg.steer = steer_norm * max_steer
+        self.car_publisher_.publish(msg)
 
-            self.car_publisher_.publish(msg)
-
-            self.get_next_node()
-
-
-    def calibrate(self):
-        if len(self.calibData) < 100:
-            self.calibData.append({"ax":self.ax, "ay":self.ay, "w":self.w})
-        else:
-            bxS = 0
-            byS = 0
-            bwS = 0
-            for data in self.calibData:
-                bxS += data["ax"]
-                byS += data["ay"]
-                bwS += data["w"]
-
-            self.bx = bxS / len(self.calibData)
-            self.by = byS / len(self.calibData)
-            self.bw = bwS / len(self.calibData)
-
-            self.calibDone = True
-            self.get_logger().info("CALIBRATION COMPLETE")
-            self.get_logger().info(f"Found biases: bx={self.bx:.3f}, by={self.by:.3f}, bw={self.bw:.3f}")
-        
-
-    def update_model(self, dt):
-        if (self.Vodo != self.oldVodo) and (self.oldVodo != None) and (self.oldVodoTime != None):
-            odoT = self.VodoTime - self.oldVodoTime
-
-            self.oldVodoTime = self.VodoTime
-            self.oldVodo = self.Vodo
-
-            self.x += self.Vodo * odoT * cos(self.theta)
-            self.y += self.Vodo * odoT * sin(self.theta)
-
-            self.get_logger().info(f"dt={dt:.4f}s, odoT={odoT:.4f}, x={self.x:.3f}, y={self.y:.3f}, vodo={self.Vodo:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
-
-        theta = self.theta + self.w * dt
-        self.theta = atan2(sin(theta), cos(theta))
-
-        return
+        self.get_next_node()
 
 
     def control_system(self, ed, ey, etheta):
