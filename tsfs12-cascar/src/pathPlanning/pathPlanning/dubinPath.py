@@ -18,7 +18,7 @@ class dubinsPath(Node):
         super().__init__("path_planning")
         self.get_logger().info("Path Planning Node Started")
 
-        self.path_publsiher = self.create_publsiher(String, "planned_path", 1)
+        self.path_publsiher = self.create_publisher(String, "planned_path", 1)
 
         self.pos_sub = self.create_subscription(
             Pose2D,
