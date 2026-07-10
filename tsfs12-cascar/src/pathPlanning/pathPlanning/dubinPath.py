@@ -95,7 +95,7 @@ class dubinsPath(Node):
         D = np.linalg.norm(circleEndCW - circleStartCCW)
         if D >= 2*R:
             #Find internal tangents
-            phi = np.atan2(circleEndCW[1]-circleStartCCW[1], circleEndCW[0]-circleStartCCW[0])
+            phi = atan2(circleEndCW[1]-circleStartCCW[1], circleEndCW[0]-circleStartCCW[0])
             alpha = np.arccos(2*R / D)
             theta = phi - alpha
 
@@ -111,7 +111,7 @@ class dubinsPath(Node):
         D = np.linalg.norm(circleEndCCW - circleStartCW)
         if D >= 2*R:
             #Find internal tangents
-            phi = np.atan2(circleEndCCW[1]-circleStartCW[1], circleEndCCW[0]-circleStartCW[0])
+            phi = atan2(circleEndCCW[1]-circleStartCW[1], circleEndCCW[0]-circleStartCW[0])
             alpha = np.arccos(2*R / D)
             theta = phi + alpha
 
@@ -174,8 +174,8 @@ class dubinsPath(Node):
 
         #Sample first arc
         print("arc1")
-        start_angle = np.atan2(path['startPos'][1]-path['startCircle'][1], path['startPos'][0]-path['startCircle'][0])
-        end_angle = np.atan2(path['startTang'][1]-path['startCircle'][1], path['startTang'][0]-path['startCircle'][0])
+        start_angle = atan2(path['startPos'][1]-path['startCircle'][1], path['startPos'][0]-path['startCircle'][0])
+        end_angle = atan2(path['startTang'][1]-path['startCircle'][1], path['startTang'][0]-path['startCircle'][0])
         print(self.sampleArc(start_angle, end_angle, path['startDir'], R, path["startCircle"], spacing))
         sampledPath.extend(self.sampleArc(start_angle, end_angle, path['startDir'], R, path["startCircle"], spacing))
 
@@ -185,8 +185,8 @@ class dubinsPath(Node):
 
         #Sample second arc
         print("arc2")
-        start_angle = np.atan2(path['endTang'][1]-path['endCircle'][1], path['endTang'][0]-path['endCircle'][0])
-        end_angle = np.atan2(path['endPos'][1]-path['endCircle'][1], path['endPos'][0]-path['endCircle'][0])
+        start_angle = atan2(path['endTang'][1]-path['endCircle'][1], path['endTang'][0]-path['endCircle'][0])
+        end_angle = atan2(path['endPos'][1]-path['endCircle'][1], path['endPos'][0]-path['endCircle'][0])
         sampledPath.extend(self.sampleArc(start_angle, end_angle, path['endDir'], R, path["endCircle"], spacing))
 
         return sampledPath
