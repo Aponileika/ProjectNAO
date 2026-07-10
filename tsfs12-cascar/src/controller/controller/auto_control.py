@@ -77,6 +77,8 @@ class AutomaticControl(Node):
         self.curr_node = 1
         self.distanceTraveled = 0
 
+        self.get_logger().info("PATH RECIEVED")
+
 
     def control_loop(self):
         #now = self.get_clock().now()

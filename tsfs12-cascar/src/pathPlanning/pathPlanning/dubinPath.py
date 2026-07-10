@@ -22,7 +22,7 @@ class dubinsPath(Node):
 
         self.pos_sub = self.create_subscription(
             Pose2D,
-            "pos",
+            "pose",
             self.pos_callback,
             10
         )
@@ -57,6 +57,9 @@ class dubinsPath(Node):
             data = self.plannedPath
             msg.data = json.dumps(data)
             self.path_publsiher.publish(msg)
+
+            self.path_planned = True
+            self.get_logger().info("PATH PLANNED")
 
 
     def dubinsPath(self, startPos, startAngle, endPos, endAngle, debug=False):
