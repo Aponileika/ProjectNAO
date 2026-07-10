@@ -205,7 +205,7 @@ class dubinsPath(Node):
         return sampledPath
 
 
-    def sampleTangent(path, spacing):
+    def sampleTangent(self, path, spacing):
         tangentLength = np.sqrt( (path['endTang'][0]-path['startTang'][0])**2 + (path['endTang'][1]-path['startTang'][1])**2 )
         sampleCount = round(tangentLength / spacing)
 
