@@ -39,6 +39,8 @@ class dubinsPath(Node):
         self.yGoal = 4
         self.thetaGoal = -np.pi/2
 
+        self.path_planned = False
+
 
     def pos_callback(self, msg):
         self.x = msg.x
@@ -46,13 +48,14 @@ class dubinsPath(Node):
         self.theta = msg.theta
 
         #FOR TEST PURPOSES; REPLACE WITH ACTION
-        self.plennedPath = self.dubinsPath(self.x, self.y, self.theta,
-                                           self.xGoal, self.yGoal, self.thetaGoal)
+        if not self.path_planned:
+            self.plennedPath = self.dubinsPath(self.x, self.y, self.theta,
+                                            self.xGoal, self.yGoal, self.thetaGoal)
 
-        msg = String()
-        data = self.plannedPath
-        msg.data = json.dumps(data)
-        self.path_publsiher.publish(msg)
+            msg = String()
+            data = self.plannedPath
+            msg.data = json.dumps(data)
+            self.path_publsiher.publish(msg)
 
 
     def dubinsPath(self, startPos, startAngle, endPos, endAngle, debug=False):
