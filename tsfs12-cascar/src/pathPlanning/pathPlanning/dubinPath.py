@@ -53,6 +53,7 @@ class dubinsPath(Node):
             self.plennedPath = self.dubinsPath(np.array([self.x, self.y]), self.theta,
                                                np.array([self.xGoal, self.yGoal]), self.thetaGoal)
 
+            print(self.plannedPath)
             msg = String()
             data = self.plannedPath
             msg.data = json.dumps(data)
