@@ -1,12 +1,14 @@
 from math import *
 import matplotlib.pyplot as plt
 from time import sleep
+import json
 
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
 from cascar_msgs.msg import CarCommand, CarMeasurement
 from geometry_msgs.msg import Pose2D
+from std_msgs.msg import String
 
 
 class AutomaticControl(Node):
@@ -25,6 +27,13 @@ class AutomaticControl(Node):
             Pose2D,
             "pose",
             self.pos_callback,
+            10
+        )
+
+        self.path_sub = self.create_subscription(
+            String,
+            "planned_path",
+            self.path_callback,
             10
         )
 
@@ -48,7 +57,7 @@ class AutomaticControl(Node):
         self.ky = ky
         self.ktheta = ktheta
 
-        self.path = path
+        self.path = None
         self.curr_node = 1
 
         self.distanceTraveled = 0
@@ -61,32 +70,39 @@ class AutomaticControl(Node):
         self.y = msg.y
         self.theta = msg.theta
 
+    
+    def path_callback(self, msg):
+        self.path = json.loads(msg.data)
+
+        self.curr_node = 1
+        self.distanceTraveled = 0
+
 
     def control_loop(self):
         #now = self.get_clock().now()
         #dt = (now - self.last_time).nanoseconds / 1e9
         #self.last_time = now
+        if self.path != None:
+            ed, ey, etheta = self.get_errors()
 
-        ed, ey, etheta = self.get_errors()
+            self.control_system(ed, ey, etheta)
 
-        self.control_system(ed, ey, etheta)
+            msg = CarCommand()
+            #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
+            self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}, et={etheta:.3f}, v={self.v:.3f}")
 
-        msg = CarCommand()
-        #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
-        self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}, et={etheta:.3f}, v={self.v:.3f}")
+            speed_norm = self.v / self.vmax
+            steer_norm = self.delta / self.delta_max
 
-        speed_norm = self.v / self.vmax
-        steer_norm = self.delta / self.delta_max
+            max_speed = 100.0       #Actual command max
+            max_steer = 95.0  
 
-        max_speed = 100.0       #Actual command max
-        max_steer = 95.0  
+            msg.speed = speed_norm * max_speed
+            msg.steer = steer_norm * max_steer
 
-        msg.speed = speed_norm * max_speed
-        msg.steer = steer_norm * max_steer
+            self.car_publisher_.publish(msg)
 
-        self.car_publisher_.publish(msg)
-
-        self.get_next_node()
+            self.get_next_node()
 
 
     def control_system(self, ed, ey, etheta):
