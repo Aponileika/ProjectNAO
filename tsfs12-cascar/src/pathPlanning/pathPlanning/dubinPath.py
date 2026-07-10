@@ -50,8 +50,8 @@ class dubinsPath(Node):
 
         #FOR TEST PURPOSES; REPLACE WITH ACTION
         if not self.path_planned:
-            self.plennedPath = self.dubinsPath(self.x, self.y, self.theta,
-                                            self.xGoal, self.yGoal, self.thetaGoal)
+            self.plennedPath = self.dubinsPath(np.array([self.x, self.y]), self.theta,
+                                               np.array([self.xGoal, self.yGoal]), self.thetaGoal)
 
             msg = String()
             data = self.plannedPath
