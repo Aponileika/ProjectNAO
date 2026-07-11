@@ -213,8 +213,8 @@ def main(args=None):
         vmax=1,
         delta_max=pi/4,
         kx=1,
-        ky=3,
-        ktheta=1
+        ky=2,
+        ktheta=2
     )
 
     rclpy.spin(node)
