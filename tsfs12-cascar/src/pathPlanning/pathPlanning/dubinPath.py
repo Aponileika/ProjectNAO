@@ -186,6 +186,9 @@ class dubinsPath(Node):
         end_angle = atan2(path['endPos'][1]-path['endCircle'][1], path['endPos'][0]-path['endCircle'][0])
         sampledPath.extend(self.sampleArc(start_angle, end_angle, path['endDir'], R, path["endCircle"], spacing))
 
+        #Add distances and angles between points
+        sampledPath = self.getPathAngle(sampledPath)
+
         return sampledPath
 
     def sampleArc(self, startAngle, endAngle, dir, R, center, spacing):
@@ -230,6 +233,8 @@ class dubinsPath(Node):
             
             next_node["distance"] = distance
             next_node["theta"] = angle
+
+        return path
 
 
     def getPathLength(self, path, R):
