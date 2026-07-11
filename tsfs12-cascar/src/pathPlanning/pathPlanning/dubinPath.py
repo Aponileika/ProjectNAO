@@ -50,7 +50,7 @@ class dubinsPath(Node):
 
         #FOR TEST PURPOSES; REPLACE WITH ACTION
         if not self.path_planned:
-            self.plennedPath = self.dubinsPath(np.array([self.x, self.y]), self.theta,
+            self.plannedPath = self.dubinsPath(np.array([self.x, self.y]), self.theta,
                                                np.array([self.xGoal, self.yGoal]), self.thetaGoal)
 
             print(self.plannedPath)
@@ -174,18 +174,14 @@ class dubinsPath(Node):
         sampledPath = []
 
         #Sample first arc
-        print("arc1")
         start_angle = atan2(path['startPos'][1]-path['startCircle'][1], path['startPos'][0]-path['startCircle'][0])
         end_angle = atan2(path['startTang'][1]-path['startCircle'][1], path['startTang'][0]-path['startCircle'][0])
-        print(self.sampleArc(start_angle, end_angle, path['startDir'], R, path["startCircle"], spacing))
         sampledPath.extend(self.sampleArc(start_angle, end_angle, path['startDir'], R, path["startCircle"], spacing))
 
         #Sample tangent
-        print("tang")
         sampledPath.extend(self.sampleTangent(path, spacing))
 
         #Sample second arc
-        print("arc2")
         start_angle = atan2(path['endTang'][1]-path['endCircle'][1], path['endTang'][0]-path['endCircle'][0])
         end_angle = atan2(path['endPos'][1]-path['endCircle'][1], path['endPos'][0]-path['endCircle'][0])
         sampledPath.extend(self.sampleArc(start_angle, end_angle, path['endDir'], R, path["endCircle"], spacing))
@@ -246,9 +242,6 @@ class dubinsPath(Node):
         start_angle = atan2(path['endTang'][1]-path['endCircle'][1], path['endTang'][0]-path['endCircle'][0])
         end_angle = atan2(path['endPos'][1]-path['endCircle'][1], path['endPos'][0]-path['endCircle'][0])
         arcLengthEnd = R * self.mod2pi(path['endDir'] * (end_angle - start_angle))
-
-        print(2*R*np.pi)
-        print(arcLengthStart, tangentLength, arcLengthEnd)
 
         return arcLengthStart + tangentLength + arcLengthEnd
 
