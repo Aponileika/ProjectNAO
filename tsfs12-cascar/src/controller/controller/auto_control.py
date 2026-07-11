@@ -212,7 +212,7 @@ def main(args=None):
         Ts=0.05,
         vmax=1,
         delta_max=pi/4,
-        kx=1,
+        kx=2,
         ky=2,
         ktheta=2
     )
