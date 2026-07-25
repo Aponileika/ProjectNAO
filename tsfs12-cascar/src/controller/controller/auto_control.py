@@ -12,7 +12,7 @@ from std_msgs.msg import String
 
 
 class AutomaticControl(Node):
-    def __init__(self, Ts: float, vmax: float, delta_max:float, kx: float, ky: float, ktheta:float):
+    def __init__(self, Ts: float, vmax: float, delta_max:float, kx: float, kix: float, ky: float, ktheta:float):
 
         #Start node
         super().__init__("automatic_control")
@@ -54,6 +54,8 @@ class AutomaticControl(Node):
         self.v = 0
         self.delta = 0
         self.kx = kx
+        self.kix = kix
+        self.ied = 0
         self.ky = ky
         self.ktheta = ktheta
 
@@ -62,6 +64,7 @@ class AutomaticControl(Node):
 
         self.distanceTraveled = 0
 
+        self.last_time = None
         self.timer = self.create_timer(self.Ts, self.control_loop)
 
 
@@ -82,11 +85,19 @@ class AutomaticControl(Node):
 
 
     def control_loop(self):
-        #now = self.get_clock().now()
-        #dt = (now - self.last_time).nanoseconds / 1e9
-        #self.last_time = now
+        if self.last_time is None:
+            self.last_time = self.get_clock().now()
+
+        now = self.get_clock().now()
+        dt = (now - self.last_time).nanoseconds / 1e9
+        self.last_time = now
+
         if self.path != None:
             ed, ey, etheta = self.get_errors()
+
+            #Motverka integraluppvridning
+            if abs((self.ied + ed*dt)*self.kix) < 0.95 * self.vmax:
+                self.ied += ed * dt
 
             self.control_system(ed, ey, etheta)
 
@@ -113,7 +124,7 @@ class AutomaticControl(Node):
         if ed < 0.01:
             ed = 0
         
-        v = self.vmax * min(0.9*cos(etheta) + 0.1, self.kx * ed)
+        v = self.vmax * min(0.9*cos(etheta) + 0.1, self.kx * ed + self.kix * self.ied)
         self.v = self.value_limit(v, self.vmax, -self.vmax)
 
         # Adjust heading error for reverse
@@ -213,6 +224,7 @@ def main(args=None):
         vmax=1,
         delta_max=pi/4,
         kx=2,
+        kix = 1,
         ky=2,
         ktheta=2
     )
