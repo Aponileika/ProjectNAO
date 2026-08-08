@@ -44,9 +44,9 @@ class Localization(Node):
         self.VodoTime = 0
         self.oldVodoTime = None
 
-        self.x = 1
+        self.x = 0
         self.y = 0
-        self.theta = pi/2
+        self.theta = 0
 
         self.timer = self.create_timer(self.Ts, self.updateState)
 
