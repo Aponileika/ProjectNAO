@@ -6,38 +6,40 @@
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core/eigen.hpp>
 
+#include "../include/LG_Logging.hpp"
 #include "../include/CArenaAlloc.h"
-#include "../include/CM_Camera.hpp"
 #include "../include/EP_CorrespondingPoints.hpp"
 #include "../include/FR_Frames.hpp"
 #include "../include/MX_Matrix.hpp"
 #include "../include/OB_Observations.hpp"
 #include "../include/PT_Points.hpp"
 #include "../include/SL_SLAM.hpp"
-#include "../include/VT_VecUtils.hpp"
+#include "../include/PANTO_Utils.hpp"
 #include "../include/VW_Views.hpp"
-#include "../include/LG_Logging.hpp"
+#include "../include/CM_Camera.hpp"
 #include "../include/OP_BA.hpp"
 #include "../include/VIZ_Visualization.hpp"
 #include "../include/FEAT_Features.hpp"
 #include "../include/PROJ_ProjectiveUtils.hpp"
+#include "../include/PANTO_Utils.hpp"
 #include "../include/Config.hpp"
 
+#include "LG_Logging.cpp"
 #include "CArenaAlloc.c"
-#include "CM_Camera.cpp"
 #include "EP_CorrespondingPoints.cpp"
 #include "FR_Frames.cpp"
 #include "MX_Matrix.cpp"
 #include "OB_Observations.cpp"
 #include "PT_Points.cpp"
 #include "SL_SLAM.cpp"
-#include "VT_VecUtils.cpp"
+#include "PANTO_Utils.cpp"
 #include "VW_Views.cpp"
-#include "LG_Logging.cpp"
+#include "CM_Camera.cpp"
 #include "OP_BA.cpp"
 #include "VIZ_Visualization.cpp"
 #include "FEAT_Features.cpp"
 #include "PROJ_ProjectiveUtils.cpp"
+#include "PANTO_Utils.cpp"
 
 int main(int argc, char* argv[])
 {
@@ -52,7 +54,7 @@ int main(int argc, char* argv[])
     SL_InitSlam();
     LG_Log(LogSeverity::DBG, "Setting intrinsics\n");
     LG_Log(LogSeverity::DBG, "[main] OpenCV is using %lld threads \n", cv::getNumThreads());
-    CM_SetIntrinsics("");
+    CM_SetIntrinsics();
     LG_Log(LogSeverity::DBG, "Starting SLAMLoop\n");
     SL_SlamLoop(num_loops);
     return 0;

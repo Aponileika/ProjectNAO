@@ -3,6 +3,8 @@
 #include <string>
 #include "CArenaAlloc.h"
 
+// #define PANTO_DBG
+
 #define CERES_MAX_ITER 200
 #define CERES_NUM_THREADS 8
 #define CERES_HUBER_THRESHOLD 2.0f
@@ -17,15 +19,14 @@
 #define PANTO_INITFRAMETHRESHOLDCORRP 50
 #define OPENCV_AKAZETHRESHOLD 0.0005f
 
-#define PANTO_SLAMSTARTMSG "\
-    --------------------------------\n\
-    --------------------------------\n\
-    --------------------------------\n\
-            SLAM IS STARTING\n\
-    --------------------------------\n\
-    --------------------------------\n\
-    --------------------------------\n\
-"
+const char* PANTO_SLAMSTARTMSG =
+"        _____                 ^\n"
+"    ___/_____\\___             |\n"
+"  _/  _     _  \\_        .----O----.      [o_o]\n"
+" /__/(_)---(_)\\__\\_______|         |_____/|___|\\\n"
+"        \\______/          \\________/      /|   |\\\n"
+"\n"
+"              P a n t o P i l o t\n";
 
 #define PANTO_USE_DATASET true
 #define PANTO_DATASET_BASE_PATH "./datasets"
@@ -35,6 +36,25 @@
 
 #define DATASET_SEQUENCES \
     X(TUM_FREIBURG1_XYZ, RGB_ORDERED, "rgb_ordered")
+
+//fx, fy, s, cx, cy
+//k1, k2, p1, p2, k3
+#define DATASET_INTRINSICS \
+    X(TUM_FREIBURG1_XYZ, \
+            (517.3f), (516.5f), (0.0f), (318.6f), (255.3f), \
+            (0.2624f), (-0.9531f), (-0.0054f), (0.0026f), (1.1633f)) \
+    X(WEBCAM_JE, \
+            (9.747187409387847*100.0f), (9.765223334221673*100.0f), (0.0f), \
+            (6.663249058750432*100.0f), (3.374737864029501*100.0f), \
+            (6.475901025911835*0.01f), (-1.903655376657792*0.1f), (-3.666863513699757*0.001f), \
+            (2.119531347424837*0.001f), (1.113497353924944*0.1f))
+
+enum class Dataset : u8
+{
+#define X(name, ...) name,
+    DATASET_INTRINSICS
+#undef X
+};
 
 #define X(dataset, path) \
     constexpr const char* DATASET_PATH_##dataset = path;
@@ -48,6 +68,7 @@ DATASET_SEQUENCES
 
 constexpr auto panto_dataset_path = DATASET_PATH_TUM_FREIBURG1_XYZ;
 constexpr auto panto_sequence_path = SEQUENCE_PATH_TUM_FREIBURG1_XYZ_RGB_ORDERED;
+const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 
 #define PANTO_LOGPATH "/Users/Jonathan/Programmering/FIA/ProjectNAO/vision_and_nav/CPP_SLAM/logs/log.txt"
 
@@ -65,6 +86,21 @@ constexpr auto panto_sequence_path = SEQUENCE_PATH_TUM_FREIBURG1_XYZ_RGB_ORDERED
 
 #define PANTO_EPIPOLARTRESHOLD 2.0f
 
-// TODO add config for camera intrinsics
+#define PANTO_PIXEL_MEAS_STD_DEV 1.0f
+
+/*                      
+ ******************************************************************                                                  
+ ******************************************************************                                                  
+ ******************************************************************                                                  
+ *
+ *                      General Macros
+ *
+ ******************************************************************                                                  
+ ******************************************************************                                                  
+ ******************************************************************                                                  
+ */
+
+#define PANTO_SIGNX(x) \
+    ((x < 0.0f) ? -1.0f : 1.0f)
 
 #endif // __CONFIG_HPP_

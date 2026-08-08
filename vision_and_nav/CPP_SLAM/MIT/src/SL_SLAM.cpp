@@ -1,7 +1,6 @@
 #include "../include/SL_SLAM.hpp"
 #include "CM_Camera.hpp"
 #include "EP_CorrespondingPoints.hpp"
-#include "FEAT_Features.hpp"
 #include "FR_Frames.hpp"
 #include "OB_Observations.hpp"
 #include "OP_BA.hpp"
@@ -24,9 +23,7 @@ void SL_InitSlam()
     slam.Tpoints = PT_InitPoints();
     slam.Tobs = OB_InitObs();
     slam.frame_pair = {};
-    void* extr = static_cast<void*>(AKAZE_InitAKAZE(OPENCV_AKAZETHRESHOLD));
-    LG_Log(LogSeverity::DBG, "[SL_InitSlam] AKAZE init ptr = %p\n", extr);
-    EP_InitCPointExtractor(extr, AKAZE_GetMatches);
+    EP_InitCPointExtractor();
     FR_InitFrameGetter();
 }
 
@@ -57,8 +54,8 @@ static void __SL_SlamStart()
     {
         slam.frame_pair.second = __SL_GetNextFrame(slam.Tview->views.size());
         LG_Log(LogSeverity::DBG, "[__SL_SlamStart] Getting corresponding points between frames\n");
-        PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
-        // EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
+        MatchesRet matches = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
+        const auto& corrp = matches.Matches; 
 
         LG_Log(LogSeverity::DBG, "[__SL_SlamStart]Finding essential matrix\n");
         LG_Log(LogSeverity::DBG, "[__SL_SlamStart]Num points before RANSAC = %lld\n", corrp.first.size());
@@ -91,22 +88,31 @@ static void __SL_SlamStart()
 
         cv::Mat P1, P2;
         P1 = K * cv::Mat::eye(3, 4, CV_64F);
-        P2 = K * Rt;
 
-        PointPair2D filteredcorrp = EP_FilterPointPairByMask(corrp, poseMask);
-        corrp = std::move(filteredcorrp);
+        PointPair2D FilteredCorrespondences = EP_FilterPointPairByMask(corrp, poseMask);
         LG_Log(LogSeverity::DBG, "number of corrp after masking = %lld\n", corrp.first.size());
-        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corrp.first, corrp.second);
+        EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, FilteredCorrespondences.first, FilteredCorrespondences.second);
 
-        cv::Mat points3d;
         LG_Log(LogSeverity::DBG, "Triangulating\n");
-        LG_Log(LogSeverity::DBG, "[__SL_SlamStart] first point = (%lf, %lf)\n", corrp.first[0].x, corrp.first[0].y);
-        cv::triangulatePoints(P1, P2, corrp.first, corrp.second, points3d);
-
+        LG_Log(LogSeverity::DBG, "[__SL_SlamStart] first point = (%lf, %lf)\n", FilteredCorrespondences.first[0].x, FilteredCorrespondences.first[0].y);
+        const std::vector<std::vector<Eigen::Vector3d>> PixelCoords = PANTO_PointPair2Eigen(FilteredCorrespondences);
+        Eigen::Matrix<fp64, 3, 4> T1 = Eigen::Matrix<fp64, 3, 4>::Identity();
+        Eigen::MatrixXd T2 = PANTO_Cv2Eigen<Eigen::MatrixXd>(Rt);
+        u64 n = PixelCoords.size();
+        std::vector<std::vector<Eigen::Matrix4d>> T(n);
+        for(u64 i = 0; i < n; i++)
+        {
+            T[i].resize(2);
+            T[i][0] = T1;
+            T[i][1] = T2;
+        }
+        
+        Eigen::Matrix3d K = PANTO_Cv2Eigen<Eigen::Matrix3d>(CM_GetIntrinsics()->K);
+        std::vector<Eigen::Vector4d> Points3D = PROJ_TriangulateLOST(PixelCoords, T, K);
         LG_Log(LogSeverity::DBG, "Adding points\n");
-        PT_AddPoints(slam.Tpoints, points3d);
+        PT_AddPoints(slam.Tpoints, Points3D);
         LG_Log(LogSeverity::DBG, "Adding observations\n");
-        OB_AddObs(slam.Tobs, slam.Tview, slam.Tpoints, corrp);
+        OB_AddObs(slam.Tobs, slam.Tview, slam.Tpoints, FilteredCorrespondences);
         isinit = true;
     }
     __SL_PrintSlam();
@@ -119,16 +125,9 @@ void __SL_SlamLoopBundle()
 
 PointPair2D __SL_SlamLoopPnP()
 {
-    PointPair2D corrp = EP_CorrespExtract(slam.frame_pair.first, slam.frame_pair.second);   
-    LG_Log(LogSeverity::DBG, "[__SL_SlamLoopPnP] Found %d correspondences betwen new frame pair\n", corrp.first.size());
-    if(corrp.first.size() < PANTO_NEWFRAMECORRPTHRESHOLD)
-    {
-        LG_Log(LogSeverity::DBG, "not enough points found for new frame found %d, need %d\n", 
-                corrp.first.size(), PANTO_NEWFRAMECORRPTHRESHOLD);
-        return {};
-    }
+    DescRet CorrespondingPoints = EP_GetDescriptors(slam.frame_pair.second);   
     LG_Log(LogSeverity::DBG, "Solving pnp\n");
-    struct PnPret pnpret = OB_SolvePnP(corrp, slam.Tview, slam.Tobs, slam.Tpoints);
+    struct PnPret pnpret = OB_SolvePnP(CorrespondingPoints.Matches, slam.Tview, slam.Tobs, slam.Tpoints);
     if(pnpret.ret == PNP_NOT_ENOUGH_2D3D)
     {
         LG_Log(LogSeverity::DBG, "not enough 2d3d in pnp\n");
@@ -181,10 +180,10 @@ void __SL_SlamLoop(i32 num_loops)
         cv::Mat E = EP_EFromRigid(R21t21.first, R21t21.second);
         LG_Log(LogSeverity::DBG, "Finding corrp with epipolar constraint\n");
 
-        PointPair2D corr_p = EP_FindCorrpEpipolar(nonpnpcorrp, E);
+        PointPair2D corrPoints = EP_FindCorrpEpipolar(nonpnpcorrp, E);
         // EP_DrawCorrespondences(slam.frame_pair.first, slam.frame_pair.second, corr_p.first, corr_p.second);
-        LG_Log(LogSeverity::DBG, "Found %lld corresponding points after filtering\n", corr_p.first.size());
-        if(corr_p.first.size() < 1)
+        LG_Log(LogSeverity::DBG, "Found %lld corresponding points after filtering\n", corrPoints.first.size());
+        if(corrPoints.first.size() < 1)
         {
             LG_Log(LogSeverity::DBG, "Found no corresponding points after filtering\n");
             continue;
@@ -197,16 +196,27 @@ void __SL_SlamLoop(i32 num_loops)
         cv::hconcat(cam2.R, cam2.t, Rt2nd);
 
         cv::Mat P1, P2;
-        P1 = K * Rt1st;
-        P2 = K * Rt2nd;
 
-        cv::Mat points3d;
+        const std::vector<std::vector<Eigen::Vector3d>> pixelCoords = PANTO_PointPair2Eigen(corrPoints);
+        Eigen::MatrixXd T1 = PANTO_Cv2Eigen<Eigen::MatrixXd>(Rt1st);
+        Eigen::MatrixXd T2 = PANTO_Cv2Eigen<Eigen::MatrixXd>(Rt2nd);
+        u64 n = pixelCoords.size();
+        std::vector<std::vector<Eigen::Matrix4d>> T(n);
+        for(u64 i = 0; i < n; i++)
+        {
+            T[i].resize(2);
+            T[i][0] = T1;
+            T[i][1] = T2;
+        }
+        
+        Eigen::Matrix3d K = PANTO_Cv2Eigen<Eigen::Matrix3d>(CM_GetIntrinsics()->K);
+        std::vector<Eigen::Vector4d> points3d = PROJ_TriangulateLOST(pixelCoords, T, K);
+
         LG_Log(LogSeverity::DBG, "Triangulating new points\n");
-        cv::triangulatePoints(P1, P2, corr_p.first, corr_p.second, points3d);
         LG_Log(LogSeverity::DBG, "Adding points\n");
         PT_AddPoints(slam.Tpoints, points3d);
         LG_Log(LogSeverity::DBG, "Adding observations\n");
-        OB_AddObs(slam.Tobs, slam.Tview, slam.Tpoints, corr_p);
+        OB_AddObs(slam.Tobs, slam.Tview, slam.Tpoints, corrPoints);
         __SL_PrintSlam();
     }
     OP_BundleAdjust(slam.Tview, slam.Tobs, slam.Tpoints);

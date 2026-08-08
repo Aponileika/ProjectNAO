@@ -1,40 +1,40 @@
 #include "../include/EP_CorrespondingPoints.hpp"
+#include "EP_CorrespondingPointsPriv.hpp"
 #include "CM_Camera.hpp"
-#include "FEAT_Features.hpp"
 #include "LG_Logging.hpp"
 #include "PT_Points.hpp"
 
-static struct CorrespondenceExtractor ext;
+struct AKAZEExtract AkazeExtract;
 
-void EP_InitCPointExtractor(void* extractor, CorrPReturn (*GetCorrp)(void* extractor, cv::Mat img1, cv::Mat img2))
+void EP_InitCPointExtractor(void)
 {
-    //extractor must be initiated
-    ext.extractor = extractor;
-    ext.GetCorrp = GetCorrp;
+    __EP_InitAkaze();
 }
 
-PointPair2D EP_CorrespExtract(cv::Mat img1, cv::Mat img2)
+MatchesRet EP_GetCorrespondences(cv::Mat Img1, cv::Mat Img2)
 {
-    LG_Log(LogSeverity::DBG, "[EP_CorrespExtract] Getting corrp\n");
-    PointPair2D out = ext.GetCorrp(ext.extractor, img1, img2).first;
-    return out;
+    LG_Log(LogSeverity::DBG, "[EP_GetCorrespondences] Getting Correspondences\n");
+    MatchesRet Ret = __EP_GetMatches(Img1, Img2);
+    return Ret;
 }
 
-#define SIGNX(x) \
-    ((x < 0.0f) ? -1.0f : 1.0f)
-
-cv::Mat __EP_CrossProdMat(cv::Mat x)
+DescRet EP_GetDescriptors(cv::Mat Img)
 {
-    assert(x.rows == 3);
-    fp64 x1 = x.at<double>(0, 0);
-    fp64 x2 = x.at<double>(1, 0);
-    fp64 x3 = x.at<double>(2, 0);
-    cv::Mat crossprodmat = (cv::Mat_<double>(3,3) <<
-            0.0f, -x3, x2, 
-            x3, 0.0f, -x1,
-            -x2, x1, 0.0f
-    );
-    return crossprodmat;
+    LG_Log(LogSeverity::DBG, "[EP_GetDescriptors] Getting Descriptors\n");
+    DescRet Ret = __EP_GetDesc(Img);
+    return Ret;
+}
+
+MatchesRet EP_GetMatches(std::pair<cv::Mat, cv::Mat> Descriptors, std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> Points)
+{
+    LG_Log(LogSeverity::DBG, "[EP_GetMatches] Getting Matches\n");
+    MatchesRet Ret = __EP_GetCorrespondingPoints(Descriptors, Points);
+    return Ret;
+}
+
+MatchesRet EP_GetMatches(DescRet NewFrameFeatures, ViewSet Views, ObservationSet Observations)
+{
+    
 }
 
 cv::Mat EP_EFromRigid(cv::Mat R, cv::Mat t)
@@ -173,4 +173,207 @@ void EP_DrawCorrespondences(const cv::Mat& img1, const cv::Mat& img2, const std:
 
     cv::imshow(windowName, canvas);
     cv::waitKey(0);
+}
+
+/*
+ *************************************************************
+ *************************************************************
+ *************************************************************
+ *                      Private functions
+ *************************************************************
+ *************************************************************
+ *************************************************************
+ * */
+
+cv::Mat __EP_CrossProdMat(cv::Mat x)
+{
+    assert(x.rows == 3);
+    fp64 x1 = x.at<double>(0, 0);
+    fp64 x2 = x.at<double>(1, 0);
+    fp64 x3 = x.at<double>(2, 0);
+    cv::Mat crossprodmat = (cv::Mat_<double>(3,3) <<
+            0.0f, -x3, x2, 
+            x3, 0.0f, -x1,
+            -x2, x1, 0.0f
+    );
+    return crossprodmat;
+}
+
+void __EP_InitAkaze(void)
+{
+    const fp64 Threshold = OPENCV_AKAZETHRESHOLD;
+    LG_Log(LogSeverity::DBG, "[__EP_Init__EP] initing AkazeExtract with %lf\n", Threshold);
+    AkazeExtract.akaze = cv::AKAZE::create();
+    AkazeExtract.akaze->setThreshold(Threshold);
+    AkazeExtract.akaze->setNOctaves(4);
+    AkazeExtract.akaze->setNOctaveLayers(4);
+    AkazeExtract.matcher = cv::BFMatcher(cv::NORM_HAMMING, false);
+    AkazeExtract.matchratio = PANTO_MATCHRATIO;
+}
+
+struct MatchesRet __EP_GetMatches(cv::Mat img1, cv::Mat img2)
+{
+
+    LG_Log(LogSeverity::DBG, "[__EP_GetMatches] img1 empty=%d rows=%d cols=%d type=%d channels=%d data=%p\n",
+       img1.empty(), img1.rows, img1.cols, img1.type(), img1.channels(), img1.data);
+
+    LG_Log(LogSeverity::DBG, "[__EP_GetMatches] img2 empty=%d rows=%d cols=%d type=%d channels=%d data=%p\n",
+       img2.empty(), img2.rows, img2.cols, img2.type(), img2.channels(), img2.data);
+    LG_Log(LogSeverity::DBG, "[__EP_GetMatches] detect and compute img1\n");
+
+    std::vector<cv::KeyPoint> ANMSKeyPoints1 = __EP_Anms(AkazeExtract.akaze, img1);
+    cv::Mat ANMSDescriptors1;
+    AkazeExtract.akaze->compute(img1, ANMSKeyPoints1, ANMSDescriptors1);
+
+    LG_Log(LogSeverity::DBG, "[__EP_GetMatches] detect and compute img2\n");
+    std::vector<cv::KeyPoint> ANMSKeyPoints2 = __EP_Anms(AkazeExtract.akaze, img2);
+    cv::Mat ANMSDescriptors2;
+    AkazeExtract.akaze->compute(img2, ANMSKeyPoints2, ANMSDescriptors2);
+
+    if(ANMSDescriptors1.empty() || ANMSDescriptors2.empty())
+    {
+        std::cerr << "No descriptors found in EP_CorrespExtract\n";
+        return {};
+    }
+
+    struct MatchesRet Ret = __EP_GetCorrespondingPoints(ANMSDescriptors1, ANMSDescriptors2, ANMSKeyPoints1, ANMSKeyPoints2);
+    return Ret;
+}
+
+DescRet __EP_GetDesc(cv::Mat img)
+{
+    cv::Mat des;
+
+    LG_Log(LogSeverity::DBG, "[__EP_GetDesc] img1 empty=%d rows=%d cols=%d type=%d channels=%d data=%p\n",
+       img.empty(), img.rows, img.cols, img.type(), img.channels(), img.data);
+
+    LG_Log(LogSeverity::DBG, "[__EP_GetDesc] detect and compute img\n");
+    std::vector<cv::KeyPoint> kp_anms = __EP_Anms(AkazeExtract.akaze, img);
+    cv::Mat desanms;
+    AkazeExtract.akaze->compute(img, kp_anms, desanms);
+
+    LG_Log(LogSeverity::DBG, "[__EP_GetDesc] detect and compute img2\n");
+
+    struct CameraIntrinsics* ci = CM_GetIntrinsics();
+    cv::Matx33d K = ci->K;
+    cv::Vec<fp64, 5> distcoeffs = ci->distcoeffs;
+
+    if(desanms.empty()) 
+    {
+        std::cerr << "No descriptors found inf EP_CorrespExtract\n";
+        return {};
+    }
+
+    std::vector<cv::Point2d> out;
+
+    for (const auto& m : kp_anms) {
+        out.push_back(m.pt);
+    }
+
+    LG_Log(LogSeverity::DBG, "[__EP_GetDesc] num descriptors AkazeExtract = %d\n", out.size());
+    std::vector<cv::Point2d> pd;
+    cv::undistortPoints(out, pd, K, distcoeffs, cv::noArray(), K);
+    out = pd;
+    struct DescRet ret;
+    ret.Points = out;
+    ret.Descriptors = desanms;
+
+    return ret;
+}
+
+static struct MatchesRet __EP_GetCorrespondingPoints(cv::Mat Desc1, cv::Mat Desc2, std::vector<cv::KeyPoint> KeyPoints1, std::vector<cv::KeyPoint> KeyPoints2)
+{
+    std::vector<std::vector<cv::DMatch>> Matches;
+    AkazeExtract.matcher.knnMatch(Desc1, Desc2, Matches, 2);
+
+    std::vector<cv::DMatch> GoodMatches;
+    for(const auto& m : Matches)
+    {
+        if(m.size() == 2 && m[0].distance < AkazeExtract.matchratio * m[1].distance)
+        {
+            GoodMatches.push_back(m[0]);
+        }
+    }
+    PointPair2D RetPoints;
+    cv::Mat Desc1Ret, Desc2Ret;
+    std::pair<cv::Mat, cv::Mat> DescRet(Desc1Ret, Desc2Ret);
+
+    for (const auto& m : GoodMatches) {
+        RetPoints.first.push_back(KeyPoints1[m.queryIdx].pt);
+        RetPoints.second.push_back(KeyPoints2[m.trainIdx].pt);
+        DescRet.first.push_back(Desc1.row(m.queryIdx));
+        DescRet.second.push_back(Desc2.row(m.trainIdx));
+    }
+
+    LG_Log(LogSeverity::DBG, "[__EP_GetMatches] num corrp AkazeExtract = %d\n", RetPoints.first.size());
+    struct CameraIntrinsics* CI = CM_GetIntrinsics();
+    std::vector<cv::Point2d> p1d, p2d;
+    cv::undistortPoints(RetPoints.first, p1d, CI->K, CI->distcoeffs, cv::noArray(),  CI->K);
+    cv::undistortPoints(RetPoints.second, p2d, CI->K, CI->distcoeffs, cv::noArray(), CI->K);
+    RetPoints = PointPair2D(p1d, p2d);
+    struct MatchesRet Ret = {
+        .Matches = RetPoints,
+        .Descriptors = DescRet
+    };
+    return Ret;
+}
+
+static struct MatchesRet __EP_GetCorrespondingPoints(std::pair<cv::Mat, cv::Mat> Descriptors, std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> Points)
+{
+    std::vector<std::vector<cv::DMatch>> Matches;
+    std::vector<cv::Point2d> KeyPoints1 = Points.first;
+    std::vector<cv::Point2d> KeyPoints2 = Points.second;
+    cv::Mat Desc1 = Descriptors.first;
+    cv::Mat Desc2 = Descriptors.second;
+    AkazeExtract.matcher.knnMatch(Desc1, Desc2, Matches, 2);
+
+    std::vector<cv::DMatch> GoodMatches(Matches.size());
+    for(const auto& m : Matches)
+    {
+        if(m.size() == 2 && m[0].distance < AkazeExtract.matchratio * m[1].distance)
+        {
+            GoodMatches.push_back(m[0]);
+        }
+    }
+    PointPair2D RetPoints;
+    cv::Mat Desc1Ret, Desc2Ret;
+    std::pair<cv::Mat, cv::Mat> DescRet(Desc1Ret, Desc2Ret);
+
+    for (const auto& m : GoodMatches) {
+        RetPoints.first.push_back(KeyPoints1[m.queryIdx]);
+        RetPoints.second.push_back(KeyPoints2[m.trainIdx]);
+        DescRet.first.push_back(Desc1.row(m.queryIdx));
+        DescRet.second.push_back(Desc2.row(m.trainIdx));
+    }
+
+    LG_Log(LogSeverity::DBG, "[__EP_GetMatches] num corrp AkazeExtract = %d\n", RetPoints.first.size());
+    struct CameraIntrinsics* CI = CM_GetIntrinsics();
+    std::vector<cv::Point2d> p1d, p2d;
+    cv::undistortPoints(RetPoints.first, p1d, CI->K, CI->distcoeffs, cv::noArray(),  CI->K);
+    cv::undistortPoints(RetPoints.second, p2d, CI->K, CI->distcoeffs, cv::noArray(), CI->K);
+    RetPoints = PointPair2D(p1d, p2d);
+    struct MatchesRet Ret = {
+        .Matches = RetPoints,
+        .Descriptors = DescRet
+    };
+    return Ret;
+}
+
+
+static std::vector<cv::KeyPoint> __EP_Anms(const cv::Ptr<cv::Feature2D> detector, cv::Mat img)
+{
+    std::vector<cv::KeyPoint> kp;
+    detector->detect(img, kp, cv::noArray());
+    std::sort(kp.begin(), kp.end(), [](cv::KeyPoint a, cv::KeyPoint b)
+                                    {
+                                        return a.response <= b.response;
+                                    });
+    std::vector<int> anmskp_mask = ssc(kp, kp.size(), 0.2, img.cols, img.rows);
+    std::vector<cv::KeyPoint> kp_anms;
+    kp_anms.resize(anmskp_mask.size());
+    for(std::size_t i = 0; i < anmskp_mask.size(); i++)
+    {
+        kp_anms[i] = kp[anmskp_mask[i]];
+    }
+    return kp_anms;
 }

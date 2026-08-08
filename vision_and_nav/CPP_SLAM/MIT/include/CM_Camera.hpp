@@ -32,7 +32,7 @@ struct Camera
 };
 
 
-void CM_SetIntrinsics(std::string path);
+void CM_SetIntrinsics();
 struct CameraIntrinsics* CM_GetIntrinsics();
 struct Camera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx);
 void CM_SetParametrization(struct Camera* cam);

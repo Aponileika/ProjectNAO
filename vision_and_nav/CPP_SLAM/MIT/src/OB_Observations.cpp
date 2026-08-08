@@ -1,10 +1,9 @@
 #include "../include/OB_Observations.hpp"
-#include "EP_CorrespondingPoints.hpp"
 #include "PROJ_ProjectiveUtils.hpp"
-#include "VT_VecUtils.hpp"
+#include "PANTO_Utils.hpp"
 
 static void __OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points,
-        cv::Point2d observation, u64 view_index, u64 point_index);
+        cv::Point2d observation, cv::Mat desc, u64 view_index, u64 point_index);
 static void __OB_AddObsPnP(struct ViewSet* views, struct ObservationSet* obs, struct PointSet* points, 
         std::vector<cv::Point2d> pnpPoints, std::vector<u64> points3Didx);
 
@@ -14,17 +13,19 @@ struct ObservationSet* OB_InitObs()
     return obs;
 }
 
-void OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points, PointPair2D corrp)
+void OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points, PointPair2D corrp, std::pair<cv::Mat, cv::Mat> desc)
 {
     std::vector<cv::Point2d> img1points = corrp.first;
     std::vector<cv::Point2d> img2points = corrp.second;
+    const cv::Mat& img1desc = desc.first;
+    const cv::Mat& img2desc = desc.second;
     size_t num_points = img1points.size();
     size_t num_points2 = img2points.size();
     assert(num_points == num_points2);
     for(size_t i = 0; i < num_points; i++)
     {
-        __OB_AddObs(obs, views, points, img1points[i], 0, i);
-        __OB_AddObs(obs, views, points, img2points[i], 1, i);
+        __OB_AddObs(obs, views, points, img1points[i], img1desc.row(i), 0, i);
+        __OB_AddObs(obs, views, points, img2points[i], img2desc.row(i), 1, i);
     }
 }
 
@@ -46,7 +47,7 @@ void OB_RemoveObs(struct ObservationSet* obs, struct ViewSet* views, struct Poin
         LG_Log(LogSeverity::ERROR, "[OB_RemoveObs] Non existing observation in point");
         std::exit(-1);
     }
-    VT_EraseUnordered(points->observations_indexes[pt_idx], idx_in_ob_idxs);
+    PANTO_EraseUnordered(points->observations_indexes[pt_idx], idx_in_ob_idxs);
 
     const u64 vw_idx = obs->view_indexes[idx];
     const std::vector<u64> obs_idxs_vws = views->observations_indexes[vw_idx];
@@ -64,11 +65,11 @@ void OB_RemoveObs(struct ObservationSet* obs, struct ViewSet* views, struct Poin
         LG_Log(LogSeverity::ERROR, "[OB_RemoveObs] Non existing observation in view");
         std::exit(-1);
     }
-    VT_EraseUnordered(views->observations_indexes[vw_idx], idx_in_ob_idxs);
+    PANTO_EraseUnordered(views->observations_indexes[vw_idx], idx_in_ob_idxs);
 
-    VT_EraseUnordered(obs->observations, idx);
-    VT_EraseUnordered(obs->view_indexes, idx);
-    VT_EraseUnordered(obs->point_indexes, idx);
+    PANTO_EraseUnordered(obs->observations, idx);
+    PANTO_EraseUnordered(obs->view_indexes, idx);
+    PANTO_EraseUnordered(obs->point_indexes, idx);
 }
 
 void OB_Print(struct ObservationSet* obs)
@@ -231,9 +232,10 @@ static void __OB_AddObsPnP(struct ViewSet* views, struct ObservationSet* obs, st
             (pidx.push_back(points->last_sz + idx))
 
 void __OB_AddObs(struct ObservationSet* obs, struct ViewSet* views, struct PointSet* points,
-        cv::Point2d observation, u64 view_index, u64 point_index)
+        cv::Point2d observation, cv::Mat desc, u64 view_index, u64 point_index)
 {
     obs->observations.push_back(observation);
+    obs->descriptors.push_back(desc);
     std::pair<i64, i64> point(static_cast<i64>(floor(observation.x)), static_cast<i64>(floor(observation.y)));
     std::pair<std::pair<i64, i64>, u64> key(point, views->last_sz - 1 +  view_index);
     obs->imagepoint2idx[key] = obs->observations.size() - 1;

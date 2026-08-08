@@ -46,3 +46,101 @@ cv::Mat PROJ_ToHomogFromCart(cv::Point2d point)
             point.y,
             1.0f);
 }
+
+Eigen::Matrix3d PROJ_CrossProductMatrix(Eigen::Vector3d vec)
+{
+    Eigen::Matrix3d M;
+    M <<    0.0, -vec[2], vec[1],
+            vec[2], 0.0, -vec[0],
+            -vec[1], vec[0], 0.0;
+    return M;
+}
+
+/*
+ * Get the camera center, assuming T is in CCS
+ * */
+Eigen::Vector3d PROJ_GetCameraCenter(const Eigen::Matrix4d T)
+{
+    Eigen::Matrix3d R = T.block(0, 0, 3, 3);
+    Eigen::Vector3d t = T.block(0, 3, 3, 1);
+    return -R.transpose() * t;
+}
+
+std::vector<Eigen::Vector4d> PROJ_TriangulateLOST(const std::vector<std::vector<Eigen::Vector3d>>& pixelCoords,
+        const std::vector<std::vector<Eigen::Matrix4d>>& T,
+        const Eigen::Matrix3d K
+        )
+{
+    /*
+     * Assumes all pictures are taken with the same camera (same intrinsics)
+     * */
+    const u64 numTri = pixelCoords.size();
+    std::vector<Eigen::Vector4d> Xh(numTri);
+    for(u64 j = 0; j < numTri; j++)
+    {
+        const auto& pixels = pixelCoords[j];
+        const u64 n = pixels.size();
+        const Eigen::Matrix3d Kinv = K.inverse();
+        const auto& T_pixels= T[j];
+        std::vector<Eigen::Vector3d> aWorld(n);
+        std::vector<Eigen::Vector3d> cWorld(n);
+        std::vector<Eigen::Vector3d> xBar(n);
+
+        for(u64 i = 0; i < n; i++)
+        {
+            Eigen::Vector3d pixel = pixels[i];
+            xBar[i] = Kinv * pixel;
+            Eigen::Matrix3d Rcw = T_pixels[i].block(0, 0, 3, 3);
+
+            aWorld[i] = (Rcw.transpose()*xBar[i]).normalized();
+            cWorld[i] = PROJ_GetCameraCenter(T_pixels[i]);
+        }
+
+        Eigen::MatrixXd A(n * 2, 4);
+
+
+        for (u64 i = 0; i < n; ++i)
+        {
+            // Pick another view j with largest ray angle
+            int bestK = -1;
+            double bestSin = -1.0;
+
+            for (u64 k = 0; k < n; ++k)
+            {
+                if (i == k) continue;
+
+                fp64 s = aWorld[i].cross(aWorld[k]).norm();
+
+                if (s > bestSin)
+                {
+                    bestSin = s;
+                    bestK = k;
+                }
+            }
+
+            double q = 1.0;
+
+            if (bestK >= 0 && bestSin > 1e-9)
+            {
+                Eigen::Vector3d d = cWorld[bestK] - cWorld[i];
+
+                // Law-of-sines range estimate
+                double rho_i = d.cross(aWorld[bestK]).norm() / bestSin;
+
+                q = xBar[i].norm() / (PANTO_PIXEL_MEAS_STD_DEV * rho_i);
+            }
+
+            Eigen::Matrix<double, 3, 4> P = T_pixels[i].block<3,4>(0,0);
+            Eigen::Matrix<double, 3, 4> M = PROJ_CrossProductMatrix(xBar[i]) * P;
+
+            // LOST = weighted DLT rows
+            A.row(2 * i + 0) = q * M.row(0);
+            A.row(2 * i + 1) = q * M.row(1);
+        }
+
+        Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeFullV);
+
+        Xh[j] = svd.matrixV().col(3);
+    }
+    return Xh;
+}

@@ -1,7 +1,7 @@
 #include "../include/PT_Points.hpp"
 #include "PROJ_ProjectiveUtils.hpp"
 
-static inline void __PT_AddPoint(struct PointSet* pointset, cv::Mat point);
+static inline void __PT_AddPoint(struct PointSet* pointset, Eigen::Vector4d);
 
 struct PointSet* PT_InitPoints()
 {
@@ -12,13 +12,13 @@ struct PointSet* PT_InitPoints()
     return pts;
 }
 
-void PT_AddPoints(struct PointSet* pointset, cv::Mat points)
+void PT_AddPoints(struct PointSet* pointset, std::vector<Eigen::Vector4d> points)
 {
-    const u32 Np = points.cols;
+    const u32 n = points.size();
     pointset->last_sz = pointset->points.size();
-    for(u32 i = 0; i < Np; i++)
+    for(u32 i = 0; i < n; i++)
     {
-        cv::Mat X = points.col(i);
+        Eigen::Vector4d X = points[i];
         __PT_AddPoint(pointset, X);
     }
 }
@@ -45,9 +45,9 @@ void PT_Print(struct PointSet* points)
 }
 
 
-static inline void __PT_AddPoint(struct PointSet* pointset, cv::Mat point)
+static inline void __PT_AddPoint(struct PointSet* pointset, Eigen::Vector4d point)
 {
-    Eigen::Vector4d X = PROJ_CV2NormalizedEigen(point);
+    Eigen::Vector4d X = point.normalized();
     pointset->points.push_back(X);
     pointset->observations_indexes.push_back({});
 }
