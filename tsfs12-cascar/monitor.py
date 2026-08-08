@@ -63,20 +63,20 @@ class Monitor():
         plt.ion()
         plt.show()
     
-        self.cascarIP = ""
-        self.cascarPort = 0
+        self.cascarIP = "192.168.0.112"
+        self.cascarPort = 5001
         self.cascarSocket = None
         self.connectCascar()
 
-        self.qualisysIP = ""
-        self.qualisysPort = 0
-        self.qualisysSocket = None
-        self.connectQualisys()
+        # self.qualisysIP = ""
+        # self.qualisysPort = 0
+        # self.qualisysSocket = None
+        # self.connectQualisys()
 
         self.socketLock = threading.Lock()
 
         threading.Thread(target=self.cascarData, daemon=True).start()
-        threading.Thread(target=self.qualisysData, daemon=True).start()
+        #threading.Thread(target=self.qualisysData, daemon=True).start()
         threading.Thread(target=self.requestData, daemon=True).start()
         threading.Thread(target=self.updatePlot, daemon=True).start()
 

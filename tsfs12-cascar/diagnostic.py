@@ -129,7 +129,7 @@ class Diagnostics(Node):
 def main():
     Ts = 1/20
     HOST = "0.0.0.0"
-    PORT = 5000
+    PORT = 5001
 
     rclpy.init()
 
