@@ -6,6 +6,7 @@ namespace
     {
         cv::VideoCapture cap;
         bool isInit;
+        i32 FrameIndex;
     };
     struct capture cap;
 }
@@ -22,7 +23,7 @@ namespace
 }
 
 cv::Mat __FR_GetFrameDataSet();
-cv::Mat __FR_GetFrameWebCam(i32 idx);
+cv::Mat __FR_GetFrameWebCam(void);
 
 int FR_InitFrameGetter()
 {
@@ -40,22 +41,24 @@ int FR_InitFrameGetter()
             return 1;
         }
         cap.isInit = true;
+        cap.FrameIndex = 0;
+
     }
     return 0;
 }
 
-cv::Mat FR_GetFrame(int idx)
+cv::Mat FR_GetFrame(void)
 {
     if(PANTO_USE_DATASET == true)
     {
         cv::Mat frame = __FR_GetFrameDataSet();
         return frame;
     }
-    cv::Mat frame = __FR_GetFrameWebCam(idx);
+    cv::Mat frame = __FR_GetFrameWebCam();
     return frame;
 }
 
-cv::Mat __FR_GetFrameWebCam(i32 idx)
+cv::Mat __FR_GetFrameWebCam(void)
 {
     if(!cap.isInit)
     {
@@ -69,16 +72,13 @@ cv::Mat __FR_GetFrameWebCam(i32 idx)
         std::cerr << "FR_GetFrame failed to get a frame\n";
         return {};
     }
-    if(idx >= 0)
+    std::string path = "./colmap/images/frame" + std::to_string(cap.FrameIndex) + ".png";
+    LG_Log(LogSeverity::DBG, "[FR_GetFrame] writing frame file %s\n", path.c_str());
+    bool ret = cv::imwrite(path, frame);
+    if(!ret)
     {
-        std::string path = "./colmap/images/frame" + std::to_string(idx) + ".png";
-        LG_Log(LogSeverity::DBG, "[FR_GetFrame] writing frame file %s\n", path.c_str());
-        bool ret = cv::imwrite(path, frame);
-        if(!ret)
-        {
-            perror("Failed to write image in getframe");
-            return {};
-        }
+        perror("Failed to write image in getframe");
+        return {};
     }
     cv::Mat gray;
     cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);

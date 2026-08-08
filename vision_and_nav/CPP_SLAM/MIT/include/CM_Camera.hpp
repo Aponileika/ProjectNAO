@@ -15,27 +15,27 @@ struct CameraIntrinsics
     cv::Vec<fp64, 5> distcoeffs;
 };
 
-struct Param
+typedef struct 
 {
     Eigen::Quaterniond q;
     Eigen::Vector3d t;
-};
+}Param;
 
-struct Camera
+typedef struct 
 {
     //reference to global params
     struct CameraIntrinsics* intrinsics;
     cv::Mat R;
     cv::Mat t;
-    struct Param* p;
+    Param Parameters;
     std::string image_name;
-};
+}Camera;
 
 
 void CM_SetIntrinsics();
 struct CameraIntrinsics* CM_GetIntrinsics();
-struct Camera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx);
-void CM_SetParametrization(struct Camera* cam);
-void CM_SetRtfromParam(struct Camera* cam);
+Camera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx);
+void CM_SetParametrization(Camera* cam);
+void CM_SetRtfromParam(Camera* cam);
 
 #endif //__CM_CAMERA_HPP_

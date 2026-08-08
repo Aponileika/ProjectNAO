@@ -20,7 +20,7 @@ typedef int64_t i64;
 typedef float  fp32;
 typedef double fp64;
 
-#define u64_max UINT64_MAX 
+#define U64_MAX UINT64_MAX 
 
 struct Arena
 {

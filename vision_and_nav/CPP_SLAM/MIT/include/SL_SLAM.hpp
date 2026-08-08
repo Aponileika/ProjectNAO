@@ -17,14 +17,6 @@
 
 struct SLAM
 {
-    struct ViewSet* Tview;
-    struct PointSet* Tpoints;
-    struct ObservationSet* Tobs;
-
-    //Current set of cameras (views) being considered for pnp
-    //Note that the second view needs to be determined,
-    //when it is SLAM can continue.
-    std::pair<cv::Mat, cv::Mat> frame_pair;
 };
 
 void SL_InitSlam();

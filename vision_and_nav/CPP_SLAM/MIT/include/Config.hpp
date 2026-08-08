@@ -18,6 +18,7 @@
 #define PANTO_NEWFRAMECORRPTHRESHOLD 30
 #define PANTO_INITFRAMETHRESHOLDCORRP 50
 #define OPENCV_AKAZETHRESHOLD 0.0005f
+#define PANTO_DESCRIPTOR_SIZE 61 //Bytes
 
 const char* PANTO_SLAMSTARTMSG =
 "        _____                 ^\n"
@@ -88,12 +89,35 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 
 #define PANTO_PIXEL_MEAS_STD_DEV 1.0f
 
+#define PANTO_CELL_SIZE 32
+
+#define PANTO_MAPPOINT_MATCH_SEARCH_AREA 20.0f
+
+//arbitrary, now same as slam orb
+#define PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD 200
+
+#define PANTO_ID_NOT_SET U64_MAX
+
 /*                      
  ******************************************************************                                                  
  ******************************************************************                                                  
  ******************************************************************                                                  
  *
- *                      General Macros
+ *               General Macros and typedefs
+ *
+ ******************************************************************                                                  
+ ******************************************************************                                                  
+ ******************************************************************                                                  
+ */
+
+#define PANTO_GRID_COLUMNS 20 // 640 / 32
+
+/*                      
+ ******************************************************************                                                  
+ ******************************************************************                                                  
+ ******************************************************************                                                  
+ *
+ *               General Macros and typedefs
  *
  ******************************************************************                                                  
  ******************************************************************                                                  
@@ -102,5 +126,8 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 
 #define PANTO_SIGNX(x) \
     ((x < 0.0f) ? -1.0f : 1.0f)
+
+typedef std::array<u8, PANTO_DESCRIPTOR_SIZE> typeDescriptor;
+
 
 #endif // __CONFIG_HPP_

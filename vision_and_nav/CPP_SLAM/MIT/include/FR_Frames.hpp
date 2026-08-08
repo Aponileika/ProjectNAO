@@ -7,6 +7,6 @@
 #include "Config.hpp"
 
 int FR_InitFrameGetter();
-cv::Mat FR_GetFrame(int idx);
+cv::Mat FR_GetFrame(void);
 
 #endif //__FR_FRAMES_HPP

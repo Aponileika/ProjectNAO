@@ -2,10 +2,11 @@
 #define __VT_VECUTILS_HPP_
 #include <vector>
 #include <assert.h>
-#include <Eigen/core>
+#include <Eigen/Core>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/eigen.hpp>
 #include "CArenaAlloc.h"
+#include "Config.hpp"
 
 template<typename T>
 void PANTO_EraseUnordered(std::vector<T> vec, u64 idx)
@@ -40,5 +41,6 @@ T PANTO_Cv2Eigen(cv::Matx33d cvmat)
 
 typedef std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> PointPair2D;
 std::vector<std::vector<Eigen::Vector3d>> PANTO_PointPair2Eigen(PointPair2D pp);
+u32 PANTO_HammingDistance(typeDescriptor& a, typeDescriptor& b);
 
 #endif //__VT_VECUTILS_HPP_

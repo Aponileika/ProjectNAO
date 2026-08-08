@@ -9,6 +9,10 @@
 #include "../include/LG_Logging.hpp"
 #include "../include/CArenaAlloc.h"
 #include "../include/EP_CorrespondingPoints.hpp"
+#include "../include/KEY_Keyframe.hpp"
+#include "../include/PT_PantoImagePoint.hpp"
+#include "../include/PT_PantoMapPoints.hpp"
+#include "../include/MAP_Mapping.hpp"
 #include "../include/FR_Frames.hpp"
 #include "../include/MX_Matrix.hpp"
 #include "../include/OB_Observations.hpp"
@@ -19,7 +23,6 @@
 #include "../include/CM_Camera.hpp"
 #include "../include/OP_BA.hpp"
 #include "../include/VIZ_Visualization.hpp"
-#include "../include/FEAT_Features.hpp"
 #include "../include/PROJ_ProjectiveUtils.hpp"
 #include "../include/PANTO_Utils.hpp"
 #include "../include/Config.hpp"
@@ -40,6 +43,10 @@
 #include "FEAT_Features.cpp"
 #include "PROJ_ProjectiveUtils.cpp"
 #include "PANTO_Utils.cpp"
+#include "KEY_Keyframe.cpp"
+#include "PT_PantoImagePoint.cpp"
+#include "PT_PantoMapPoints.cpp"
+#include "MAP_Mapping.cpp"
 
 int main(int argc, char* argv[])
 {

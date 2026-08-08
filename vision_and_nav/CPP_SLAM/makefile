@@ -50,7 +50,8 @@ main : FORCE $(sourcedir)main.cpp
 	$(CXX)  -o main $(sourcedir)main.cpp \
 	$(CXXFLAGS) \
 	$(LDFLAGS) \
-	$(LDLIBS)
+	$(LDLIBS) \
+	-ferror-limit=100
 
 clean :
 	rm -f main
