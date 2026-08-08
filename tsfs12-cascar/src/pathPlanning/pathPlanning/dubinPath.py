@@ -65,7 +65,7 @@ class dubinsPath(Node):
 
     def dubinsPath(self, startPos, startAngle, endPos, endAngle, debug=False):
         
-        spacing = 0.05 #Distance between each point in path
+        spacing = 0.2 #Distance between each point in path
         L = 0.285
         deltaMax = np.pi/4
         R = L / np.tan(deltaMax)

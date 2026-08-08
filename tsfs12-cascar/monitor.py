@@ -41,19 +41,21 @@ class Monitor():
 
         # Heading arrows
         self.est_arrow = self.ax.quiver(
-            [], [], [], [],
+            [0], [0], [0], [0],
             color="b",
             angles="xy",
             scale_units="xy",
-            scale=1
+            scale=1,
+            pivot="tail"
         )
 
         self.true_arrow = self.ax.quiver(
-            [], [], [], [],
+            [0], [0], [0], [0],
             color="g",
             angles="xy",
             scale_units="xy",
-            scale=1
+            scale=1,
+            pivot="tail"
         )
 
         self.ax.set_aspect("equal")
@@ -78,7 +80,6 @@ class Monitor():
         threading.Thread(target=self.cascarData, daemon=True).start()
         #threading.Thread(target=self.qualisysData, daemon=True).start()
         threading.Thread(target=self.requestData, daemon=True).start()
-        threading.Thread(target=self.updatePlot, daemon=True).start()
 
 
     def connectCascar(self):
@@ -94,7 +95,7 @@ class Monitor():
 
     def updatePlot(self):
 
-        arrow_length = 0.25
+        arrow_length = 1
 
         while True:
 
@@ -106,8 +107,8 @@ class Monitor():
 
             # Planned path
             if self.path:
-                xs = [p[0] for p in self.path]
-                ys = [p[1] for p in self.path]
+                xs = [p['x'] for p in self.path]
+                ys = [p['y'] for p in self.path]
                 self.plan_path.set_data(xs, ys)
 
             # Current positions
@@ -134,21 +135,12 @@ class Monitor():
                 arrow_length * np.sin(self.currTrueTheta)
             )
 
-            # Keep axes fitted to data
-            xs = self.pastEstX + self.pastTrueX
-            ys = self.pastEstY + self.pastTrueY
-
-            if self.path:
-                xs += [p[0] for p in self.path]
-                ys += [p[1] for p in self.path]
-
-            if xs:
-                margin = 0.5
-                self.ax.set_xlim(min(xs)-margin, max(xs)+margin)
-                self.ax.set_ylim(min(ys)-margin, max(ys)+margin)
+            self.ax.set_xlim(-6, 6)
+            self.ax.set_ylim(-6, 6)
 
             self.fig.canvas.draw_idle()
-            plt.pause(self.Ts)
+            self.fig.canvas.flush_events()
+            time.sleep(self.Ts)
 
 
     def cascarData(self):
@@ -234,6 +226,7 @@ class Monitor():
 if __name__ == "__main__":
     Ts = 1
     monitor = Monitor(Ts)
+    monitor.updatePlot()
 
     while True:
         time.sleep(1)
