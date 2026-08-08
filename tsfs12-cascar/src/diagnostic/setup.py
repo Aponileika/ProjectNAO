@@ -24,6 +24,6 @@ setup(
     },
     entry_points={
         'console_scripts': [
-        ],
+        'diagnostic = diagnostic.diagnostic:main'],
     },
 )
