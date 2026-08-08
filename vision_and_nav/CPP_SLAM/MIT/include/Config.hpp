@@ -103,12 +103,15 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
  ******************************************************************                                                  
  ******************************************************************                                                  
  *
- *               General Macros and typedefs
+ *              Platform dependent 
  *
  ******************************************************************                                                  
  ******************************************************************                                                  
  ******************************************************************                                                  
  */
+
+#define PANTO_IMAGE_WIDTH 640
+#define PANTO_IMAGE_HEIGHT 480
 
 #define PANTO_GRID_COLUMNS 20 // 640 / 32
 
@@ -128,6 +131,5 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
     ((x < 0.0f) ? -1.0f : 1.0f)
 
 typedef std::array<u8, PANTO_DESCRIPTOR_SIZE> typeDescriptor;
-
 
 #endif // __CONFIG_HPP_

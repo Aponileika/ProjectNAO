@@ -11,8 +11,13 @@
 
 struct CameraIntrinsics
 {
-    cv::Matx33d K;
-    cv::Vec<fp64, 5> distcoeffs;
+    Eigen::Matrix3d K;
+        
+    fp64 k1{};
+    fp64 k2{};
+    fp64 p1{};
+    fp64 p2{};
+    fp64 k3{};
 };
 
 typedef struct 
@@ -24,9 +29,9 @@ typedef struct
 typedef struct 
 {
     //reference to global params
-    struct CameraIntrinsics* intrinsics;
-    cv::Mat R;
-    cv::Mat t;
+    struct CameraIntrinsics* Intrinsics;
+    Eigen::Matrix3d R;
+    Eigen::Vector3d t;
     Param Parameters;
     std::string image_name;
 }Camera;

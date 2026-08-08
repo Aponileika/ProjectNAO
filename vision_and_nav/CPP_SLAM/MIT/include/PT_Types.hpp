@@ -1,7 +1,7 @@
 #ifndef __PT_TYPES_HPP_
 #define __PT_TYPES_HPP_
 #include <Eigen/Dense>
-#include <Config.hpp>
+#include "Config.hpp"
 #include <CArenaAlloc.h>
 
 typedef struct
@@ -27,7 +27,10 @@ typedef struct
     Eigen::Vector4d Point;
     typeDescriptor Descriptor;
     std::vector<typeObservation> Observations;
+    std::vector<u64> KeyFrameIDs;
     u64 ID;
 }typePantoMapPoint;
+
+typedef std::array<std::vector<typePantoImagePoint>, PANTO_CELL_SIZE*PANTO_CELL_SIZE> typePantoKeypointFrame;
 
 #endif // __PT_TYPES_HPP_

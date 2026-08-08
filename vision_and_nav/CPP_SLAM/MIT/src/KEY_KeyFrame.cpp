@@ -5,11 +5,10 @@ typeKeyFrame KEY_GetKeyFrame(Camera PredictedPose, std::vector<typePantoMapPoint
 {
     cv::Mat Frame = FR_GetFrame();
     DescRet Descriptors = EP_GetDescriptors(Frame);
-    std::vector<typePantoImagePoint> ImagePoints = PT_CreatePantoImagePoints(Descriptors.Points, Descriptors.Descriptors, LastFrameMapPoints);
+    typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePoints(Descriptors.Points, Descriptors.Descriptors, LastFrameMapPoints, PredictedPose);
     typeKeyFrame KeyFrame = {
         .Points = ImagePoints,
         .Pose = PredictedPose,
-        .MapPointIDs = MapPointIDs
     };
     return KeyFrame;
 }

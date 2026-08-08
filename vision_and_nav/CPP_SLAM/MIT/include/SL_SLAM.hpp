@@ -5,18 +5,20 @@
 #include <opencv2/opencv.hpp>
 #include <utility>
 #include <stdio.h>
-#include "VW_Views.hpp"
-#include "PT_Points.hpp"
-#include "OB_Observations.hpp"
-#include "FR_Frames.hpp"
-#include "EP_CorrespondingPoints.hpp"
 #include "LG_Logging.hpp"
 #include "OP_BA.hpp"
 #include "VIZ_Visualization.hpp"
 #include "PANTO_Utils.hpp"
+#include "MAP_Mapping.hpp"
+#include "KEY_Keyframe.hpp"
+#include "PT_PantoImagePoint.hpp"
+#include "PT_PantoMapPoints.hpp"
+#include "PT_Types.hpp"
 
 struct SLAM
 {
+    typeMap GlobalMap;
+    typeMap LocalMap;
 };
 
 void SL_InitSlam();

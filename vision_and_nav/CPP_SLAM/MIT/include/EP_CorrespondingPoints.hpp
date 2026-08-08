@@ -25,7 +25,7 @@ struct DescRet
 };
 
 void EP_InitCPointExtractor(void);
-DescRet EP_GetDescriptors(cv::Mat Img);
+DescRet EP_GetDescriptors(const cv::Mat& Img);
 MatchesRet EP_CorrespExtract(cv::Mat img1, cv::Mat img2);
 MatchesRet EP_GetMatches(std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> Points, std::pair<std::vector<cv::Mat>, std::vector<cv::Mat>> Descriptors);
 

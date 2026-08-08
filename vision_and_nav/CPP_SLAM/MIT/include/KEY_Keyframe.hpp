@@ -1,6 +1,7 @@
 #ifndef __KEY_KEYFRAME_HPP_
 #define __KEY_KEYFRAME_HPP_
 #include "CArenaAlloc.h"
+#include "PT_Types.hpp"
 #include <vector>
 #include <Eigen/Dense>
 #include <PT_PantoImagePoint.hpp>
@@ -18,9 +19,8 @@ typedef struct
 
 typedef struct
 {
-    std::vector<typePantoImagePoint> Points;
+    typePantoKeypointFrame Points;
     Camera Pose;
-    std::vector<u64> MapPointIDs;
 }typeKeyFrame;
 
 
