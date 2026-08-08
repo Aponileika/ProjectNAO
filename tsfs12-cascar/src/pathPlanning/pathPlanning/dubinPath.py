@@ -36,8 +36,8 @@ class dubinsPath(Node):
         self.plannedPath = []
 
         ##FOR TEST PURPOSES; REPLACE WITH ACTION
-        self.xGoal = 4
-        self.yGoal = 4
+        self.xGoal = 2
+        self.yGoal = 2
         self.thetaGoal = -np.pi/2
 
         self.path_planned = False
