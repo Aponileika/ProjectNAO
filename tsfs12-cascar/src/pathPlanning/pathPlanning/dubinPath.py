@@ -14,7 +14,7 @@ from std_msgs.msg import String
 
 
 class dubinsPath(Node):
-    def __init__(self, Ts = 0.05):
+    def __init__(self, Ts = 1):
         super().__init__("path_planning")
         self.get_logger().info("Path Planning Node Started")
 
@@ -42,6 +42,8 @@ class dubinsPath(Node):
 
         self.path_planned = False
 
+        self.timer = self.create_timer(self.Ts, self.mainLoop)
+
 
     def pos_callback(self, msg):
         self.x = msg.x
@@ -54,13 +56,20 @@ class dubinsPath(Node):
                                                np.array([self.xGoal, self.yGoal]), self.thetaGoal)
 
             print(self.plannedPath)
-            msg = String()
-            data = self.plannedPath
-            msg.data = json.dumps(data)
-            self.path_publsiher.publish(msg)
-
+            self.publsihPath()
             self.path_planned = True
             self.get_logger().info("PATH PLANNED")
+
+        
+    def publishPath(self):
+        msg = String()
+        data = self.plannedPath
+        msg.data = json.dumps(data)
+        self.path_publsiher.publish(msg)
+
+
+    def mainLoop(self):
+        self.publishPath()
 
 
     def dubinsPath(self, startPos, startAngle, endPos, endAngle, debug=False):

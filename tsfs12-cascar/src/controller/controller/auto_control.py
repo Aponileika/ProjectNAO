@@ -76,13 +76,15 @@ class AutomaticControl(Node):
 
     
     def path_callback(self, msg):
-        self.path = json.loads(msg.data)
+        recievedPath = json.loads(msg.data)
+        if recievedPath[0] != self.path[0]:
+            self.path = recievedPath
+        
+            self.curr_node = 1
+            self.distanceTraveled = 0
 
-        self.curr_node = 1
-        self.distanceTraveled = 0
-
-        self.get_logger().info("PATH RECIEVED")
-        print(self.path)
+            self.get_logger().info("PATH RECIEVED")
+            print(self.path)
 
 
     def control_loop(self):
