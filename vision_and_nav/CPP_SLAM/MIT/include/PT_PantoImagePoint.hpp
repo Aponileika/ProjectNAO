@@ -10,7 +10,8 @@
 #include <PROJ_ProjectiveUtils.hpp>
 #include <PANTO_Utils.hpp>
 
-std::array<std::vector<typePantoImagePoint>, PANTO_CELL_SIZE*PANTO_CELL_SIZE> PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points, 
-        cv::Mat Descriptors, std::vector<typePantoMapPoint> CandidateMapPoints, Camera Pose);
+typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points, 
+        cv::Mat Descriptors, std::vector<typePantoMapPoint> CandidateMapPoints, typeCamera Pose);
+u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vector<typePantoMapPoint>& MapPoints, const typeCamera& Pose);
 
 #endif // __PT_PANTO_POINT_HPP_

@@ -27,7 +27,7 @@ u32 PANTO_HammingDistance(typeDescriptor& a, typeDescriptor& b)
         u64 _a, _b;
 
         std::memcpy(&_a, a.data() + i * sizeof(u64), sizeof(u64));
-        std::memcpy(&_b, a.data() + i * sizeof(u64), sizeof(u64));
+        std::memcpy(&_b, b.data() + i * sizeof(u64), sizeof(u64));
 
         HammingDistance += std::popcount(_a ^ _b);
     }

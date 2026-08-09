@@ -15,7 +15,7 @@
  * it is accepted as a match and its MapPointID is set
  * */
 typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points, 
-        cv::Mat Descriptors, std::vector<typePantoMapPoint> CandidateMapPoints, Camera Pose)
+        cv::Mat Descriptors, std::vector<typePantoMapPoint> CandidateMapPoints, typeCamera Pose)
 {
     std::size_t NumImagePoints = Points.size();
     assert((static_cast<std::size_t>(Descriptors.rows) == NumImagePoints));
@@ -34,8 +34,6 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points
 
         std::memcpy(Descriptor.data(), Descriptors.ptr<u8>(i), PANTO_DESCRIPTOR_SIZE);
 
-        u64 ID =  ImagePoints[CellIndex].size();
-
         typePantoImagePoint CandidateImagePoint = 
         {
             .Point = Point,
@@ -48,13 +46,21 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points
         ImagePoints[CellIndex].push_back(CandidateImagePoint);
     }
 
-    std::size_t NumMapPoints = CandidateMapPoints.size();
+    (void) PT_MatchMapPointsToKeyFrame(ImagePoints, CandidateMapPoints, Pose);
+
+    return ImagePoints;
+}
+
+u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vector<typePantoMapPoint>& MapPoints, const typeCamera& Pose)
+{
+    std::size_t NumMapPoints = MapPoints.size();
+    u64 NumTrackedMapPoints = 0;
 
     for(std::size_t i{}; i < NumMapPoints; i++)
     {
-        Eigen::Vector4d CandidateMapPoint = CandidateMapPoints[i].Point;
+        Eigen::Vector4d MapPoint = MapPoints[i].Point;
         Eigen::Vector2d CandidateImagePoint = {};
-        if(PROJ_Project(CandidateMapPoint, CandidateImagePoint, Pose))
+        if(PROJ_Project(MapPoint, CandidateImagePoint, Pose))
         {
             const fp64 u = CandidateImagePoint[0];
             const fp64 v = CandidateImagePoint[1];
@@ -65,7 +71,7 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points
             const u64 MinCellY = static_cast<u64>((v - PANTO_MAPPOINT_MATCH_SEARCH_AREA) / PANTO_CELL_SIZE);
             const u64 MaxCellY = static_cast<u64>((v + PANTO_MAPPOINT_MATCH_SEARCH_AREA) / PANTO_CELL_SIZE);
 
-            const typeDescriptor& MapPointDescriptor = CandidateMapPoints[i].Descriptor;
+            const typeDescriptor& MapPointDescriptor = MapPoints[i].Descriptor;
 
             std::vector<std::pair<typePantoImagePoint, u32>> Top2Candidates(2);
 
@@ -76,7 +82,7 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points
             {
                 for(u64 k(MinCellX); k < MaxCellX; k++)
                 {
-                    std::vector<typePantoImagePoint>& LocalImagePoints = ImagePoints[j * PANTO_GRID_COLUMNS + k];
+                    std::vector<typePantoImagePoint>& LocalImagePoints = KeyFrame[j * PANTO_GRID_COLUMNS + k];
                     for(const typePantoImagePoint& ImagePoint : LocalImagePoints)
                     {
                         const typeDescriptor& ImagePointDescriptor = ImagePoint.Descriptor;
@@ -99,10 +105,11 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points
                     || (Top2Candidates[0].second < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD))
             {
                 const typePantoImagePoint& TopCandidate = Top2Candidates[0].first;
-                ImagePoints[TopCandidate.CellID][TopCandidate.ID].MapPointID = CandidateMapPoints[i].ID;
+                KeyFrame[TopCandidate.CellID][TopCandidate.ID].MapPointID = MapPoints[i].ID;
+                NumTrackedMapPoints++;
             }
         }
     }
-
-    return ImagePoints;
+    return NumTrackedMapPoints;
 }
+

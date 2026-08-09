@@ -9,6 +9,16 @@
 #include "VW_Views.hpp"
 #include "OB_Observations.hpp"
 #include "Config.hpp"
+#include "MAP_Mapping.hpp"
+
+typedef enum 
+{
+    typePoseAndPoints = 0,
+    typePose = 1,
+    typeTracking = 2,
+    typeLocal = 3
+}typeOptimizationTarget;
+
 /*see https://ceres-solver.googlesource.com/ceres-solver/+/master/examples/simple_bundle_adjuster.cc
  *and https://ceres-solver.readthedocs.io/latest/nnls_tutorial.html
  *for details into ceres nonlinear solving for BA
@@ -16,19 +26,19 @@
  *Is also nice to follow
  * */
 
-struct OPIntrinsics
+struct typeOPCameraIntrinsics
 {
-    OPIntrinsics(struct CameraIntrinsics* ci) :
-        fx(ci->K(0, 0)), fy(ci->K(1, 1)), cx(ci->K(0, 2)), cy(ci->K(1, 2)) {}
+    typeOPCameraIntrinsics(Eigen::Matrix3d K) :
+        fx(K(0, 0)), fy(K(1, 1)), cx(K(0, 2)), cy(K(1, 2)) {}
      fp64 fx, fy, cx, cy;
 };
 
-struct ReprojectionError
+struct OP_ReprojectionError
 {
-    ReprojectionError(fp64 observedx, fp64 observedy, 
-            const struct OPIntrinsics* Intr)
-        : observedx_(observedx), observedy_(observedy),
-            intr_(Intr){}
+    OP_ReprojectionError(fp64 ObservedX, fp64 ObservedY, 
+            const struct typeOPCameraIntrinsics* Intrinsics)
+        : ObservedX_(ObservedX), ObservedY_(ObservedY),
+            Intrinsics_(Intrinsics){}
 
     template <typename T>
     bool operator()(const T* const qp,
@@ -48,10 +58,10 @@ struct ReprojectionError
         //R^T, and translation as -R^T*t.
         const Eigen::Quaternion<T> qcw = qwc.conjugate();
 
-        const fp64 fx_ = intr_->fx;
-        const fp64 fy_ = intr_->fy;
-        const fp64 cx_ = intr_->cx;
-        const fp64 cy_ = intr_->cy;
+        const fp64 fx_ = Intrinsics_->fx;
+        const fp64 fy_ = Intrinsics_->fy;
+        const fp64 cx_ = Intrinsics_->cx;
+        const fp64 cy_ = Intrinsics_->cy;
 
         //X in camera coordinates is now R^T(X - t)
         Eigen::Matrix<T, 3, 1> XYZ(
@@ -69,20 +79,20 @@ struct ReprojectionError
         T u = T(fx_) * x + T(cx_);
         T v = T(fy_) * y + T(cy_);
 
-        residuals[0] = u - T(observedx_);
-        residuals[1] = v - T(observedy_);
+        residuals[0] = u - T(ObservedX_);
+        residuals[1] = v - T(ObservedX_);
         return true;
     }
-    static ceres::CostFunction* Create(const fp64 observed_x, const fp64 observed_y, const struct OPIntrinsics* intr)
+    static ceres::CostFunction* Create(const fp64 ObservedX, const fp64 ObservedY, const struct typeOPCameraIntrinsics* Intrinsics)
     {
-        return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 4, 3, 4>(
-            new ReprojectionError(observed_x, observed_y, intr));
+        return new ceres::AutoDiffCostFunction<OP_ReprojectionError, 2, 4, 3, 4>(
+            new OP_ReprojectionError(ObservedX, ObservedY, Intrinsics));
     }
 
-    fp64 observedx_, observedy_;
-    const struct OPIntrinsics* intr_;
+    fp64 ObservedX_, ObservedY_;
+    const struct typeOPCameraIntrinsics* Intrinsics_;
 };
 
-void OP_BundleAdjust(struct ViewSet* views, struct ObservationSet* obs, struct PointSet* points);
+void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, typeLocalMap LocalMap);
 
 #endif //__OP_BA_HPP_

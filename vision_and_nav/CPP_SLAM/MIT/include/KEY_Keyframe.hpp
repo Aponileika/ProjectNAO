@@ -10,21 +10,28 @@
 
 typedef struct
 {
+    // Velocity change compared to last two frames
     fp64 VelocityChange;
-    fp64 TrajectoryCurvature;
-    fp64 FeatureDistributionQuality;
-    fp64 FeatureMatchingRate;
-    fp64 DynamicFeatureRatio;
+    // Ratio of matches in local map
+    fp64 LocalMapTrackingRatio;
+    // fp64 TrajectoryCurvature;
+    // fp64 FeatureDistributionQuality;
+    fp64 DistanceTravelled;
+    // fp64 FeatureMatchingRate;
+    // fp64 DynamicFeatureRatio; // What is this?
 }typeKeyFrameInformation;
 
 typedef struct
 {
     typePantoKeypointFrame Points;
-    Camera Pose;
+    typeCamera Pose;
+    u64 ID;
 }typeKeyFrame;
 
 
-typeKeyFrame KEY_GetKeyFrame(Camera PredictedPose, std::vector<typePantoMapPoint> MapPointIDs);
-bool KEY_IsKeyFrame(typeKeyFrameInformation Information);
+typeKeyFrame KEY_GetKeyFrame(const typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints);
+//TODO
+bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information);
+void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID);
 
 #endif //__KEY_KEYFRAME_HPP_

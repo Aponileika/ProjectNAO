@@ -98,6 +98,8 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 
 #define PANTO_ID_NOT_SET U64_MAX
 
+#define PANTO_TIMESTAMP_NOT_SET -1.0f
+
 /*                      
  ******************************************************************                                                  
  ******************************************************************                                                  

@@ -2,7 +2,7 @@
 
 static bool IntrinsicsSet = false;
 
-inline CameraIntrinsics __CM_GetConfigIntrinsics(Dataset dataset)
+inline typeCameraIntrinsics __CM_GetConfigIntrinsics(Dataset dataset)
 {
     switch (dataset)
     {
@@ -22,7 +22,7 @@ inline CameraIntrinsics __CM_GetConfigIntrinsics(Dataset dataset)
     return {}; // should never happen
 }
 
-static struct CameraIntrinsics ci = __CM_GetConfigIntrinsics(panto_dataset);
+static typeCameraIntrinsics ci = __CM_GetConfigIntrinsics(panto_dataset);
 
 void CM_SetIntrinsics()
 {
@@ -32,14 +32,14 @@ void CM_SetIntrinsics()
     LG_Log(LogSeverity::DBG, "Set Intrinsics\n");
 }
 
-struct CameraIntrinsics* CM_GetIntrinsics()
+typeCameraIntrinsics* CM_GetIntrinsics()
 {
     if(!IntrinsicsSet)CM_SetIntrinsics();
     return &ci;
 }
 
 
-void CM_SetParametrization(struct Camera& cam)
+void CM_SetParametrization(typeCamera& Camera)
 {
     /*We use the reparametrization based on
      * R^t[I -t], since the parametrization 
@@ -51,40 +51,82 @@ void CM_SetParametrization(struct Camera& cam)
      * seem to find a good implementation of 
      * expm and logm.
      */
-    Eigen::Matrix3d R;
-    cv::cv2eigen(cam.R.t(), R);
-    Eigen::Quaterniond q(R);
+    Eigen::Quaterniond q(Camera.Pose.R);
     q.normalize();
-    cam.p->q = q;
+    Camera.Parameters.q = q;
 
-    Eigen::Vector3d tm;
-    cv::cv2eigen(-cam.R.t() * cam.t, tm);
-    cam.p->t = tm;
+    Camera.Parameters.t = -Camera.Pose.R.transpose() * Camera.Pose.t;
 }
 
-struct Camera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx)
+typeCamera CM_CreateCam(Eigen::Matrix3d R, Eigen::Vector3d t, i32 idx, fp64 TimeStamp)
 {
     std::string image_name = "frame" + std::to_string(idx) + ".png";
-    Camera cam = {
-        CM_GetIntrinsics(),
-        R, 
-        t,
-        new struct Param{},
-        image_name 
+    typePoseParameters Param = {};
+    typeCameraPose Pose = {
+        R,
+        t
     };
-    CM_SetParametrization(cam);
-    return cam;
+
+    typeCamera Camera = {
+        CM_GetIntrinsics(),
+        Pose,
+        Param,
+        image_name,
+        TimeStamp
+    };
+    CM_SetParametrization(Camera);
+    return Camera;
 }
 
-void CM_SetRtfromParam(struct Camera* cam)
+void CM_SetRtfromParam(typeCamera& Camera)
 {
-    Eigen::Matrix3d R_transposed = cam->p->q.toRotationMatrix().transpose();
-    cv::Mat R;
-    cv::eigen2cv(R_transposed, cam->R);
-    
-    cv::Mat t;
-    Eigen::Vector3d te = -R_transposed * cam->p->t;
-    cv::eigen2cv(te, cam->t);
-    cam->intrinsics = CM_GetIntrinsics();
+    const Eigen::Matrix3d RTransposed = Camera.Parameters.q.toRotationMatrix().transpose();
+    const Eigen::Vector3d TW2C = -RTransposed * Camera.Parameters.t;
+    Camera.Pose.R = RTransposed;
+    Camera.Pose.t = TW2C;
 }
 
+Eigen::Vector3d CM_GetCameraCenter(const typeCamera& Camera)
+{
+    return -Camera.Pose.R.transpose() * Camera.Pose.t;
+}
+
+typeCamera CM_PredictPose(const typeCameraPose& TPreviousFrame, const typeCameraPose& TPreviousPreviousFrame)
+{
+    Eigen::Matrix4d TPrevious = Eigen::Matrix4d::Identity();
+    Eigen::Matrix4d TPreviousPreviousInverse = Eigen::Matrix4d::Identity();
+
+    TPrevious.block<3, 3>(0, 0) = TPreviousFrame.R;
+    TPrevious.block<3, 1>(0, 3) = TPreviousFrame.t;
+
+    const Eigen::Matrix3d& RPreviousPreviousT = TPreviousPreviousFrame.R.transpose();
+    TPreviousPreviousInverse.block<3, 3>(0, 0) = RPreviousPreviousT;
+    TPreviousPreviousInverse.block<3, 1>(0, 3) = -RPreviousPreviousT*TPreviousPreviousFrame.t;
+
+    const Eigen::Matrix4d& TRelative = TPrevious * TPreviousPreviousInverse;
+
+    const Eigen::Matrix4d& TPredicted = TRelative * TPrevious;
+
+    typeCameraPose TPrediction = {
+        .R = static_cast<Eigen::Matrix3d>(TPredicted.block<3,3>(0,0)),
+        .t = static_cast<Eigen::Vector3d>(TPredicted.block<3,1>(0,3))
+    };
+
+    typeCameraIntrinsics* Intrinsics = &ci;
+    typePoseParameters Parameters;
+    std::string image_name;
+    
+    typeCamera Prediction = 
+    {
+        .Intrinsics = Intrinsics,
+        .Pose = TPrediction,
+        .Parameters = {},
+        .image_name = "",
+        .TimeStamp = PANTO_TIMESTAMP_NOT_SET
+
+    };
+
+    CM_SetRtfromParam(Prediction);
+
+    return Prediction;
+}

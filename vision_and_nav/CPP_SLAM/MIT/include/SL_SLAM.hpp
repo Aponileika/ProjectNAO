@@ -14,12 +14,23 @@
 #include "PT_PantoImagePoint.hpp"
 #include "PT_PantoMapPoints.hpp"
 #include "PT_Types.hpp"
+#include "CM_Camera.hpp"
 
-struct SLAM
+typedef struct
 {
-    typeMap GlobalMap;
-    typeMap LocalMap;
-};
+    typeCamera PreviousFramePose;
+    std::vector<typePantoMapPoint> PreviousFrameMapPoints;
+    typeCamera PreviousPreviousFramePose;
+}typePreviousFrameData;
+
+typedef struct 
+{
+    typeGlobalMap GlobalMap;
+    typeLocalMap LocalMap;
+    typeCamera NextFramePosePrediction;
+    typePreviousFrameData PreviousFrameData;
+    fp64 AccumulatedDistance;
+}typeSLAM;
 
 void SL_InitSlam();
 void SL_SlamLoop(i32 num_loops);

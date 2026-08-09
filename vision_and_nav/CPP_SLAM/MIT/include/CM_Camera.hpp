@@ -8,39 +8,47 @@
 #include <Eigen/Geometry>
 #include "CArenaAlloc.h"
 #include "LG_Logging.hpp"
+#include "Config.hpp"
 
-struct CameraIntrinsics
+typedef struct 
 {
     Eigen::Matrix3d K;
-        
-    fp64 k1{};
-    fp64 k2{};
-    fp64 p1{};
-    fp64 p2{};
-    fp64 k3{};
-};
+    fp64 k1;
+    fp64 k2;
+    fp64 p1;
+    fp64 p2;
+    fp64 k3;
+}typeCameraIntrinsics;
 
 typedef struct 
 {
     Eigen::Quaterniond q;
     Eigen::Vector3d t;
-}Param;
+}typePoseParameters;
+
+typedef struct
+{
+    Eigen::Matrix3d R;
+    Eigen::Vector3d t;
+}typeCameraPose;
 
 typedef struct 
 {
     //reference to global params
-    struct CameraIntrinsics* Intrinsics;
-    Eigen::Matrix3d R;
-    Eigen::Vector3d t;
-    Param Parameters;
+    typeCameraIntrinsics* Intrinsics;
+    typeCameraPose Pose;
+    typePoseParameters Parameters;
     std::string image_name;
-}Camera;
+    fp64 TimeStamp;
+}typeCamera;
 
 
 void CM_SetIntrinsics();
-struct CameraIntrinsics* CM_GetIntrinsics();
-Camera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx);
-void CM_SetParametrization(Camera* cam);
-void CM_SetRtfromParam(Camera* cam);
+typeCameraIntrinsics* CM_GetIntrinsics();
+typeCamera CM_CreateCam(cv::Mat R, cv::Mat t, i32 idx);
+void CM_SetParametrization(typeCamera* cam);
+void CM_SetRtfromParam(typeCamera* cam);
+Eigen::Vector3d CM_GetCameraCenter(const typeCamera& Camera);
+typeCamera CM_PredictPose(const typeCameraPose& TPreviousFrame, const typeCameraPose& TPreviousPreviousFrame);
 
 #endif //__CM_CAMERA_HPP_

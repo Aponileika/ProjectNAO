@@ -38,3 +38,46 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeKeyFra
 
     return LocalMap;
 }
+
+std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Map, const typeKeyFrame& NewKeyFrame)
+{
+    const typePantoKeypointFrame& LastKeyFrame = NewKeyFrame.Points;
+    std::vector<typePantoMapPoint> LastKeyFrameMapPoints;
+    const std::vector<typePantoMapPoint>& MapPoints = Map.MapPoints;
+
+    for(const std::vector<typePantoImagePoint>& CellPoints : LastKeyFrame)
+    {
+        for(const typePantoImagePoint& ImagePoint : CellPoints)
+        {
+            if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
+            {
+                LastKeyFrameMapPoints.push_back(MapPoints[ImagePoint.MapPointID]);
+            }
+        }
+    }
+    return LastKeyFrameMapPoints;
+}
+
+fp64 MAP_SearchLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMap& LocalMap, typeKeyFrame& NewKeyFrame)
+{
+    std::vector<typePantoMapPoint> MapPoints;
+    for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        for(const std::vector<typePantoImagePoint>& CellPoints : KeyFrame.Points)
+        {
+            for(const typePantoImagePoint& ImagePoint : CellPoints)
+            {
+                if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
+                {
+                    MapPoints.push_back(GlobalMap.MapPoints[ImagePoint.MapPointID]);
+                }
+            }
+        }
+    }
+    const u64 NumLocalMapPoints = static_cast<u64>(MapPoints.size());
+    const typeCamera& Pose = NewKeyFrame.Pose;
+    const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(NewKeyFrame.Points, MapPoints, Pose);
+    fp64 TrackingRatio = static_cast<fp64>(NumTrackedMapPoints) / static_cast<fp64>(NumLocalMapPoints);
+    return TrackingRatio;
+}
+

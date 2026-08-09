@@ -145,19 +145,19 @@ std::vector<Eigen::Vector4d> PROJ_TriangulateLOST(const std::vector<std::vector<
     return Xh;
 }
 
-bool PROJ_Project(const Eigen::Vector4d& MapPoint, Eigen::Vector2d& ImagePoint, const Camera& Pose)
+bool PROJ_Project(const Eigen::Vector4d& MapPoint, Eigen::Vector2d& ImagePoint, const typeCamera& Camera)
 {
     fp64 w = MapPoint.w();
     Eigen::Vector3d NormalizedMapPoint(MapPoint.x() / w, MapPoint.y() / w, MapPoint.z() / w);
 
-    NormalizedMapPoint = Pose.R * NormalizedMapPoint + Pose.t;
+    NormalizedMapPoint = Camera.Pose.R * NormalizedMapPoint + Camera.Pose.t;
 
     if(NormalizedMapPoint.z() < 0.0f)
     {
         return false;
     }
 
-    const CameraIntrinsics Intrinsics = *Pose.Intrinsics;
+    const typeCameraIntrinsics Intrinsics = *Camera.Intrinsics;
 
     fp64 x = NormalizedMapPoint.x() / NormalizedMapPoint.z();
     fp64 y = NormalizedMapPoint.y() / NormalizedMapPoint.z();
