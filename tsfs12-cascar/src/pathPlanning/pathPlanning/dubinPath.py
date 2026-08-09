@@ -56,7 +56,7 @@ class dubinsPath(Node):
                                                np.array([self.xGoal, self.yGoal]), self.thetaGoal)
 
             print(self.plannedPath)
-            self.publsihPath()
+            self.publishPath()
             self.path_planned = True
             self.get_logger().info("PATH PLANNED")
 
