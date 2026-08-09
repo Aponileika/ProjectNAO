@@ -2,6 +2,7 @@ from math import *
 import matplotlib.pyplot as plt
 from time import sleep
 import json
+import numpy as np
 
 import rclpy
 from rclpy.node import Node
@@ -147,6 +148,7 @@ class AutomaticControl(Node):
         ed =  self.path[-1]['distance'] - self.distanceTraveled
         #ex =  dx*cos(self.theta) + dy*sin(self.theta)
         ey = -dx*sin(self.theta) + dy*cos(self.theta)
+        ey = np.sign(ey) * ((abs(ey) + 1)**2 - 1)
 
         etheta  = self.path[self.curr_node]["theta"] - self.theta
         etheta = atan2(sin(etheta), cos(etheta))
@@ -226,7 +228,7 @@ def main(args=None):
         kx=2,
         kix = 1,
         ky=2,
-        ktheta=2
+        ktheta=3
     )
 
     rclpy.spin(node)
