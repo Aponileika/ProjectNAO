@@ -211,6 +211,16 @@ class Monitor():
                 command = {
                     "command":"getPath"
                 }
+            elif command == 'clear':
+                command = None
+                self.pastEstTheta = []
+                self.pastEstX = []
+                self.pastEstY = []
+
+                self.pastTrueX = []
+                self.pastTrueY = []
+                self.pastTrueTheta = []
+                
             else:
                 command = None
 
