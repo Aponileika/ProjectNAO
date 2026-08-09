@@ -65,10 +65,11 @@ class dubinsPath(Node):
 
     def dubinsPath(self, startPos, startAngle, endPos, endAngle, debug=False):
         
-        spacing = 0.2 #Distance between each point in path
+        spacing = 0.1 #Distance between each point in path
         L = 0.285
-        deltaMax = np.pi/4
-        R = L / np.tan(deltaMax)
+        deltaMax = np.pi/6
+        multiplierR = 1.5 #Increase R for more robust turn
+        R = multiplierR * L / np.tan(deltaMax)
 
         startEndVector = endPos - startPos
         startEndNorm = startEndVector /np.linalg.norm(startEndVector)
