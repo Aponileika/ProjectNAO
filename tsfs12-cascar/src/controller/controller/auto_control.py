@@ -124,6 +124,7 @@ class AutomaticControl(Node):
         # Velocity (allow reverse)
         if ed < 0.01:
             ed = 0
+            self.ied = 0
         
         v = self.vmax * min(0.9*cos(etheta) + 0.1, self.kx * ed + self.kix * self.ied)
         self.v = self.value_limit(v, self.vmax, -self.vmax)
