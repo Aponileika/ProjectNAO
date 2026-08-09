@@ -68,7 +68,7 @@ class dubinsPath(Node):
         spacing = 0.1 #Distance between each point in path
         L = 0.285
         deltaMax = np.pi/6
-        multiplierR = 1.0 #Increase R for more robust turn
+        multiplierR = 1.2 #Increase R for more robust turn
         R = multiplierR * L / np.tan(deltaMax)
 
         startEndVector = endPos - startPos
