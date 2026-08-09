@@ -106,14 +106,28 @@ class Localization(Node):
 
             self.oldVodoTime = self.VodoTime
             self.oldVodo = self.Vodo
+            self.standstillIterations = 0
 
-            self.x += self.Vodo * odoT * cos(self.theta)
-            self.y += self.Vodo * odoT * sin(self.theta)
+        elif (self.Vodo == self.oldVodo):
+            self.standstillIterations += 1
+            if self.standstillIterations > 10:
+                self.Vodo = 0
+                self.oldVodo = 0
 
-            self.get_logger().info(f"dt={dt:.4f}s, odoT={odoT:.4f}, x={self.x:.3f}, y={self.y:.3f}, vodo={self.Vodo:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
+        if abs(self.w) < 1e-4:
+            self.x += self.Vodo * dt * cos(self.theta)
+            self.y += self.Vodo * dt * sin(self.theta)
 
-        theta = self.theta + self.w * dt
-        self.theta = atan2(sin(theta), cos(theta))
+        else:
+            temp = self.w * dt / 2
+            self.x += 2*self.Vodo/self.w*sin(temp)*cos(self.theta + temp)
+            self.y += 2*self.Vodo/self.w*sin(temp)*sin(self.theta + temp)
+
+        if self.Vodo != 0:
+            theta = self.theta + self.w * dt
+            self.theta = atan2(sin(theta), cos(theta))
+
+        self.get_logger().info(f"dt={dt:.4f}s, x={self.x:.3f}, y={self.y:.3f}, vodo={self.Vodo:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
 
         return
 
