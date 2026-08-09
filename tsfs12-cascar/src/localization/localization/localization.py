@@ -44,6 +44,8 @@ class Localization(Node):
         self.VodoTime = 0
         self.oldVodoTime = None
 
+        self.standstillIterations = 0
+
         self.x = 0
         self.y = 0
         self.theta = 0
