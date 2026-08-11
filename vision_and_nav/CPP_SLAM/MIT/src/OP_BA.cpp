@@ -274,6 +274,12 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, typeLoc
                 if(MapPointID != PANTO_ID_NOT_SET)
                 {
                     Problem.AddParameterBlock(Map.MapPoints[MapPointID].Point.data(), 4);
+                    Problem.SetManifold(Map.MapPoints[MapPointID].Point.data(), new ceres::SphereManifold<4>());
+                }
+                else
+                {
+                    // Dont optimize points with no associated 2d point
+                    Problem.AddParameterBlock(Map.MapPoints[MapPointID].Point.data(), 4);
                     Problem.SetParameterBlockConstant(Map.MapPoints[MapPointID].Point.data());
                 }
             }

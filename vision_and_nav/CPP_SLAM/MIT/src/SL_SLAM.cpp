@@ -51,6 +51,7 @@ void SL_SlamLoop(i32 num_loops)
             KEY_SetAsKeyFrame(NewKeyFrame, static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1);
             MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap);
             OP_BundleAdjust(PantoSLAM.GlobalMap, typeLocal, PantoSLAM.LocalMap);
+            KEY_CullLocalMap(PantoSLAM.LocalMap);
         }
     }
 }
