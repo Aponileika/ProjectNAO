@@ -58,7 +58,7 @@ std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Ma
     return LastKeyFrameMapPoints;
 }
 
-fp64 MAP_SearchLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMap& LocalMap, typeKeyFrame& NewKeyFrame)
+fp64 MAP_MatchMapPointLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMap& LocalMap, typeKeyFrame& NewKeyFrame)
 {
     std::vector<typePantoMapPoint> MapPoints;
     for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
@@ -79,5 +79,17 @@ fp64 MAP_SearchLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMap& Loca
     const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(NewKeyFrame.Points, MapPoints, Pose);
     fp64 TrackingRatio = static_cast<fp64>(NumTrackedMapPoints) / static_cast<fp64>(NumLocalMapPoints);
     return TrackingRatio;
+}
+
+void MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap, typeKeyFrame NewKeyFrame)
+{
+    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        // Ignore new keyframe
+        if(KeyFrame.ID == NewKeyFrame.ID)
+        {
+            continue;
+        }
+    }
 }
 

@@ -116,6 +116,7 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 #define PANTO_IMAGE_HEIGHT 480
 
 #define PANTO_GRID_COLUMNS 20 // 640 / 32
+#define PANTO_GRID_ROWS 15 // 480 / 32
 
 /*                      
  ******************************************************************                                                  

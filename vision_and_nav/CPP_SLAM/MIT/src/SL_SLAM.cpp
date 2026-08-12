@@ -35,7 +35,7 @@ void SL_SlamLoop(i32 num_loops)
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
         
         PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, NewKeyFrame);
-        const fp64 TrackedRatio = MAP_SearchLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, NewKeyFrame);
+        const fp64 TrackedRatio = MAP_MatchMapPointLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, NewKeyFrame);
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
 
         const typePreviousFrameData PreviousFrameDataCopy = PantoSLAM.PreviousFrameData;
@@ -49,9 +49,9 @@ void SL_SlamLoop(i32 num_loops)
         if(KEY_IsKeyFrame(KeyFrameInfo))
         {
             KEY_SetAsKeyFrame(NewKeyFrame, static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1);
-            MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap);
+            MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, NewKeyFrame);
             OP_BundleAdjust(PantoSLAM.GlobalMap, typeLocal, PantoSLAM.LocalMap);
-            KEY_CullLocalMap(PantoSLAM.LocalMap);
+            MAP_CullLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap);
         }
     }
 }

@@ -33,5 +33,6 @@ typeKeyFrame KEY_GetKeyFrame(const typeCamera& PredictedPose, const std::vector<
 //TODO
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information);
 void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID);
+std::vector<typePantoMapPoint> KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, u64 LatestMapPointID);
 
 #endif //__KEY_KEYFRAME_HPP_

@@ -10,6 +10,8 @@
 #include "PANTO_Utils.hpp"
 #include "OB_Observations.hpp"
 #include "VW_Views.hpp"
+#include "PT_Types.hpp"
+#include "PT_PantoImagePoint.hpp"
 
 
 struct MatchesRet 
@@ -32,6 +34,11 @@ MatchesRet EP_GetMatches(std::pair<std::vector<cv::Point2d>, std::vector<cv::Poi
 cv::Mat EP_EFromRigid(cv::Mat R, cv::Mat t);
 //Returns Set of matches found by distance < EpiPolarTreshhold to epipolar line
 std::pair<cv::Mat, cv::Mat> EP_GetR21t21(cv::Mat R1, cv::Mat t1, cv::Mat R2, cv::Mat t2);
+
+Eigen::Matrix3d EP_GetEssentialMatrix21(const typeCameraPose& Pose1, const typeCameraPose& Pose2);
+std::vector<u64> EP_GetCorrespondences(const typePantoKeypointFrame& Frame1, const typePantoKeypointFrame& Frame2,
+        const Eigen::Matrix3d& EssentialMatrix21);
+
 PointPair2D EP_FindCorrpEpipolar(const PointPair2D& corrp, const cv::Mat& E);
 PointPair2D EP_FilterPointPairByMask(const PointPair2D& corrp, const cv::Mat& mask);
 void EP_DrawCorrespondences(const cv::Mat& img1, const cv::Mat& img2, const std::vector<cv::Point2d>& pts1,

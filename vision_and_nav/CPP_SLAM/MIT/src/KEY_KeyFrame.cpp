@@ -24,3 +24,9 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID)
 {
     KeyFrame.ID = ID;
 }
+
+std::vector<typePantoMapPoint> KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, u64 LatestMapPointID)
+{
+    const Eigen::Matrix3d EssentialMatrix21 = EP_GetEssentialMatrix21(KeyFrame1.Pose.Pose, KeyFrame2.Pose.Pose);
+    std::vector<u64> Correspondences = EP_GetCorrespondences(KeyFrame1.Points, KeyFrame2.Points, EssentialMatrix21);
+}
