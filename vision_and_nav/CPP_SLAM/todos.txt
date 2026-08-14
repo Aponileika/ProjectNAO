@@ -1,5 +1,6 @@
-some kind of heap corrption going on, works with ORB, crashes with AKAZE, try to debug by just
-ditching the options for feature extraction, put akaze code in EP file, see if that works, if not
-keep looking, check globals? No more mallocs left cant be that, also tested AKAZE independently, works fine,
-try to load two images now?
-g++ testakaze.cpp -O3 -std=c++20 -I$(brew --prefix opencv)/include/opencv4 -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_imgcodecs -lopencv_calib3d -lopencv_videoio -lopencv_features2d
+What to do next:
+    - Finish local mapping pipeline, triangulation with epipolar constraint (search along epipolar line) and features! keyframe culling
+    - Implement keyframe removal functionality and mappoint removal functionality
+    - Implement initialization, see paper that uses historical data
+    - Implement threading, use same structure as orb, tracking <-> local mapping <-> global mapping threads. std::jthread / thread? 
+      Think about how to mutex or not to, or copy? Make a decision dont just autopilot into a too restrictive mutex situation.
