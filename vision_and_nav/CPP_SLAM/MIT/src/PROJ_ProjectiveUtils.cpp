@@ -66,6 +66,42 @@ Eigen::Vector3d PROJ_GetCameraCenter(const Eigen::Matrix4d T)
     return -R.transpose() * t;
 }
 
+Eigen::Vector4d PROJ_TriangulateDLT(const Eigen::Vector2d& Point1, const Eigen::Vector2d& Point2, const Eigen::Matrix<fp64, 3, 4>& P1,
+        const Eigen::Matrix<fp64, 3, 4>& P2)
+{
+    Eigen::Matrix4d A;
+
+    const fp64 Point1x = Point1.x();
+    const fp64 Point1y = Point1.y();
+
+    const fp64 Point2x = Point2.x();
+    const fp64 Point2y = Point2.y();
+
+    const Eigen::RowVector4d P1R0 = P1.row(0);
+    const Eigen::RowVector4d P1R1 = P1.row(1);
+    const Eigen::RowVector4d P1R2 = P1.row(2);
+
+    const Eigen::RowVector4d P2R0 = P2.row(0);
+    const Eigen::RowVector4d P2R1 = P2.row(1);
+    const Eigen::RowVector4d P2R2 = P2.row(2);
+
+    A.row(0) = Point1x * P1R2 - P1R0;
+
+    A.row(1) = Point1y * P1R2 - P1R1;
+
+    A.row(2) = Point2x * P2R2 - P2R0;
+
+    A.row(3) = Point2y * P2R2 - P2R1;
+
+    const Eigen::JacobiSVD<Eigen::Matrix4d> SVD(A, Eigen::ComputeFullV);
+
+    Eigen::Vector4d X = SVD.matrixV().col(3);
+
+    X /= X.w();
+
+    return X;
+}
+
 std::vector<Eigen::Vector4d> PROJ_TriangulateLOST(const std::vector<std::vector<Eigen::Vector3d>>& pixelCoords,
         const std::vector<std::vector<Eigen::Matrix4d>>& T,
         const Eigen::Matrix3d K

@@ -48,17 +48,32 @@ std::pair<cv::Mat, cv::Mat> EP_GetR21t21(cv::Mat R1, cv::Mat t1, cv::Mat R2, cv:
     return R21t21;
 }
 
-Eigen::Matrix3d EP_GetEssentialMatrix21(const typeCameraPose& Pose1, const typeCameraPose& Pose2)
+Eigen::Matrix3d EP_GetFundamentalMatrix21(const typeCameraPose& Pose1, const typeCameraPose& Pose2)
 {
     const Eigen::Matrix3d R21 = Pose2.R * Pose1.R.transpose();
     const Eigen::Vector3d t21 = Pose2.t - R21 * Pose1.t;
-    return PROJ_CrossProductMatrix(t21) * R21;
+    const Eigen::Matrix2d& K = CM_GetIntrinsics()->K;
+    const Eigen::Matrix2d& K_inv = K.inverse();
+    const Eigen::Matrix2d& F21 = K_inv.transpose() * PROJ_CrossProductMatrix(t21) * R21 * K_inv;
+    return F21;
 }
 
-std::vector<u64> EP_GetCorrespondences(const typePantoKeypointFrame& Frame1, const typePantoKeypointFrame& Frame2,
-    const Eigen::Matrix3d& EssentialMatrix21)
+bool EP_CheckEpipolarConstraint(const Eigen::Vector2d& Point1, const Eigen::Vector2d& Point2,
+    const Eigen::Matrix3d& F21, const Eigen::Matrix3d& F12)
 {
-    // TODO DBOW like orb
+    const Eigen::Vector3d HomogPoint1 = PROJ_Cart2Homog(Point1);
+    const Eigen::Vector3d HomogPoint2 = PROJ_Cart2Homog(Point2);
+
+    Eigen::Vector3d EpipolarLine1 = F21 * HomogPoint2;
+    EpipolarLine1 /= sqrt(EpipolarLine1.x()*EpipolarLine1.x() + EpipolarLine1.y()*EpipolarLine1.y());
+    fp64 Distance1 = HomogPoint1.transpose() * EpipolarLine1;
+
+    Eigen::Vector3d EpipolarLine2 = F12 * HomogPoint1;
+    EpipolarLine2 /= sqrt(EpipolarLine2.x()*EpipolarLine2.x() + EpipolarLine2.y()*EpipolarLine2.y());
+    fp64 Distance2 = HomogPoint2.transpose() * EpipolarLine2;
+
+    fp64 MeanDistance = (Distance1 + Distance2) * 0.5f;
+    return MeanDistance < PANTO_EPIPOLARTRESHOLD;
 }
 
 PointPair2D EP_FindCorrpEpipolar(const PointPair2D& corrp, const cv::Mat& E)

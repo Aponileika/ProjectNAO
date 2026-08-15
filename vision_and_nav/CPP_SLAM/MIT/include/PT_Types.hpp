@@ -18,19 +18,17 @@ typedef struct
 
 typedef struct
 {
-    u64 KeyFrameID;
-    u64 ImagePointID;
-}typeObservation;
-
-typedef struct
-{
     Eigen::Vector4d Point;
     typeDescriptor Descriptor;
-    std::vector<typeObservation> Observations;
     std::vector<u64> KeyFrameIDs;
+    std::vector<u64> ImagePointIDs;
     u64 ID;
 }typePantoMapPoint;
 
-typedef std::array<std::vector<typePantoImagePoint>, PANTO_CELL_SIZE*PANTO_CELL_SIZE> typePantoKeypointFrame;
+typedef struct
+{
+    std::vector<typePantoImagePoint> ImagePoints;
+    std::array<std::vector<u64>, PANTO_CELL_SIZE*PANTO_CELL_SIZE> CellIndexingArray;
+}typePantoKeypointFrame;
 
 #endif // __PT_TYPES_HPP_

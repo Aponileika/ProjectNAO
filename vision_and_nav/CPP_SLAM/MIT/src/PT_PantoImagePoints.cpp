@@ -43,7 +43,8 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points
             .CellID = CellIndex
         };
 
-        ImagePoints[CellIndex].push_back(CandidateImagePoint);
+        ImagePoints.ImagePoints.push_back(CandidateImagePoint);
+        ImagePoints.CellIndexingArray[CellIndex].push_back(i);
     }
 
     (void) PT_MatchMapPointsToKeyFrame(ImagePoints, CandidateMapPoints, Pose);
@@ -82,9 +83,10 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
             {
                 for(u64 k(MinCellX); k < MaxCellX; k++)
                 {
-                    std::vector<typePantoImagePoint>& LocalImagePoints = KeyFrame[j * PANTO_GRID_COLUMNS + k];
-                    for(const typePantoImagePoint& ImagePoint : LocalImagePoints)
+                    std::vector<u64>& LocalImagePoints = KeyFrame.CellIndexingArray[j * PANTO_GRID_COLUMNS + k];
+                    for(const u64& ImagePointIdx : LocalImagePoints)
                     {
+                        typePantoImagePoint ImagePoint = KeyFrame.ImagePoints[ImagePointIdx];
                         const typeDescriptor& ImagePointDescriptor = ImagePoint.Descriptor;
                         const u32 HammingDistance = PANTO_HammingDistance(MapPointDescriptor, ImagePointDescriptor);
                         if(HammingDistance < Top2Candidates[0].second) 

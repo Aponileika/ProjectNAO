@@ -4,6 +4,8 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <utility>
+#include <DBoW3/DBoW3.h>
+#include <DBoW3/Vocabulary.h>
 #include <stdio.h>
 #include "LG_Logging.hpp"
 #include "OP_BA.hpp"
@@ -15,6 +17,9 @@
 #include "PT_PantoMapPoints.hpp"
 #include "PT_Types.hpp"
 #include "CM_Camera.hpp"
+#include "FR_Frames.hpp"
+#include "EP_CorrespondingPoints.hpp"
+#include "Config.hpp"
 
 typedef struct
 {
@@ -29,6 +34,7 @@ typedef struct
     typeLocalMap LocalMap;
     typeCamera NextFramePosePrediction;
     typePreviousFrameData PreviousFrameData;
+    DBoW3::Vocabulary Vocabulary;
     fp64 AccumulatedDistance;
 }typeSLAM;
 

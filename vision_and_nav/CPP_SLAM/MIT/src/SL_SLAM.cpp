@@ -1,12 +1,4 @@
 #include "../include/SL_SLAM.hpp"
-#include "EP_CorrespondingPoints.hpp"
-#include "FR_Frames.hpp"
-#include "OB_Observations.hpp"
-#include "OP_BA.hpp"
-#include "VIZ_Visualization.hpp"
-#include "VW_Views.hpp"
-#include <chrono>
-#include <utility>
 
 typeSLAM PantoSLAM;
 
@@ -22,6 +14,11 @@ void SL_InitSlam()
 {
     PantoSLAM.GlobalMap = {};
     PantoSLAM.LocalMap = {};
+    PantoSLAM.NextFramePosePrediction = {};
+    PantoSLAM.PreviousFrameData = {};
+    PantoSLAM.Vocabulary.load(PANTO_VocabFilePath);
+    PantoSLAM.AccumulatedDistance = {};
+
     EP_InitCPointExtractor();
     FR_InitFrameGetter();
 }
@@ -48,7 +45,7 @@ void SL_SlamLoop(i32 num_loops)
         typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, NewKeyFrame, TrackedRatio);
         if(KEY_IsKeyFrame(KeyFrameInfo))
         {
-            KEY_SetAsKeyFrame(NewKeyFrame, static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1);
+            KEY_SetAsKeyFrame(NewKeyFrame, static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1, PantoSLAM.Vocabulary);
             MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, NewKeyFrame);
             OP_BundleAdjust(PantoSLAM.GlobalMap, typeLocal, PantoSLAM.LocalMap);
             MAP_CullLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap);

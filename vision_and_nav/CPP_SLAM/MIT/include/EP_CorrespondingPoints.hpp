@@ -35,9 +35,9 @@ cv::Mat EP_EFromRigid(cv::Mat R, cv::Mat t);
 //Returns Set of matches found by distance < EpiPolarTreshhold to epipolar line
 std::pair<cv::Mat, cv::Mat> EP_GetR21t21(cv::Mat R1, cv::Mat t1, cv::Mat R2, cv::Mat t2);
 
-Eigen::Matrix3d EP_GetEssentialMatrix21(const typeCameraPose& Pose1, const typeCameraPose& Pose2);
-std::vector<u64> EP_GetCorrespondences(const typePantoKeypointFrame& Frame1, const typePantoKeypointFrame& Frame2,
-        const Eigen::Matrix3d& EssentialMatrix21);
+Eigen::Matrix3d EP_GetFundamentalMatrix21(const typeCameraPose& Pose1, const typeCameraPose& Pose2);
+bool EP_CheckEpipolarConstraint(const Eigen::Vector2d& Point1, const Eigen::Vector2d& Point2,
+    const Eigen::Matrix3d& F21, const Eigen::Matrix3d& F12);
 
 PointPair2D EP_FindCorrpEpipolar(const PointPair2D& corrp, const cv::Mat& E);
 PointPair2D EP_FilterPointPairByMask(const PointPair2D& corrp, const cv::Mat& mask);

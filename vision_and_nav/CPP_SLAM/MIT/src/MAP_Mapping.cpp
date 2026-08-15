@@ -12,18 +12,15 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeKeyFra
     std::vector<u64> KeyFrameCount(NumberOfKeyFrames);
     typeLocalMap LocalMap{};
 
-    for(const std::vector<typePantoImagePoint>& CellPoints : KeyFrame.Points)
+    for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
     {
-        for(const typePantoImagePoint& ImagePoint : CellPoints)
+        const u64 MapPointID = ImagePoint.MapPointID;
+        if(MapPointID != PANTO_ID_NOT_SET)
         {
-            const u64 MapPointID = ImagePoint.MapPointID;
-            if(MapPointID != PANTO_ID_NOT_SET)
+            const typePantoMapPoint& MapPoint = GlobalMap.MapPoints[MapPointID];
+            for(const u64& KeyFrameID : MapPoint.KeyFrameIDs)
             {
-                const typePantoMapPoint& MapPoint = GlobalMap.MapPoints[MapPointID];
-                for(const u64& KeyFrameID : MapPoint.KeyFrameIDs)
-                {
-                    KeyFrameCount[KeyFrameID]++;
-                }
+                KeyFrameCount[KeyFrameID]++;
             }
         }
     }
@@ -45,14 +42,11 @@ std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Ma
     std::vector<typePantoMapPoint> LastKeyFrameMapPoints;
     const std::vector<typePantoMapPoint>& MapPoints = Map.MapPoints;
 
-    for(const std::vector<typePantoImagePoint>& CellPoints : LastKeyFrame)
+    for(const typePantoImagePoint& ImagePoint : LastKeyFrame.ImagePoints)
     {
-        for(const typePantoImagePoint& ImagePoint : CellPoints)
+        if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
         {
-            if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
-            {
-                LastKeyFrameMapPoints.push_back(MapPoints[ImagePoint.MapPointID]);
-            }
+            LastKeyFrameMapPoints.push_back(MapPoints[ImagePoint.MapPointID]);
         }
     }
     return LastKeyFrameMapPoints;
@@ -63,14 +57,11 @@ fp64 MAP_MatchMapPointLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMa
     std::vector<typePantoMapPoint> MapPoints;
     for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
     {
-        for(const std::vector<typePantoImagePoint>& CellPoints : KeyFrame.Points)
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
-            for(const typePantoImagePoint& ImagePoint : CellPoints)
+            if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
             {
-                if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
-                {
-                    MapPoints.push_back(GlobalMap.MapPoints[ImagePoint.MapPointID]);
-                }
+                MapPoints.push_back(GlobalMap.MapPoints[ImagePoint.MapPointID]);
             }
         }
     }

@@ -97,16 +97,21 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 
 //arbitrary, now same as slam orb
 #define PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD 200
+#define PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW 100
 
 #define PANTO_ID_NOT_SET U64_MAX
 
 #define PANTO_TIMESTAMP_NOT_SET -1.0f
 
+const std::string PANTO_VocabFilePath("PantoVocabulary.dbow3");
+
 // Controls how many children in vocab tree
-#define PANTO_DBOW_BRANCHING_FACTOR 5
+#define PANTO_DBOW_BRANCHING_FACTOR 10
 
 // Controls how deep vocab tree 
-#define PANTO_DBOW_DEPTH 3
+#define PANTO_DBOW_DEPTH 5
+
+#define PANTO_DBOW_LEVELSUP (PANTO_DBOW_DEPTH - 1);
 
 
 /*                      

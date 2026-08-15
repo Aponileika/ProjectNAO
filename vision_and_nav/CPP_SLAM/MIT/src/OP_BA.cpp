@@ -85,29 +85,26 @@ void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
 
     for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
     {
-        for(std::vector<typePantoImagePoint>& CellPoints : KeyFrame.Points)
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
-            for(typePantoImagePoint& ImagePoint : CellPoints)
+            const u64 MapPointID = ImagePoint.MapPointID;
+            if(MapPointID != PANTO_ID_NOT_SET)
             {
-                const u64 MapPointID = ImagePoint.MapPointID;
-                if(MapPointID != PANTO_ID_NOT_SET)
-                {
-                    const fp64 PointX = ImagePoint.Point.x();
-                    const fp64 PointY = ImagePoint.Point.y();
+                const fp64 PointX = ImagePoint.Point.x();
+                const fp64 PointY = ImagePoint.Point.y();
 
-                    ceres::CostFunction* costfunc =
-                        OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                ceres::CostFunction* costfunc =
+                    OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
 
-                    ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+                ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
 
-                    typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+                typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
 
-                    Problem.AddResidualBlock(costfunc,
-                                              lossfunc,
-                                              Parameters.q.coeffs().data(),
-                                              Parameters.t.data(),
-                                              Map.MapPoints[MapPointID].Point.data());
-                }
+                Problem.AddResidualBlock(costfunc,
+                                          lossfunc,
+                                          Parameters.q.coeffs().data(),
+                                          Parameters.t.data(),
+                                          Map.MapPoints[MapPointID].Point.data());
             }
         }
     }
@@ -149,29 +146,26 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
 
     for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
     {
-        for(std::vector<typePantoImagePoint>& CellPoints : KeyFrame.Points)
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
-            for(typePantoImagePoint& ImagePoint : CellPoints)
+            const u64 MapPointID = ImagePoint.MapPointID;
+            if(MapPointID != PANTO_ID_NOT_SET)
             {
-                const u64 MapPointID = ImagePoint.MapPointID;
-                if(MapPointID != PANTO_ID_NOT_SET)
-                {
-                    const fp64 PointX = ImagePoint.Point.x();
-                    const fp64 PointY = ImagePoint.Point.y();
+                const fp64 PointX = ImagePoint.Point.x();
+                const fp64 PointY = ImagePoint.Point.y();
 
-                    ceres::CostFunction* costfunc =
-                        OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                ceres::CostFunction* costfunc =
+                    OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
 
-                    ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+                ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
 
-                    typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+                typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
 
-                    Problem.AddResidualBlock(costfunc,
-                                              lossfunc,
-                                              Parameters.q.coeffs().data(),
-                                              Parameters.t.data(),
-                                              Map.MapPoints[MapPointID].Point.data());
-                }
+                Problem.AddResidualBlock(costfunc,
+                                          lossfunc,
+                                          Parameters.q.coeffs().data(),
+                                          Parameters.t.data(),
+                                          Map.MapPoints[MapPointID].Point.data());
             }
         }
     }
@@ -199,39 +193,36 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem)
 
     Problem.AddParameterBlock(Parameters.t.data(), 3);
 
-    for (std::vector<typePantoImagePoint>& CellPoints : KeyFrame.Points)
+    for (typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
     {
-        for (typePantoImagePoint& ImagePoint : CellPoints)
+        const u64 MapPointID = ImagePoint.MapPointID;
+
+        if(MapPointID != PANTO_ID_NOT_SET)
         {
-            const u64 MapPointID = ImagePoint.MapPointID;
+            typePantoMapPoint& MapPoint =
+                Map.MapPoints[MapPointID];
 
-            if(MapPointID != PANTO_ID_NOT_SET)
-            {
-                typePantoMapPoint& MapPoint =
-                    Map.MapPoints[MapPointID];
+            Problem.AddParameterBlock(
+                    MapPoint.Point.data(), 4);
 
-                Problem.AddParameterBlock(
-                        MapPoint.Point.data(), 4);
+            Problem.SetParameterBlockConstant(
+                    MapPoint.Point.data());
 
-                Problem.SetParameterBlockConstant(
-                        MapPoint.Point.data());
+            ceres::CostFunction* CostFunc =
+                OP_ReprojectionError::Create(
+                        ImagePoint.Point.x(),
+                        ImagePoint.Point.y(),
+                        &OPCameraIntrinsics);
 
-                ceres::CostFunction* CostFunc =
-                    OP_ReprojectionError::Create(
-                            ImagePoint.Point.x(),
-                            ImagePoint.Point.y(),
-                            &OPCameraIntrinsics);
+            ceres::LossFunction* LossFunc =
+                new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
 
-                ceres::LossFunction* LossFunc =
-                    new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
-
-                Problem.AddResidualBlock(
-                        CostFunc,
-                        LossFunc,
-                        Parameters.q.coeffs().data(),
-                        Parameters.t.data(),
-                        MapPoint.Point.data());
-            }
+            Problem.AddResidualBlock(
+                    CostFunc,
+                    LossFunc,
+                    Parameters.q.coeffs().data(),
+                    Parameters.t.data(),
+                    MapPoint.Point.data());
         }
     }
 }
@@ -266,51 +257,45 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, typeLoc
 
     for(const typeKeyFrame& KeyFrame: LocalMap.KeyFrames)
     {
-        for(const std::vector<typePantoImagePoint>& CellPoints : KeyFrame.Points)
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
-            for(const typePantoImagePoint& ImagePoint : CellPoints)
+            const u64 MapPointID = ImagePoint.MapPointID;
+            if(MapPointID != PANTO_ID_NOT_SET)
             {
-                const u64 MapPointID = ImagePoint.MapPointID;
-                if(MapPointID != PANTO_ID_NOT_SET)
-                {
-                    Problem.AddParameterBlock(Map.MapPoints[MapPointID].Point.data(), 4);
-                    Problem.SetManifold(Map.MapPoints[MapPointID].Point.data(), new ceres::SphereManifold<4>());
-                }
-                else
-                {
-                    // Dont optimize points with no associated 2d point
-                    Problem.AddParameterBlock(Map.MapPoints[MapPointID].Point.data(), 4);
-                    Problem.SetParameterBlockConstant(Map.MapPoints[MapPointID].Point.data());
-                }
+                Problem.AddParameterBlock(Map.MapPoints[MapPointID].Point.data(), 4);
+                Problem.SetManifold(Map.MapPoints[MapPointID].Point.data(), new ceres::SphereManifold<4>());
+            }
+            else
+            {
+                // Dont optimize points with no associated 2d point
+                Problem.AddParameterBlock(Map.MapPoints[MapPointID].Point.data(), 4);
+                Problem.SetParameterBlockConstant(Map.MapPoints[MapPointID].Point.data());
             }
         }
     }
 
     for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
     {
-        for(std::vector<typePantoImagePoint>& CellPoints : KeyFrame.Points)
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
-            for(typePantoImagePoint& ImagePoint : CellPoints)
+            const u64 MapPointID = ImagePoint.MapPointID;
+            if(MapPointID != PANTO_ID_NOT_SET)
             {
-                const u64 MapPointID = ImagePoint.MapPointID;
-                if(MapPointID != PANTO_ID_NOT_SET)
-                {
-                    const fp64 PointX = ImagePoint.Point.x();
-                    const fp64 PointY = ImagePoint.Point.y();
+                const fp64 PointX = ImagePoint.Point.x();
+                const fp64 PointY = ImagePoint.Point.y();
 
-                    ceres::CostFunction* costfunc =
-                        OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                ceres::CostFunction* costfunc =
+                    OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
 
-                    ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+                ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
 
-                    typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+                typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
 
-                    Problem.AddResidualBlock(costfunc,
-                                              lossfunc,
-                                              Parameters.q.coeffs().data(),
-                                              Parameters.t.data(),
-                                              Map.MapPoints[MapPointID].Point.data());
-                }
+                Problem.AddResidualBlock(costfunc,
+                                          lossfunc,
+                                          Parameters.q.coeffs().data(),
+                                          Parameters.t.data(),
+                                          Map.MapPoints[MapPointID].Point.data());
             }
         }
     }
