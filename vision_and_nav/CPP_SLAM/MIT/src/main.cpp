@@ -25,6 +25,7 @@
 #include "../include/VIZ_Visualization.hpp"
 #include "../include/PROJ_ProjectiveUtils.hpp"
 #include "../include/PANTO_Utils.hpp"
+#include "../include/DBOW3_DeepBagofWords.hpp"
 #include "../include/Config.hpp"
 
 #include "LG_Logging.cpp"
@@ -36,17 +37,16 @@
 #include "PT_Points.cpp"
 #include "SL_SLAM.cpp"
 #include "PANTO_Utils.cpp"
-#include "VW_Views.cpp"
 #include "CM_Camera.cpp"
 #include "OP_BA.cpp"
 #include "VIZ_Visualization.cpp"
-#include "FEAT_Features.cpp"
 #include "PROJ_ProjectiveUtils.cpp"
 #include "PANTO_Utils.cpp"
 #include "KEY_Keyframe.cpp"
-#include "PT_PantoImagePoint.cpp"
+#include "PT_PantoImagePoints.cpp"
 #include "PT_PantoMapPoints.cpp"
 #include "MAP_Mapping.cpp"
+#include "DBOW3_DeepBagofWords.cpp"
 
 int main(int argc, char* argv[])
 {

@@ -18,6 +18,8 @@
 #define PANTO_NEWFRAMECORRPTHRESHOLD 30
 #define PANTO_INITFRAMETHRESHOLDCORRP 50
 #define OPENCV_AKAZETHRESHOLD 0.0005f
+#define OPENCV_AKAZE_NOCTAVES 4
+#define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
 
 const char* PANTO_SLAMSTARTMSG =
@@ -99,6 +101,13 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 #define PANTO_ID_NOT_SET U64_MAX
 
 #define PANTO_TIMESTAMP_NOT_SET -1.0f
+
+// Controls how many children in vocab tree
+#define PANTO_DBOW_BRANCHING_FACTOR 5
+
+// Controls how deep vocab tree 
+#define PANTO_DBOW_DEPTH 3
+
 
 /*                      
  ******************************************************************                                                  
