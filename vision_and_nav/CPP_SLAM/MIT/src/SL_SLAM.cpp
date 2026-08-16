@@ -48,9 +48,8 @@ void SL_SlamLoop(i32 num_loops)
         {
             KEY_SetAsKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1, PantoSLAM.Vocabulary);
             GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints);
-            MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, PantoSLAM.GlobalMap.KeyFrames.back());
-            //Not implemented yet
-            GRAPH_UpdateCovisibility(PantoSLAM.CovisibilityGraph, PantoSLAM.LocalMap, PantoSLAM.GlobalMap.MapPoints);
+            const u64 NumNewPoints = MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, PantoSLAM.GlobalMap.KeyFrames.back());
+            GRAPH_UpdateCovisibility(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.MapPoints, NumNewPoints);
             OP_BundleAdjust(PantoSLAM.GlobalMap, typeLocal, PantoSLAM.LocalMap);
             MAP_CullLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap);
         }
@@ -68,7 +67,7 @@ typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameDat
     {
         .VelocityChange = {},
         .LocalMapTrackingRatio = TrackedRatio,
-        .DistanceTravelled = {}
+        .AcumulatedDistanceTravelled = {}
     };
     // Order oldest to newest 0->1->2
     // Calculate velocity change
@@ -89,7 +88,7 @@ typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameDat
 
     PantoSLAM.AccumulatedDistance += abs((C2 - C1).norm());
 
-    KeyFrameInfo.DistanceTravelled = PantoSLAM.AccumulatedDistance;
+    KeyFrameInfo.AcumulatedDistanceTravelled = PantoSLAM.AccumulatedDistance;
 
     return KeyFrameInfo;
 }

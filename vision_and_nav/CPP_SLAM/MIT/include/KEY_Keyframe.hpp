@@ -23,7 +23,7 @@ typedef struct
     fp64 LocalMapTrackingRatio;
     // fp64 TrajectoryCurvature;
     // fp64 FeatureDistributionQuality;
-    fp64 DistanceTravelled;
+    fp64 AcumulatedDistanceTravelled;
     // fp64 FeatureMatchingRate;
     // fp64 DynamicFeatureRatio; // What is this?
 }typeKeyFrameInformation;

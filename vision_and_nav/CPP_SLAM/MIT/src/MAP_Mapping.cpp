@@ -84,8 +84,9 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap)
     return;
 }
 
-void MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap, typeKeyFrame NewKeyFrame)
+u64 MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap, typeKeyFrame NewKeyFrame)
 {
+    const std::size_t SizeBefore = GlobalMap.MapPoints.size();
     for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
     {
         // Ignore new keyframe
@@ -96,5 +97,7 @@ void MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap, ty
 
         KEY_GetNewMapPoints(NewKeyFrame, KeyFrame, GlobalMap.MapPoints);
     }
+    const std::size_t NumNewPoints = GlobalMap.MapPoints.size() - SizeBefore;
+    return static_cast<u64>(NumNewPoints);
 }
 
