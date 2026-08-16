@@ -3,7 +3,7 @@ What to do next:
     - (SKIP for now) Keyframe culling
     - Finish GRAPH_UpdateCovisibility function, should iterate and sort covisibility scores, needs to search for each keyframe what their current score
       is first, after this the general pipeline is similar, except single thread, and a bit simplified. We use same tracking and mapping local map.
-
+    - Fuzzy keyframe decision.
     - Implement keyframe removal functionality and mappoint removal functionality.
     - Implement initialization, see paper that uses historical data.
     - Implement threading, use same structure as orb, tracking <-> local mapping <-> global mapping threads. std::jthread / thread? 
