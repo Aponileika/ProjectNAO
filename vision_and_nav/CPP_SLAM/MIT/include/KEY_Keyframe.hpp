@@ -41,7 +41,7 @@ typedef struct
 typeKeyFrame KEY_GetKeyFrame(const typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints);
 //TODO
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information);
-void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, cv::Mat Descriptors, DBoW3::Vocabulary Vocabulary);
-std::vector<typePantoMapPoint> KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints);
+void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocabulary& Vocabulary);
+void KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints);
 
 #endif //__KEY_KEYFRAME_HPP_

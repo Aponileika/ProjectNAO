@@ -28,3 +28,13 @@ void PT_AddObservation(typePantoMapPoint& MapPoint, const u64 KeyFrameID, const 
     // Calculate the descriptor with lowest median distance to all others as representative descriptor
     return;
 }
+
+bool PT_IsInfront(const Eigen::Vector4d& Point, const typeCamera& Camera)
+{
+    const Eigen::Matrix3d& R =Camera.Pose.R;
+    const Eigen::Vector3d& t =Camera.Pose.t;
+    Eigen::Vector3d PointCart = PROJ_Homog2Cart(Point);
+
+    PointCart = R * PointCart + t;
+    return(PointCart.z() > 0.0f);
+}

@@ -42,7 +42,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocab
     CurrentDescriptors.pop();
 }
 
-std::vector<typePantoMapPoint> KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints)
+void KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints)
 {
     const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Pose.Pose, KeyFrame2.Pose.Pose);
     const Eigen::Matrix3d F12 = F21.transpose();
@@ -60,6 +60,9 @@ std::vector<typePantoMapPoint> KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, type
     auto FeatureIterator2 = FeatureVector2.begin();
 
     std::pair<u64, u64> KeyFrameIDs(KeyFrame1.ID, KeyFrame2.ID);
+
+    const typeCamera& Camera1 = KeyFrame1.Pose;
+    const typeCamera& Camera2 = KeyFrame2.Pose;
     
     while(FeatureIterator1 != FeatureVector1.end() && FeatureIterator2 != FeatureVector2.end())
     {
@@ -68,6 +71,10 @@ std::vector<typePantoMapPoint> KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, type
             //Feature vector match
             const std::vector<u32>& FeatureIDs1 = FeatureIterator1->second;
             const std::vector<u32>& FeatureIDs2 = FeatureIterator2->second;
+
+            u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
+
+            u64 BestFeatureID = PANTO_ID_NOT_SET;
 
             for(const u32& FeatureID1 : FeatureIDs1)
             {
@@ -80,23 +87,39 @@ std::vector<typePantoMapPoint> KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, type
                 for(const u32& FeatureID2 : FeatureIDs2)
                 {
                     typePantoImagePoint& ImagePoint2 = AllImagePoints2[FeatureID2];
+
                     if(ImagePoint2.MapPointID != PANTO_ID_NOT_SET)
                     {
                         continue;
                     }
 
                     const u32 Distance = PANTO_HammingDistance(ImagePoint1.Descriptor, ImagePoint2.Descriptor);
-                    if(Distance <= PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW)
+
+                    if(Distance >= BestDistance)
                     {
-                        if(EP_CheckEpipolarConstraint(ImagePoint1.Point, ImagePoint2.Point, F21, F12))
-                        {
-                            std::pair<u64, u64> ImagePointIDs(ImagePoint1.ID, ImagePoint2.ID);
-                            Eigen::Vector4d MapPoint = PROJ_TriangulateDLT(ImagePoint1.Point, ImagePoint2.Point, Rt1, Rt2);
-                            const u64 MapPointID = GlobalMapPoints.size();
-                            const typePantoMapPoint NewPoint = PT_CreatePantoMapPoint(MapPoint, ImagePoint1.Descriptor, 
+                        continue;
+                    }
+
+                    if(!EP_CheckEpipolarConstraint(ImagePoint1.Point, ImagePoint2.Point, F21, F12))
+                    {
+                        continue;
+                    }
+
+                    BestDistance = Distance;
+                    BestFeatureID = static_cast<u64>(FeatureID2);
+                }
+
+                if(BestFeatureID != PANTO_ID_NOT_SET)
+                {
+                    typePantoImagePoint& ImagePoint2 = AllImagePoints2[BestFeatureID];
+                    std::pair<u64, u64> ImagePointIDs(ImagePoint1.ID, ImagePoint2.ID);
+                    Eigen::Vector4d MapPoint = PROJ_TriangulateDLT(ImagePoint1.Point, ImagePoint2.Point, Rt1, Rt2);
+                    if(PT_IsInfront(MapPoint, Camera1) && PT_IsInfront(MapPoint, Camera2))
+                    {
+                        const u64 MapPointID = GlobalMapPoints.size();
+                        const typePantoMapPoint NewPoint = PT_CreatePantoMapPoint(MapPoint, ImagePoint1.Descriptor, 
                                 KeyFrameIDs, ImagePointIDs, MapPointID);
-                            GlobalMapPoints.push_back(NewPoint);
-                        }
+                        GlobalMapPoints.push_back(NewPoint);
                     }
                 }
             }
