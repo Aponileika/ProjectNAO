@@ -136,3 +136,9 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
         }
     }
 }
+
+void KEY_PopKeyFrame(void)
+{
+    CurrentDescriptors.pop();
+}
+

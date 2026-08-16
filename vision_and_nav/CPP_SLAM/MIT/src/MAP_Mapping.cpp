@@ -10,6 +10,7 @@ void MAP_InsertPreliminaryKeyFrame(typeGlobalMap& Map, typeKeyFrame& KeyFrame)
 
 void MAP_RemovePreliminaryKeyFrame(typeGlobalMap& Map)
 {
+    KEY_PopKeyFrame();
     Map.KeyFrames.pop_back();
 }
 
