@@ -1,9 +1,16 @@
 #include "MAP_Mapping.hpp"
 #include <cstddef>
 
-void MAP_InsertKeyFrame(typeGlobalMap& Map, const typeKeyFrame& KeyFrame)
+void MAP_InsertPreliminaryKeyFrame(typeGlobalMap& Map, typeKeyFrame& KeyFrame)
 {
+    const u64 ID = Map.KeyFrames.size();
+    KeyFrame.ID = ID;
     Map.KeyFrames.push_back(KeyFrame);
+}
+
+void MAP_RemovePreliminaryKeyFrame(typeGlobalMap& Map)
+{
+    Map.KeyFrames.pop_back();
 }
 
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame)
@@ -72,6 +79,11 @@ fp64 MAP_MatchMapPointLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMa
     return TrackingRatio;
 }
 
+void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap)
+{
+    return;
+}
+
 void MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap, typeKeyFrame NewKeyFrame)
 {
     for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
@@ -81,6 +93,8 @@ void MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap, ty
         {
             continue;
         }
+
+        KEY_GetNewMapPoints(NewKeyFrame, KeyFrame, GlobalMap.MapPoints);
     }
 }
 

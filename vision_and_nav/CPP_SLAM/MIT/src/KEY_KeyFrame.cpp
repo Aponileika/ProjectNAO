@@ -22,7 +22,6 @@ typeKeyFrame KEY_GetKeyFrame(const typeCamera& PredictedPose, const std::vector<
 
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
 {
-    // TODO fuzzy inference
     return true;
 }
 
@@ -42,7 +41,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocab
     CurrentDescriptors.pop();
 }
 
-void KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints)
+void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints)
 {
     const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Pose.Pose, KeyFrame2.Pose.Pose);
     const Eigen::Matrix3d F12 = F21.transpose();

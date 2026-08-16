@@ -1,6 +1,13 @@
 What to do next:
-    - Finish local mapping pipeline, triangulation with epipolar constraint (search along epipolar line) and features! keyframe culling
-    - Implement keyframe removal functionality and mappoint removal functionality
-    - Implement initialization, see paper that uses historical data
+    - (DONE) Finish local mapping pipeline, Matching with DBoW3 feature vectors and feature + ep constraint check.
+    - (SKIP for now) Keyframe culling
+    - Finish GRAPH_UpdateCovisibility function, should iterate and sort covisibility scores, needs to search for each keyframe what their current score
+      is first, after this the general pipeline is similar, except single thread, and a bit simplified. We use same tracking and mapping local map.
+
+    - Implement keyframe removal functionality and mappoint removal functionality.
+    - Implement initialization, see paper that uses historical data.
     - Implement threading, use same structure as orb, tracking <-> local mapping <-> global mapping threads. std::jthread / thread? 
       Think about how to mutex or not to, or copy? Make a decision dont just autopilot into a too restrictive mutex situation.
+
+General:
+    - Add Logging to the rewrite (as in add debug logs)

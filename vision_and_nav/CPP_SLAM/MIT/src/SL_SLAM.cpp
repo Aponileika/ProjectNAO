@@ -14,6 +14,7 @@ void SL_InitSlam()
 {
     PantoSLAM.GlobalMap = {};
     PantoSLAM.LocalMap = {};
+    PantoSLAM.CovisibilityGraph = {};
     PantoSLAM.NextFramePosePrediction = {};
     PantoSLAM.PreviousFrameData = {};
     PantoSLAM.Vocabulary.load(PANTO_VocabFilePath);
@@ -28,7 +29,7 @@ void SL_SlamLoop(i32 num_loops)
     for(i32 i = 0; i < num_loops; i++)
     {
         typeKeyFrame NewKeyFrame = KEY_GetKeyFrame(PantoSLAM.NextFramePosePrediction, PantoSLAM.PreviousFrameData.PreviousFrameMapPoints);
-        MAP_InsertKeyFrame(PantoSLAM.GlobalMap, NewKeyFrame);
+        MAP_InsertPreliminaryKeyFrame(PantoSLAM.GlobalMap, NewKeyFrame);
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
         
         PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, NewKeyFrame);
@@ -45,10 +46,17 @@ void SL_SlamLoop(i32 num_loops)
         typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, NewKeyFrame, TrackedRatio);
         if(KEY_IsKeyFrame(KeyFrameInfo))
         {
-            KEY_SetAsKeyFrame(NewKeyFrame, static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1, PantoSLAM.Vocabulary);
-            MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, NewKeyFrame);
+            KEY_SetAsKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1, PantoSLAM.Vocabulary);
+            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints);
+            MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, PantoSLAM.GlobalMap.KeyFrames.back());
+            //Not implemented yet
+            GRAPH_UpdateCovisibility(PantoSLAM.CovisibilityGraph, PantoSLAM.LocalMap, PantoSLAM.GlobalMap.MapPoints);
             OP_BundleAdjust(PantoSLAM.GlobalMap, typeLocal, PantoSLAM.LocalMap);
             MAP_CullLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap);
+        }
+        else
+        {
+            MAP_RemovePreliminaryKeyFrame(PantoSLAM.GlobalMap);
         }
     }
 }

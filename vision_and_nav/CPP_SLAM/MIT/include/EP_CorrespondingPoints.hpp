@@ -8,8 +8,6 @@
 #include "PROJ_ProjectiveUtils.hpp"
 #include "Config.hpp"
 #include "PANTO_Utils.hpp"
-#include "OB_Observations.hpp"
-#include "VW_Views.hpp"
 #include "PT_Types.hpp"
 #include "PT_PantoImagePoint.hpp"
 

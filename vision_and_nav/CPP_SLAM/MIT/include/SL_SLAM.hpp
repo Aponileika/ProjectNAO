@@ -20,6 +20,7 @@
 #include "FR_Frames.hpp"
 #include "EP_CorrespondingPoints.hpp"
 #include "Config.hpp"
+#include "GRAPH_PantoGraph.hpp"
 
 typedef struct
 {
@@ -32,6 +33,7 @@ typedef struct
 {
     typeGlobalMap GlobalMap;
     typeLocalMap LocalMap;
+    typeCovisibilityGraph CovisibilityGraph;
     typeCamera NextFramePosePrediction;
     typePreviousFrameData PreviousFrameData;
     DBoW3::Vocabulary Vocabulary;
