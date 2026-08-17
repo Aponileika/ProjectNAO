@@ -6,7 +6,6 @@
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
 #include "PT_Points.hpp"
-#include "OB_Observations.hpp"
 #include "Config.hpp"
 #include "MAP_Mapping.hpp"
 

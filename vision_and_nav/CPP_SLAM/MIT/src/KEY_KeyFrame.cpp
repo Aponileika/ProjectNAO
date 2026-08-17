@@ -4,10 +4,28 @@
 // Since getkeyframe can be reached before setaskeyframe is called this has to be a deque (or just a que really)
 static std::queue<cv::Mat> CurrentDescriptors{};
 
-typeKeyFrame KEY_GetKeyFrame(const typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints)
+static typeKeyFrameBootStrapData BootStrapData = 
 {
-    cv::Mat Frame = FR_GetFrame();
-    DescRet Descriptors = EP_GetDescriptors(Frame);
+        .VelocityChange{},
+        .LocalMapTrackingRatio{},
+        .AcumulatedDistanceTravelled{},
+        .NumFrames{},
+        .BootStrapDataSolved = false
+};
+
+typeFuzzyKeyFrameInference FuzzyInference = 
+{
+    .VelocityParamameters{},
+    .TrackingRatioParameters{},
+    .AccumulatedDistanceParameters{},
+    .Threshold = NAN
+};
+
+typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints)
+{
+    typePantoFrame Frame = FR_GetFrame();
+    PredictedPose.TimeStamp = Frame.TimeStamp;
+    DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
     CurrentDescriptors.push(Descriptors.Descriptors);
     typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePoints(Descriptors.Points, Descriptors.Descriptors, LastFrameMapPoints, PredictedPose);
     typeKeyFrame KeyFrame = {
@@ -22,7 +40,21 @@ typeKeyFrame KEY_GetKeyFrame(const typeCamera& PredictedPose, const std::vector<
 
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
 {
-    return true;
+    if(BootStrapData.NumFrames < PANTO_NUM_BOOTSTRAP_FRAMES)
+    {
+        ++BootStrapData.NumFrames;
+        BootStrapData.AcumulatedDistanceTravelled = Information.AcumulatedDistanceTravelled;
+        BootStrapData.LocalMapTrackingRatio       += Information.LocalMapTrackingRatio;
+        BootStrapData.VelocityChange              += Information.VelocityChange;
+        return true;
+    }
+    else
+    {
+        if(!BootStrapData.BootStrapDataSolved)
+        {
+            KEYPriv_SolveBootStrapData();
+        }
+    }
 }
 
 void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocabulary& Vocabulary)
@@ -140,5 +172,28 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
 void KEY_PopKeyFrame(void)
 {
     CurrentDescriptors.pop();
+}
+
+
+void KEYPriv_SolveBootStrapData(void)
+{
+    assert(BootStrapData.BootStrapDataSolved == false);
+
+    const u64 NumFrames = BootStrapData.NumFrames;
+    fp64 MeanVelocityChange = BootStrapData.VelocityChange / NumFrames;
+    fp64 MeanTrackingRatio = BootStrapData.LocalMapTrackingRatio / NumFrames;
+    fp64 MeanDistanceBetweenFrames = BootStrapData.AcumulatedDistanceTravelled / NumFrames;
+
+    FuzzyInference.VelocityParamameters.first = MeanVelocityChange * PANTO_KEYFRAME_LOW_THRESHOLD_RATIO_TO_MEAN;
+    FuzzyInference.VelocityParamameters.second = MeanVelocityChange;
+
+    FuzzyInference.TrackingRatioParameters.first = MeanTrackingRatio  * PANTO_KEYFRAME_LOW_THRESHOLD_RATIO_TO_MEAN;
+    FuzzyInference.TrackingRatioParameters.second = MeanTrackingRatio;
+
+    FuzzyInference.Threshold = MeanDistanceBetweenFrames * PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN;
+
+    FuzzyInference.AccumulatedDistanceParameters.first = FuzzyInference.Threshold * PANTO_KEYFRAME_LOW_THRESHOLD_RATIO_TO_MEAN;
+    FuzzyInference.AccumulatedDistanceParameters.second = FuzzyInference.Threshold;
+
 }
 

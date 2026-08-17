@@ -1,4 +1,5 @@
 #include "../include/FR_Frames.hpp"
+#include <chrono>
 
 namespace 
 {
@@ -20,6 +21,13 @@ namespace
         i32 frame_idx;
     };
     struct dataset_read reader;
+}
+
+using PantoClock = std::chrono::steady_clock;
+
+namespace 
+{
+    const PantoClock::time_point StartTime = PantoClock::now();
 }
 
 cv::Mat __FR_GetFrameDataSet();
@@ -47,15 +55,26 @@ int FR_InitFrameGetter()
     return 0;
 }
 
-cv::Mat FR_GetFrame(void)
+typePantoFrame FR_GetFrame(void)
 {
+    typePantoFrame PantoFrame{};
     if(PANTO_USE_DATASET == true)
     {
-        cv::Mat frame = __FR_GetFrameDataSet();
-        return frame;
+        cv::Mat Frame = __FR_GetFrameDataSet();
+        const PantoClock::time_point CurrentTime = PantoClock::now();
+        const fp64 TimeStamp = std::chrono::duration(CurrentTime - StartTime).count();
+        PantoFrame.Frame = Frame; 
+        PantoFrame.TimeStamp = TimeStamp;
     }
-    cv::Mat frame = __FR_GetFrameWebCam();
-    return frame;
+    else
+    {
+        cv::Mat Frame = __FR_GetFrameWebCam();
+        const PantoClock::time_point CurrentTime = PantoClock::now();
+        const fp64 TimeStamp = std::chrono::duration(CurrentTime - StartTime).count();
+        PantoFrame.Frame = Frame; 
+        PantoFrame.TimeStamp = TimeStamp;
+    }
+    return PantoFrame;
 }
 
 cv::Mat __FR_GetFrameWebCam(void)

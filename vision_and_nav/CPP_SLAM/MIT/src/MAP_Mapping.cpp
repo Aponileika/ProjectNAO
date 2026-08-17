@@ -60,7 +60,7 @@ std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Ma
     return LastKeyFrameMapPoints;
 }
 
-fp64 MAP_MatchMapPointLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMap& LocalMap, typeKeyFrame& NewKeyFrame)
+typeLocalMapInfo MAP_MatchMapPointLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMap& LocalMap, typeKeyFrame& NewKeyFrame)
 {
     std::vector<typePantoMapPoint> MapPoints;
     for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
@@ -73,11 +73,51 @@ fp64 MAP_MatchMapPointLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMa
             }
         }
     }
+
+    std::vector<fp64> LocalDepth;
+
+    LocalDepth.reserve((MapPoints.size() + PANTO_LOCAL_MAP_SAMPLE_STRIDE - 1) /
+        PANTO_LOCAL_MAP_SAMPLE_STRIDE);
+
+    const typeCameraPose& LocalMapPose = NewKeyFrame.Pose.Pose;
+
+    for(std::size_t i{}; i < MapPoints.size(); i += PANTO_LOCAL_MAP_SAMPLE_STRIDE)
+    {
+        const Eigen::Vector3d PointWorld =
+            MapPoints[i].Point.head<3>() /
+            MapPoints[i].Point.w();
+
+        const Eigen::Vector3d PointCamera =
+            LocalMapPose.R * PointWorld + LocalMapPose.t;
+
+        if(PointCamera.z() > 0.0)
+        {
+            LocalDepth.push_back(PointCamera.z());
+        }
+    }
+
+    const std::size_t Middle = LocalDepth.size() / 2;
+
+    std::nth_element(
+            LocalDepth.begin(),
+            LocalDepth.begin() + Middle,
+            LocalDepth.end());
+
+    const fp64 MedianDepth = LocalDepth[Middle];
+
     const u64 NumLocalMapPoints = static_cast<u64>(MapPoints.size());
     const typeCamera& Pose = NewKeyFrame.Pose;
     const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(NewKeyFrame.Points, MapPoints, Pose);
-    fp64 TrackingRatio = static_cast<fp64>(NumTrackedMapPoints) / static_cast<fp64>(NumLocalMapPoints);
-    return TrackingRatio;
+
+    const fp64 TrackingRatio = static_cast<fp64>(NumTrackedMapPoints) / static_cast<fp64>(NumLocalMapPoints);
+
+    typeLocalMapInfo LocalMapInfo = 
+    {
+        .TrackedRatio = TrackingRatio,
+        .MedianDepth = MedianDepth
+    };
+
+    return LocalMapInfo;
 }
 
 void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap)

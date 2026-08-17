@@ -14,6 +14,7 @@
 #include <PT_PantoMapPoints.hpp>
 #include <CM_Camera.hpp>
 #include <queue>
+#include <cmath>
 
 typedef struct
 {
@@ -24,8 +25,6 @@ typedef struct
     // fp64 TrajectoryCurvature;
     // fp64 FeatureDistributionQuality;
     fp64 AcumulatedDistanceTravelled;
-    // fp64 FeatureMatchingRate;
-    // fp64 DynamicFeatureRatio; // What is this?
 }typeKeyFrameInformation;
 
 typedef struct
@@ -38,7 +37,7 @@ typedef struct
 }typeKeyFrame;
 
 
-typeKeyFrame KEY_GetKeyFrame(const typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints);
+typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints);
 //TODO
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information);
 void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocabulary& Vocabulary);

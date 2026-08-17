@@ -8,7 +8,7 @@ static void __SL_SlamStart();
 void __SL_SlamLoopBundle();
 PointPair2D __SL_SlamLoopPnP();
 typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameData& PreviousFrameDataCopy, const typeKeyFrame& NewKeyFrame,
-        fp64 TrackedRatio);
+        const typeLocalMapInfo& LocalMapInfo);
 
 void SL_InitSlam()
 {
@@ -33,7 +33,7 @@ void SL_SlamLoop(i32 num_loops)
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
         
         PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, NewKeyFrame);
-        const fp64 TrackedRatio = MAP_MatchMapPointLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, NewKeyFrame);
+        const typeLocalMapInfo LocalMapInfo  = MAP_MatchMapPointLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, NewKeyFrame);
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
 
         const typePreviousFrameData PreviousFrameDataCopy = PantoSLAM.PreviousFrameData;
@@ -43,7 +43,7 @@ void SL_SlamLoop(i32 num_loops)
         PantoSLAM.PreviousFrameData.PreviousFramePose = NewKeyFrame.Pose;
         PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFramePose.Pose, PantoSLAM.PreviousFrameData.PreviousPreviousFramePose.Pose);
 
-        typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, NewKeyFrame, TrackedRatio);
+        typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, NewKeyFrame, LocalMapInfo);
         if(KEY_IsKeyFrame(KeyFrameInfo))
         {
             KEY_SetAsKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1, PantoSLAM.Vocabulary);
@@ -61,21 +61,23 @@ void SL_SlamLoop(i32 num_loops)
 }
 
 typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameData& PreviousFrameDataCopy, const typeKeyFrame& NewKeyFrame,
-        fp64 TrackedRatio)
+        const typeLocalMapInfo& LocalMapInfo)
 {
+    // Order oldest to newest 0->1->2
     typeKeyFrameInformation KeyFrameInfo = 
     {
         .VelocityChange = {},
-        .LocalMapTrackingRatio = TrackedRatio,
+        .LocalMapTrackingRatio = LocalMapInfo.TrackedRatio,
         .AcumulatedDistanceTravelled = {}
     };
-    // Order oldest to newest 0->1->2
-    // Calculate velocity change
+
+    const fp64 LocalMapDepth = LocalMapInfo.MedianDepth;
+
     const typeCamera PreviousPreviousFramePose = PreviousFrameDataCopy.PreviousPreviousFramePose;
     const typeCamera PreviousFramePose = PreviousFrameDataCopy.PreviousFramePose;
 
-    const fp64 Delta01 = PreviousPreviousFramePose.TimeStamp - PreviousFramePose.TimeStamp;
-    const fp64 Delta12 = PreviousFramePose.TimeStamp - NewKeyFrame.Pose.TimeStamp;
+    const fp64 Delta01 = PreviousFramePose.TimeStamp - PreviousPreviousFramePose.TimeStamp;
+    const fp64 Delta12 = NewKeyFrame.Pose.TimeStamp - PreviousFramePose.TimeStamp;
 
     const Eigen::Vector3d C0 = CM_GetCameraCenter(PreviousPreviousFramePose);
     const Eigen::Vector3d C1 = CM_GetCameraCenter(PreviousFramePose);
@@ -84,9 +86,9 @@ typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameDat
     const Eigen::Vector3d V0 = (C1 - C0) / Delta01;
     const Eigen::Vector3d V1 = (C2 - C1) / Delta12;
 
-    KeyFrameInfo.VelocityChange = (V1 - V0).norm();
+    KeyFrameInfo.VelocityChange = (V1 - V0).norm() / LocalMapDepth;
 
-    PantoSLAM.AccumulatedDistance += abs((C2 - C1).norm());
+    PantoSLAM.AccumulatedDistance += (C2 - C1).norm() / LocalMapDepth;
 
     KeyFrameInfo.AcumulatedDistanceTravelled = PantoSLAM.AccumulatedDistance;
 

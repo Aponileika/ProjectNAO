@@ -1,7 +1,30 @@
 #ifndef __CONFIG_HPP_
 #define __CONFIG_HPP_
+#include <random>
 #include <string>
 #include "CArenaAlloc.h"
+
+namespace PantoRandomNumber 
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+}
+
+inline i64 PANTO_GetUniformRandom(const u64 Low, const u64 High)
+{
+    std::uniform_int_distribution<std::size_t> dist(Low, High);
+    
+    return dist(PantoRandomNumber::gen);
+}
+
+const char* PANTO_SLAMSTARTMSG =
+"        _____                 ^\n"
+"    ___/_____\\___             |\n"
+"  _/  _     _  \\_        .----O----.      [o_o]\n"
+" /__/(_)---(_)\\__\\_______|         |_____/|___|\\\n"
+"        \\______/          \\________/      /|   |\\\n"
+"\n"
+"              P a n t o P i l o t\n";
 
 // #define PANTO_DBG
 
@@ -21,15 +44,13 @@
 #define OPENCV_AKAZE_NOCTAVES 4
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
+#define PANTO_LOCAL_MAP_SAMPLE_STRIDE 5
+#define PANTO_NUM_BOOTSTRAP_FRAMES 50
+// [Number of frames], from bootstrap learning mean distance * number of frames
+// should trigger keyframe insertion.
+#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 10
+#define PANTO_KEYFRAME_LOW_THRESHOLD_RATIO_TO_MEAN 0.5f
 
-const char* PANTO_SLAMSTARTMSG =
-"        _____                 ^\n"
-"    ___/_____\\___             |\n"
-"  _/  _     _  \\_        .----O----.      [o_o]\n"
-" /__/(_)---(_)\\__\\_______|         |_____/|___|\\\n"
-"        \\______/          \\________/      /|   |\\\n"
-"\n"
-"              P a n t o P i l o t\n";
 
 #define PANTO_USE_DATASET true
 #define PANTO_DATASET_BASE_PATH "./datasets"
