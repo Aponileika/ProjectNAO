@@ -1,5 +1,5 @@
-#ifndef __KEY_KEYFRAME_HPP_
-#define __KEY_KEYFRAME_HPP_
+#ifndef KEY_KEYFRAME_HPP_
+#define KEY_KEYFRAME_HPP_
 #include "CArenaAlloc.h"
 #include "PT_Types.hpp"
 #include "Config.hpp"

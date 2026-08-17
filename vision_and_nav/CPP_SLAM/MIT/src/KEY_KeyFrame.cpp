@@ -6,11 +6,11 @@ static std::queue<cv::Mat> CurrentDescriptors{};
 
 static typeKeyFrameBootStrapData BootStrapData = 
 {
-        .VelocityChange{},
-        .LocalMapTrackingRatio{},
-        .AcumulatedDistanceTravelled{},
-        .NumFrames{},
-        .BootStrapDataSolved = false
+    .VelocityChange{},
+    .LocalMapTrackingRatio{},
+    .AcumulatedDistanceTravelled{},
+    .NumFrames{},
+    .BootStrapDataSolved = false
 };
 
 typeFuzzyKeyFrameInference FuzzyInference = 
@@ -18,7 +18,8 @@ typeFuzzyKeyFrameInference FuzzyInference =
     .VelocityParamameters{},
     .TrackingRatioParameters{},
     .AccumulatedDistanceParameters{},
-    .Threshold = NAN
+    .MaxRuleThreshold = NAN,
+    .SpatialTrackingThreshold = NAN
 };
 
 typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints)
@@ -48,13 +49,16 @@ bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
         BootStrapData.VelocityChange              += Information.VelocityChange;
         return true;
     }
-    else
+    if(!BootStrapData.BootStrapDataSolved)
     {
-        if(!BootStrapData.BootStrapDataSolved)
-        {
-            KEYPriv_SolveBootStrapData();
-        }
+        KEYPriv_SolveBootStrapData();
     }
+    if(KEYPriv_IsKeyFrame(Information))
+    {
+        return true;
+    }
+
+    return false;
 }
 
 void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocabulary& Vocabulary)
@@ -103,13 +107,13 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
             const std::vector<u32>& FeatureIDs1 = FeatureIterator1->second;
             const std::vector<u32>& FeatureIDs2 = FeatureIterator2->second;
 
-            u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
-
-            u64 BestFeatureID = PANTO_ID_NOT_SET;
-
             for(const u32& FeatureID1 : FeatureIDs1)
             {
                 typePantoImagePoint& ImagePoint1 = AllImagePoints1[FeatureID1];
+
+                u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
+                u64 BestFeatureID = PANTO_ID_NOT_SET;
+
                 if(ImagePoint1.MapPointID != PANTO_ID_NOT_SET)
                 {
                     continue;
@@ -184,16 +188,39 @@ void KEYPriv_SolveBootStrapData(void)
     fp64 MeanTrackingRatio = BootStrapData.LocalMapTrackingRatio / NumFrames;
     fp64 MeanDistanceBetweenFrames = BootStrapData.AcumulatedDistanceTravelled / NumFrames;
 
-    FuzzyInference.VelocityParamameters.first = MeanVelocityChange * PANTO_KEYFRAME_LOW_THRESHOLD_RATIO_TO_MEAN;
-    FuzzyInference.VelocityParamameters.second = MeanVelocityChange;
+    FuzzyInference.VelocityParamameters.second = MeanVelocityChange * PANTO_KEYFRAME_MEAN_VELOCITY_THRESHOLD_GAIN;
+    FuzzyInference.VelocityParamameters.first = MeanVelocityChange;
 
-    FuzzyInference.TrackingRatioParameters.first = MeanTrackingRatio  * PANTO_KEYFRAME_LOW_THRESHOLD_RATIO_TO_MEAN;
-    FuzzyInference.TrackingRatioParameters.second = MeanTrackingRatio;
+    FuzzyInference.TrackingRatioParameters.second = MeanTrackingRatio * PANTO_KEYFRAME_MEAN_TRACKING_HIGH_THRESHOLD_GAIN;
+    FuzzyInference.TrackingRatioParameters.first = MeanTrackingRatio * PANTO_KEYFRAME_MEAN_TRACKING_LOW_THRESHOLD_GAIN;
 
-    FuzzyInference.Threshold = MeanDistanceBetweenFrames * PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN;
+    FuzzyInference.AccumulatedDistanceParameters.second = MeanDistanceBetweenFrames * PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN;
+    FuzzyInference.AccumulatedDistanceParameters.first = MeanDistanceBetweenFrames; 
 
-    FuzzyInference.AccumulatedDistanceParameters.first = FuzzyInference.Threshold * PANTO_KEYFRAME_LOW_THRESHOLD_RATIO_TO_MEAN;
-    FuzzyInference.AccumulatedDistanceParameters.second = FuzzyInference.Threshold;
+    FuzzyInference.MaxRuleThreshold = PANTO_KEYFRAME_FUZZY_MAX_RULE_THRESHOLD;
+    FuzzyInference.SpatialTrackingThreshold = PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD;
 
+    BootStrapData.BootStrapDataSolved = true;
+}
+
+bool KEYPriv_IsKeyFrame(const typeKeyFrameInformation& KeyFrameInformation)
+{
+    fp64 VelocityMembership = FUZZY_LINEAR_INCREASING_MEMBERSHIP(FuzzyInference.VelocityParamameters.first, 
+            FuzzyInference.VelocityParamameters.second, KeyFrameInformation.VelocityChange);
+
+    fp64 DistanceMembership = FUZZY_LINEAR_INCREASING_MEMBERSHIP(FuzzyInference.AccumulatedDistanceParameters.first, 
+            FuzzyInference.AccumulatedDistanceParameters.second, KeyFrameInformation.AcumulatedDistanceTravelled);
+
+    fp64 TrackingMembership = FUZZY_LINEAR_DECREASING_MEMBERSHIP(FuzzyInference.TrackingRatioParameters.first, 
+            FuzzyInference.TrackingRatioParameters.second, KeyFrameInformation.LocalMapTrackingRatio);
+
+    fp64 MaxMemberShip = FUZZY_UNIONRULEINFERENCE(VelocityMembership, DistanceMembership, TrackingMembership);
+
+    fp64 MinVelTracking = std::min(VelocityMembership, TrackingMembership);
+    fp64 MinDistTracking = std::min(DistanceMembership, TrackingMembership);
+    fp64 SpatialMembership = FUZZY_UNIONRULEINFERENCE(MinVelTracking, MinDistTracking);
+    
+    bool Decision = (MaxMemberShip > FuzzyInference.MaxRuleThreshold) || (SpatialMembership > FuzzyInference.SpatialTrackingThreshold);
+    return Decision;
 }
 

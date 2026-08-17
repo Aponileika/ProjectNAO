@@ -1,5 +1,5 @@
-#ifndef __CONFIG_HPP_
-#define __CONFIG_HPP_
+#ifndef CONFIG_HPP_
+#define CONFIG_HPP_
 #include <random>
 #include <string>
 #include "CArenaAlloc.h"
@@ -45,11 +45,15 @@ const char* PANTO_SLAMSTARTMSG =
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
 #define PANTO_LOCAL_MAP_SAMPLE_STRIDE 5
-#define PANTO_NUM_BOOTSTRAP_FRAMES 50
+#define PANTO_NUM_BOOTSTRAP_FRAMES 300
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
 #define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 10
-#define PANTO_KEYFRAME_LOW_THRESHOLD_RATIO_TO_MEAN 0.5f
+#define PANTO_KEYFRAME_MEAN_VELOCITY_THRESHOLD_GAIN 4
+#define PANTO_KEYFRAME_MEAN_TRACKING_HIGH_THRESHOLD_GAIN 0.8f
+#define PANTO_KEYFRAME_MEAN_TRACKING_LOW_THRESHOLD_GAIN 0.2f
+#define PANTO_KEYFRAME_FUZZY_MAX_RULE_THRESHOLD 0.95f
+#define PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD 0.5f
 
 
 #define PANTO_USE_DATASET true
@@ -170,4 +174,4 @@ const std::string PANTO_VocabFilePath("PantoVocabulary.dbow3");
 
 typedef std::array<u8, PANTO_DESCRIPTOR_SIZE> typeDescriptor;
 
-#endif // __CONFIG_HPP_
+#endif // CONFIG_HPP_

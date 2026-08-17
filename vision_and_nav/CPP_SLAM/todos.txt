@@ -11,7 +11,7 @@ What to do next:
       distances and velocity difference and divide them by the median depth, this gives them in units of local map units, so distance is how many local map units
       have been travelled, and velocity diff is in scale map unit / s.
 
-    - Fuzzy Inference, Right now parameters are based on heuristic bootstrap learning (means), in the future construct a cost fuction like:
+    - (DONE W/ NOTE) Fuzzy Inference, Right now parameters are based on heuristic bootstrap learning (means), in the future construct a cost fuction like:
      J(k) = TrackingError + a * NumInsertedKF + b * TrackingLosses
      TrackingError can be SO(3) distance if GT available (usually is), think about NumInsertedKF and TrackingLosses are calculated
      (they all need to be normalized to 0-1)
