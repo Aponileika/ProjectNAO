@@ -17,7 +17,7 @@ void SL_InitSlam()
     PantoSLAM.CovisibilityGraph = {};
     PantoSLAM.NextFramePosePrediction = {};
     PantoSLAM.PreviousFrameData = {};
-    PantoSLAM.Vocabulary.load(PANTO_VocabFilePath);
+    PantoSLAM.Vocabulary = DBOW3_GetVocabulary();
     PantoSLAM.AccumulatedDistance = {};
 
     EP_InitCPointExtractor();

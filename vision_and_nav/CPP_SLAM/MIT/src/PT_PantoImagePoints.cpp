@@ -104,10 +104,10 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
             }
             if(Top2Candidates[1].second == PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1) continue;
             if((static_cast<fp64>(Top2Candidates[0].second) < PANTO_MATCHRATIO * static_cast<fp64>(Top2Candidates[1].second))
-                    || (Top2Candidates[0].second < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD))
+                    && (Top2Candidates[0].second < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD))
             {
                 const typePantoImagePoint& TopCandidate = Top2Candidates[0].first;
-                KeyFrame[TopCandidate.CellID][TopCandidate.ID].MapPointID = MapPoints[i].ID;
+                KeyFrame.CellIndexingArray[TopCandidate.CellID][TopCandidate.ID].MapPointID = MapPoints[i].ID;
                 NumTrackedMapPoints++;
             }
         }

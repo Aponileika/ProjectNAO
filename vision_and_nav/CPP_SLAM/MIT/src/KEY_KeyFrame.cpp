@@ -73,7 +73,9 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocab
     }
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
+
     Vocabulary.transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
+
     CurrentDescriptors.pop();
 }
 

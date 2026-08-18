@@ -7,6 +7,7 @@
 #include <DBoW3/DBoW3.h>
 #include <DBoW3/Vocabulary.h>
 #include <stdio.h>
+#include "DBOW3_DeepBagofWords.hpp"
 #include "LG_Logging.hpp"
 #include "OP_BA.hpp"
 #include "VIZ_Visualization.hpp"

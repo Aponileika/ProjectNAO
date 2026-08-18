@@ -20,6 +20,8 @@ What to do next:
 
     - Implement initialization, see paper that uses historical data.
 
+    - Check implamentation of PT_MatchMapPointsToKeyFrame, bugged after change of structure of keyframe cellblock thingy
+
     - Implement keyframe removal functionality and mappoint removal functionality.
 
     - Implement threading, use same structure as orb, tracking <-> local mapping <-> global mapping threads. std::jthread / thread? 

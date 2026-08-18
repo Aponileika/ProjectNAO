@@ -14,15 +14,23 @@
 #define INIT_INITIALIZESLAM_HPP_
 #include <vector>
 #include <DBoW3.h>
+#include <ranges>
 #include "CArenaAlloc.h"
 #include "Config.hpp"
 #include "PT_PantoImagePoint.hpp"
 #include "PT_Types.hpp"
 #include "FR_Frames.hpp"
 #include "EP_CorrespondingPoints.hpp"
+#include "DBOW3_DeepBagofWords.hpp"
+#include "PANTO_Utils.hpp"
 
 // set to PANTO_FEATURE_TRACK_NOT_OBSERVED if no track exists
-typedef std::vector<i64> typeFeatureTrack;
+typedef struct
+{
+    std::vector<i64> FeatureTrack;
+    u64 InlierCount;
+    u64 OutlierCount;
+}typeFeatureTrack;
 
 typedef struct
 {
@@ -34,7 +42,7 @@ typedef struct
 
 typedef struct
 {
-    std::vector<typePantoImagePoint> ImagePoints;
+    std::vector<typeInitImagePoint> ImagePoints;
     DBoW3::FeatureVector FeatureVector;
     u64 ID;
     fp64 TimeStamp;
@@ -45,11 +53,10 @@ typedef struct
     std::vector<typeInitFrame> InitFrames;
     std::vector<typeFeatureTrack> FeatureTracks;
     bool EnoughStationaryPointsForInit;
-}typePantoInitStruct;
+}typePantoInitData;
 
 void INIT_CreateInitStruct(void);
-void INIT_MatchHistoricalFrames(void);
-void INIT_STRANSAC(void);
+void INIT_ProcessNewFrame(void);
 std::pair<typeInitFrame, typeInitFrame> INIT_Initialize(void);
 void INIT_DestroyInitStruct(void);
 
