@@ -173,11 +173,44 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
     }
 }
 
-void KEY_PopKeyFrame(void)
+void KEY_NonValidKeyFrame(void)
 {
     CurrentDescriptors.pop();
 }
 
+fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints)
+{
+    std::vector<fp64> LocalDepth;
+
+    LocalDepth.reserve((LocalMapPoints.size() + PANTO_LOCAL_MAP_SAMPLE_STRIDE - 1) /
+        PANTO_LOCAL_MAP_SAMPLE_STRIDE);
+
+    const typeCameraPose& LocalMapPose = KeyFrame.Pose.Pose;
+
+    for(std::size_t i{}; i < LocalMapPoints.size(); i += PANTO_LOCAL_MAP_SAMPLE_STRIDE)
+    {
+        const Eigen::Vector3d PointWorld =
+            LocalMapPoints[i].Point.head<3>() /
+            LocalMapPoints[i].Point.w();
+
+        const Eigen::Vector3d PointCamera =
+            LocalMapPose.R * PointWorld + LocalMapPose.t;
+
+        if(PointCamera.z() > 0.0)
+        {
+            LocalDepth.push_back(PointCamera.z());
+        }
+    }
+
+    const std::size_t Middle = LocalDepth.size() / 2;
+
+    std::nth_element(
+            LocalDepth.begin(),
+            LocalDepth.begin() + Middle,
+            LocalDepth.end());
+
+    return LocalDepth[Middle];
+}
 
 void KEYPriv_SolveBootStrapData(void)
 {

@@ -10,7 +10,7 @@ void MAP_InsertPreliminaryKeyFrame(typeGlobalMap& Map, typeKeyFrame& KeyFrame)
 
 void MAP_RemovePreliminaryKeyFrame(typeGlobalMap& Map)
 {
-    KEY_PopKeyFrame();
+    KEY_NonValidKeyFrame();
     Map.KeyFrames.pop_back();
 }
 
@@ -29,6 +29,17 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeKeyFra
             for(const u64& KeyFrameID : MapPoint.KeyFrameIDs)
             {
                 KeyFrameCount[KeyFrameID]++;
+            }
+        }
+    }
+
+    for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
+            {
+                LocalMap.MapPoints.push_back(GlobalMap.MapPoints[ImagePoint.MapPointID]);
             }
         }
     }
@@ -60,54 +71,15 @@ std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Ma
     return LastKeyFrameMapPoints;
 }
 
-typeLocalMapInfo MAP_MatchMapPointLocalMap(const typeGlobalMap& GlobalMap, const typeLocalMap& LocalMap, typeKeyFrame& NewKeyFrame)
+typeLocalMapInfo MAP_MatchMapPointLocalMap(const typeLocalMap& LocalMap, typeKeyFrame& NewKeyFrame)
 {
-    std::vector<typePantoMapPoint> MapPoints;
-    for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
-    {
-        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
-        {
-            if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
-            {
-                MapPoints.push_back(GlobalMap.MapPoints[ImagePoint.MapPointID]);
-            }
-        }
-    }
+    const std::vector<typePantoMapPoint>& LocalMapPoints = LocalMap.MapPoints;
 
-    std::vector<fp64> LocalDepth;
+    const fp64 MedianDepth = KEY_GetLocalMapMedianDepth(NewKeyFrame, LocalMapPoints);
 
-    LocalDepth.reserve((MapPoints.size() + PANTO_LOCAL_MAP_SAMPLE_STRIDE - 1) /
-        PANTO_LOCAL_MAP_SAMPLE_STRIDE);
-
-    const typeCameraPose& LocalMapPose = NewKeyFrame.Pose.Pose;
-
-    for(std::size_t i{}; i < MapPoints.size(); i += PANTO_LOCAL_MAP_SAMPLE_STRIDE)
-    {
-        const Eigen::Vector3d PointWorld =
-            MapPoints[i].Point.head<3>() /
-            MapPoints[i].Point.w();
-
-        const Eigen::Vector3d PointCamera =
-            LocalMapPose.R * PointWorld + LocalMapPose.t;
-
-        if(PointCamera.z() > 0.0)
-        {
-            LocalDepth.push_back(PointCamera.z());
-        }
-    }
-
-    const std::size_t Middle = LocalDepth.size() / 2;
-
-    std::nth_element(
-            LocalDepth.begin(),
-            LocalDepth.begin() + Middle,
-            LocalDepth.end());
-
-    const fp64 MedianDepth = LocalDepth[Middle];
-
-    const u64 NumLocalMapPoints = static_cast<u64>(MapPoints.size());
+    const u64 NumLocalMapPoints = static_cast<u64>(LocalMapPoints.size());
     const typeCamera& Pose = NewKeyFrame.Pose;
-    const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(NewKeyFrame.Points, MapPoints, Pose);
+    const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(NewKeyFrame.Points, LocalMapPoints, Pose);
 
     const fp64 TrackingRatio = static_cast<fp64>(NumTrackedMapPoints) / static_cast<fp64>(NumLocalMapPoints);
 
@@ -128,6 +100,8 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap)
 u64 MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap, typeKeyFrame NewKeyFrame)
 {
     const std::size_t SizeBefore = GlobalMap.MapPoints.size();
+    const Eigen::Vector3d NewCameraCenter = CM_GetCameraCenter(NewKeyFrame.Pose);
+
     for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
     {
         // Ignore new keyframe
@@ -136,7 +110,16 @@ u64 MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap, typ
             continue;
         }
 
-        KEY_GetNewMapPoints(NewKeyFrame, KeyFrame, GlobalMap.MapPoints);
+        const Eigen::Vector3d CameraCenter = CM_GetCameraCenter(KeyFrame.Pose);
+
+        const fp64 BaseLine = (NewCameraCenter - CameraCenter).norm();
+
+        const fp64 MedianDepth = KEY_GetLocalMapMedianDepth(KeyFrame, LocalMap.MapPoints);
+
+        if(PANTO_BASELINE_LARGE_ENOUGH_TRIANGULATION(BaseLine, MedianDepth))
+        {
+            KEY_InsertNewMapPoints(NewKeyFrame, KeyFrame, GlobalMap.MapPoints);
+        }
     }
     const std::size_t NumNewPoints = GlobalMap.MapPoints.size() - SizeBefore;
     return static_cast<u64>(NumNewPoints);

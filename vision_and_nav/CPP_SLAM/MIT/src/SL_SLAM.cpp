@@ -33,7 +33,9 @@ void SL_SlamLoop(i32 num_loops)
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
         
         PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, NewKeyFrame);
+
         const typeLocalMapInfo LocalMapInfo  = MAP_MatchMapPointLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, NewKeyFrame);
+
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
 
         const typePreviousFrameData PreviousFrameDataCopy = PantoSLAM.PreviousFrameData;
@@ -44,6 +46,7 @@ void SL_SlamLoop(i32 num_loops)
         PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFramePose.Pose, PantoSLAM.PreviousFrameData.PreviousPreviousFramePose.Pose);
 
         typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, NewKeyFrame, LocalMapInfo);
+
         if(KEY_IsKeyFrame(KeyFrameInfo))
         {
             PantoSLAM.AccumulatedDistance = 0.0f;
@@ -54,6 +57,7 @@ void SL_SlamLoop(i32 num_loops)
             GRAPH_UpdateCovisibility(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.MapPoints, NumNewPoints);
             OP_BundleAdjust(PantoSLAM.GlobalMap, typeLocal, PantoSLAM.LocalMap);
             MAP_CullLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap);
+            // Loop closure + Full bundle adjust
         }
         else
         {

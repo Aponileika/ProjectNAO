@@ -16,8 +16,12 @@ What to do next:
      TrackingError can be SO(3) distance if GT available (usually is), think about NumInsertedKF and TrackingLosses are calculated
      (they all need to be normalized to 0-1)
 
-    - Implement keyframe removal functionality and mappoint removal functionality.
+    - (DONE) Chirality check for 3d point insertion, same as slam orb baseline / median depth > 0.01f, so baseline larger than 1% of median scene depth.
+
     - Implement initialization, see paper that uses historical data.
+
+    - Implement keyframe removal functionality and mappoint removal functionality.
+
     - Implement threading, use same structure as orb, tracking <-> local mapping <-> global mapping threads. std::jthread / thread? 
       Think about how to mutex or not to, or copy? Make a decision dont just autopilot into a too restrictive mutex situation.
 

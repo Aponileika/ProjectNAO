@@ -14,6 +14,7 @@ typedef struct
 typedef struct
 {
     std::vector<typeKeyFrame> KeyFrames;
+    std::vector<typePantoMapPoint> MapPoints;
 }typeLocalMap;
 
 typedef struct

@@ -267,7 +267,7 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, typeLoc
             }
             else
             {
-                // Dont optimize points with no associated 2d point
+                // Dont optimize points with no associated 3d point
                 Problem.AddParameterBlock(Map.MapPoints[MapPointID].Point.data(), 4);
                 Problem.SetParameterBlockConstant(Map.MapPoints[MapPointID].Point.data());
             }

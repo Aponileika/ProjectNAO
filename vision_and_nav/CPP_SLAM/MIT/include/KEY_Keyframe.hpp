@@ -41,7 +41,8 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePa
 //TODO
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information);
 void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocabulary& Vocabulary);
-void KEY_GetNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints);
-void KEY_PopKeyFrame(void);
+void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints);
+void KEY_NonValidKeyFrame(void);
+fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints);
 
 #endif //__KEY_KEYFRAME_HPP_

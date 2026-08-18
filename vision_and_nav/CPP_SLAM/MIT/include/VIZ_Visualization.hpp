@@ -1,9 +1,10 @@
 #ifndef __VIZ_VISUALIZATION_HPP_
 #define __VIZ_VISUALIZATION_HPP_
 #include <string>
-#include "OB_Observations.hpp"
-#include "PT_Points.hpp"
-#include "VW_Views.hpp"
+#include "PT_PantoImagePoint.hpp"
+#include "PT_PantoMapPoints.hpp"
+#include "PT_Types.hpp"
+#include "MAP_Mapping.hpp"
 #include "CM_Camera.hpp"
 #include "PROJ_ProjectiveUtils.hpp"
 #include "Config.hpp"
