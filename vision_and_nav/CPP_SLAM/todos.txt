@@ -18,7 +18,7 @@ What to do next:
 
     - (DONE) Chirality check for 3d point insertion, same as slam orb baseline / median depth > 0.01f, so baseline larger than 1% of median scene depth.
 
-    - Implement initialization, see paper that uses historical data.
+    - Implement initialization, see paper that uses historical data, next step ST-RANSAC, see algorithm 1 of paper.
 
     - Check implamentation of PT_MatchMapPointsToKeyFrame, bugged after change of structure of keyframe cellblock thingy
 
