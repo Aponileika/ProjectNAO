@@ -21,7 +21,10 @@ ifeq ($(UNAME_S),Darwin)
 	TBB := $(shell brew --prefix tbb)
 	
 	CXX := clang++
-	CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -O3 -std=c++20 \
+	CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -std=c++20 \
+		-O0 -g \
+    	-fsanitize=address \
+    	-fno-omit-frame-pointer \
 		-DGLOG_USE_GLOG_EXPORT \
 		-I$(INCLUDE_DIR) \
 		-I$(CERES)/include \

@@ -8,78 +8,144 @@ static typePantoInitData InitData =
     .EnoughStationaryPointsForInit = false
 };
 
-DBoW3::Vocabulary Vocabulary; 
-
 void INIT_CreateInitData(void)
 {
-    Vocabulary = DBOW3_GetVocabulary();
+    LG_Log(LogSeverity::DBG, "[INIT_CreateInitData] Creating initialization data\n");
 
     typePantoFrame FirstFrame = FR_GetFrame();
+
+    LG_Log(LogSeverity::DBG, "[INIT_CreateInitData] Extracting descriptors from first frame\n");
     DescRet Descriptors = EP_GetDescriptors(FirstFrame.Frame);
-    INITPriv_AppendFrame(Descriptors.Points, Descriptors.Descriptors, FirstFrame.TimeStamp);
+
+    LG_Log(LogSeverity::DBG, "[INIT_CreateInitData] Appending first initialization frame\n");
+    INITPriv_AppendFrame(
+        Descriptors.Points,
+        Descriptors.Descriptors,
+        FirstFrame.TimeStamp);
+
+    LG_Log(LogSeverity::DBG, "[INIT_CreateInitData] Initialization data created\n");
 }
 
 typeInitReconstruction INIT_ProcessNewFrame(void)
 {
+    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Processing new initialization frame\n");
+
     typePantoFrame Frame = FR_GetFrame();
+
+    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Extracting descriptors\n");
     DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
-    INITPriv_AppendFrame(Descriptors.Points, Descriptors.Descriptors, Frame.TimeStamp);
+
+    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Appending initialization frame\n");
+    INITPriv_AppendFrame(
+        Descriptors.Points,
+        Descriptors.Descriptors,
+        Frame.TimeStamp);
+
+    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Matching historical frames\n");
     INITPriv_MatchHistoricalFrames();
+
+    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Running ST-RANSAC\n");
     std::vector<u64> StationaryTrackIDs = INITPriv_STRANSAC();
+
+    LG_Log(
+        LogSeverity::DBG,
+        "[INIT_ProcessNewFrame] ST-RANSAC found %zu stationary tracks\n",
+        StationaryTrackIDs.size());
 
     if(StationaryTrackIDs.size() < PANTO_INIT_MIN_STATIONARY_POINTS)
     {
-        return 
+        LG_Log(
+            LogSeverity::DBG,
+            "[INIT_ProcessNewFrame] Not enough stationary tracks for reconstruction\n");
+
+        return
         {
             .R{},
-            .t{}, 
+            .t{},
             .NumPointsInFront{},
-            .MapPoints{}, 
+            .MapPoints{},
             .ChosenInitFrameID{},
             .Valid = false
         };
     }
 
-    std::vector<u64> CandidateIDs = INITPriv_GetCandidateFrameIDs(StationaryTrackIDs);
+    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Finding candidate initialization frames\n");
+    std::vector<u64> CandidateIDs =
+        INITPriv_GetCandidateFrameIDs(StationaryTrackIDs);
+
+    LG_Log(
+        LogSeverity::DBG,
+        "[INIT_ProcessNewFrame] Found %zu candidate initialization frames\n",
+        CandidateIDs.size());
+
+    const std::size_t NumCandidates = CandidateIDs.size();
 
     std::vector<std::thread> ReconstructionThreads;
-    ReconstructionThreads.reserve(PANTO_NUM_THREADS_MAX);
+    ReconstructionThreads.reserve(NumCandidates);
 
-    std::vector<typeInitReconstruction> Reconstruction(PANTO_NUM_THREADS_MAX);
+    std::vector<typeInitReconstruction> Reconstruction(NumCandidates);
 
-    for(u64 i = 0; i < PANTO_NUM_THREADS_MAX; i++)
+    for(std::size_t i = 0; i < NumCandidates; i++)
     {
         ReconstructionThreads.emplace_back([&, i]()
         {
-            Reconstruction[i] = INITPriv_Reconstruct(InitData.InitFrames[CandidateIDs[i]],
+            LG_Log(
+                LogSeverity::DBG,
+                "[INIT_ProcessNewFrame] Reconstruction thread %zu started for frame %llu\n",
+                i,
+                static_cast<unsigned long long>(CandidateIDs[i]));
+
+            Reconstruction[i] =
+                INITPriv_Reconstruct(
+                    InitData.InitFrames[CandidateIDs[i]],
                     InitData.InitFrames.back(),
                     StationaryTrackIDs);
         });
     }
 
-    for(u64 i = 0; i < PANTO_NUM_THREADS_MAX; i++)
+    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Joining reconstruction threads\n");
+
+    for(u64 i = 0; i < NumCandidates; i++)
     {
         ReconstructionThreads[i].join();
     }
 
+    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] All reconstruction threads joined\n");
+
     std::size_t MostPoints = 0;
     u64 BestReconstructionIndex = 0;
-    for(u64 i = 0; i < PANTO_NUM_THREADS_MAX; i++)
+
+    for(u64 i = 0; i < NumCandidates; i++)
     {
-        std::size_t NumPoints = Reconstruction[i].MapPoints.size();
+        const std::size_t NumPoints =
+            Reconstruction[i].MapPoints.size();
+
+        LG_Log(
+            LogSeverity::DBG,
+            "[INIT_ProcessNewFrame] Reconstruction %llu has %zu map points\n",
+            static_cast<unsigned long long>(i),
+            NumPoints);
+
         if(NumPoints > MostPoints)
         {
+            MostPoints = NumPoints;
             BestReconstructionIndex = i;
         }
     }
-    
+
+    LG_Log(
+        LogSeverity::DBG,
+        "[INIT_ProcessNewFrame] Selected reconstruction %llu with %zu map points\n",
+        static_cast<unsigned long long>(BestReconstructionIndex),
+        MostPoints);
+
     return Reconstruction[BestReconstructionIndex];
 }
 
 void INIT_DestroyInitData(void)
 {
-    InitData.InitFrames.resize(0);
-    InitData.FeatureTracks.resize(0);
+    InitData.InitFrames.clear();
+    InitData.FeatureTracks.clear();
 }
 
 typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
@@ -93,6 +159,12 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
 
     std::vector<typePantoMapPoint> InitialMapPoints;
     InitialMapPoints.reserve(Reconstruction.MapPoints.size());
+
+    std::vector<typePantoKeypointFrame> ImagePoints;
+    ImagePoints.reserve(2);
+
+    ImagePoints.push_back(INITPriv_GetKeyPointFrame(FirstFrameID));
+    ImagePoints.push_back(INITPriv_GetKeyPointFrame(SecondFrameID));
 
     for(std::size_t i{}; i < Reconstruction.MapPoints.size(); i++)
     {
@@ -116,14 +188,10 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
                 .ImagePointIDs = ImagePointIDs,
                 .ID = static_cast<u64>(i)
             });
+
+        ImagePoints[0].ImagePoints[ImagePointIDs[0]].MapPointID = static_cast<u64>(i);
+        ImagePoints[1].ImagePoints[ImagePointIDs[1]].MapPointID = static_cast<u64>(i);
     }
-
-    std::vector<typePantoKeypointFrame> ImagePoints;
-    ImagePoints.reserve(2);
-
-    ImagePoints.push_back(INITPriv_GetKeyPointFrame(FirstFrameID));
-    ImagePoints.push_back(INITPriv_GetKeyPointFrame(SecondFrameID));
-
 
     Eigen::Matrix3d FirstR = Eigen::Matrix3d::Identity();
     Eigen::Vector3d Firstt(0, 0, 0);
@@ -151,7 +219,7 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
             .Pose = SecondCamera,
             .ID = 1
         });
-    
+
     return {.KeyFrames = KeyFrames, .MapPoints = InitialMapPoints};
 }
 
@@ -236,13 +304,17 @@ void INITPriv_MatchHistoricalFrames(void)
                     {
                         typeInitImagePoint& ImagePointHistorical = HistoricalFrame.ImagePoints[FeatureIDHistorical];
 
-                        u32 HammingDistance = PANTO_HammingDistance(ImagePointNew.Descriptor, ImagePointHistorical.Descriptor);
+                        u32 Distance = PANTO_HammingDistance(ImagePointNew.Descriptor, ImagePointHistorical.Descriptor);
 
-                        if(HammingDistance < BestDistance)
+                        if(Distance < BestDistance)
                         {
-                            BestDistance = HammingDistance;
-                            BestFeatureID = FeatureIDHistorical;
                             SecondBestDistance = BestDistance;
+                            BestDistance = Distance;
+                            BestFeatureID = static_cast<u64>(FeatureIDHistorical);
+                        }
+                        else if(Distance < SecondBestDistance)
+                        {
+                            SecondBestDistance = Distance;
                         }
                     }
                     if(SecondBestDistance == PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1) continue;
@@ -254,17 +326,37 @@ void INITPriv_MatchHistoricalFrames(void)
 
                         if(FeatureTrackID == PANTO_ID_NOT_SET)
                         {
-                            std::vector<u64> NewTrack(InitData.InitFrames.size(), PANTO_ID_NOT_SET);
-                            *(NewTrack.rbegin()) = TopCandidate.ID;
-                            *(NewTrack.rbegin() - 1) = ImagePointNew.ID;
-                            typeFeatureTrack FeatureTrack = 
+                            if(FeatureTrackID == PANTO_ID_NOT_SET)
                             {
-                                .FeatureTrack = NewTrack,
-                                .InlierCount = 0,
-                                .OutlierCount = 0
-                            };
+                                const u64 NewFeatureTrackID =
+                                    static_cast<u64>(InitData.FeatureTracks.size());
 
-                            InitData.FeatureTracks.push_back(FeatureTrack);
+                                std::vector<u64> NewTrack(
+                                    InitData.InitFrames.size(),
+                                    PANTO_ID_NOT_SET);
+
+                                NewTrack[HistoricalFrame.ID] =
+                                    TopCandidate.ID;
+
+                                NewTrack[LatestFrame.ID] =
+                                    ImagePointNew.ID;
+
+                                typeFeatureTrack FeatureTrack =
+                                {
+                                    .FeatureTrack = NewTrack,
+                                    .InlierCount = 0,
+                                    .OutlierCount = 0
+                                };
+
+                                InitData.FeatureTracks.push_back(
+                                    std::move(FeatureTrack));
+
+                                ImagePointNew.FeatureTrackID =
+                                    NewFeatureTrackID;
+
+                                HistoricalFrame.ImagePoints[BestFeatureID].FeatureTrackID =
+                                    NewFeatureTrackID;
+                            }
                         }
                         else
                         {
@@ -345,6 +437,16 @@ std::vector<u64> INITPriv_STRANSAC(void)
             LatestFramePoints.push_back(LatestFrame.ImagePoints[NewFeatureID].Point);
             HistoricalFramePoints.push_back(HistoricalFrame.ImagePoints[HistoricalFeatureID].Point);
         }
+
+        if(LatestFramePoints.size() < PANTO_FUNDAMENTAL_MIN_POINTS)
+        {
+            LG_Log( LogSeverity::DBG, "[INITPriv_STRANSAC] Frame %llu has only %zu common tracks, skipping\n",
+                static_cast<unsigned long long>(HistoricalFrame.ID),
+                LatestFramePoints.size());
+
+            continue;
+        }
+
         std::unique_ptr<ImageToImageMapping> Mapping = INITPriv_ScoredFAndHEstimation(LatestFramePoints, HistoricalFramePoints);
 
         std::vector<fp64> Error = Mapping->Error(LatestFramePoints, HistoricalFramePoints);
@@ -404,6 +506,8 @@ std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::v
 
     HomographyThread.join();
     FundamentalThread.join();
+
+    LG_Log(LogSeverity::DBG,"[INITPriv_ScoredFAndHEstimation] Fundamental score: %lf, Homography score: %lf\n", Fundamental->MaxScore, Homography->MaxScore);
 
     if(Fundamental->MaxScore > Homography->MaxScore)
     {
@@ -544,7 +648,8 @@ void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points,
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
 
-    Vocabulary.transform(DescriptorVector, InitFrame.BoWVector, InitFrame.FeatureVector, Levels);
+    DBoW3::Vocabulary* Vocabulary = DBOW3_GetVocabulary();
+    Vocabulary->transform(DescriptorVector, InitFrame.BoWVector, InitFrame.FeatureVector, Levels);
 
     const std::size_t NPoints = Points.size();
 

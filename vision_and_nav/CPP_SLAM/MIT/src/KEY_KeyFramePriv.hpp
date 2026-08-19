@@ -2,7 +2,7 @@
 #define KEY_KEYFRAMEPRIV_HPP_
 #include <FR_Frames.hpp>
 #include <EP_CorrespondingPoints.hpp>
-#include "../include/KEY_Keyframe.hpp"
+#include "../include/KEY_KeyFrame.hpp"
 #include <algorithm>
 
 typedef struct

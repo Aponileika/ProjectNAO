@@ -1,19 +1,17 @@
-#include "../include/DBOW3_DeepBagOfWords.hpp"
+#include "../include/DBOW3_DeepBagofWords.hpp"
 
-static DBoW3::Vocabulary Vocabulary{};
-static bool VocabIsInit = false;
-
-void DBOW3_InitVocabulary(void)
+DBoW3::Vocabulary* DBOW3_GetVocabulary(void)
 {
-    Vocabulary.load(PANTO_VocabFilePath);
-    VocabIsInit = true;
-}
+    static DBoW3::Vocabulary Vocabulary;
 
-DBoW3::Vocabulary DBOW3_GetVocabulary(void)
-{
-    if(!VocabIsInit)
+    static bool Initialized = false;
+
+    if(!Initialized)
     {
-        DBOW3_InitVocabulary();
+        Vocabulary.load(std::string(PANTO_VocabFilePath));
+        Initialized = true;
     }
-    return Vocabulary;
+
+    return &Vocabulary;
 }
+

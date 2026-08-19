@@ -13,7 +13,7 @@
 #include "VIZ_Visualization.hpp"
 #include "PANTO_Utils.hpp"
 #include "MAP_Mapping.hpp"
-#include "KEY_Keyframe.hpp"
+#include "KEY_KeyFrame.hpp"
 #include "PT_PantoImagePoint.hpp"
 #include "PT_PantoMapPoints.hpp"
 #include "PT_Types.hpp"
@@ -38,8 +38,8 @@ typedef struct
     typeCovisibilityGraph CovisibilityGraph;
     typeCamera NextFramePosePrediction;
     typePreviousFrameData PreviousFrameData;
-    DBoW3::Vocabulary Vocabulary;
     fp64 AccumulatedDistance;
+    DBoW3::Vocabulary* Vocabulary;
 }typeSLAM;
 
 void SL_InitSlam();

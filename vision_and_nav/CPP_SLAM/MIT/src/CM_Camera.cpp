@@ -2,27 +2,39 @@
 
 static bool IntrinsicsSet = false;
 
-inline typeCameraIntrinsics __CM_GetConfigIntrinsics(Dataset dataset)
+inline typeCameraIntrinsics CM_GetConfigIntrinsics(Dataset DatasetID)
 {
-    switch (dataset)
+    switch(DatasetID)
     {
 #define X(name, fx_, fy_, s_, cx_, cy_, k1_, k2_, p1_, p2_, k3_) \
-        case Dataset::name:                                      \
-            return CameraIntrinsics{                             \
-                cv::Matx33d(                                     \
-                    fx_,   s_,   cx_,                            \
-                    0.0f, fy_,   cy_,                            \
-                    0.0f, 0.0f, 1.0f),                           \
-                    cv::Vec<fp64, 5>(k1_, k2_, p1_, p2_, k3_)    \
-            };
+        case Dataset::name: \
+        { \
+            Eigen::Matrix3d K; \
+            K << \
+                fx_,  s_,   cx_, \
+                0.0,  fy_,  cy_, \
+                0.0,  0.0,  1.0; \
+            \
+            return \
+            { \
+                .K  = K, \
+                .k1 = k1_, \
+                .k2 = k2_, \
+                .p1 = p1_, \
+                .p2 = p2_, \
+                .k3 = k3_ \
+            }; \
+        }
+
         DATASET_INTRINSICS
+
 #undef X
     }
 
-    return {}; // should never happen
+    return {};
 }
 
-static typeCameraIntrinsics ci = __CM_GetConfigIntrinsics(panto_dataset);
+static typeCameraIntrinsics ci = CM_GetConfigIntrinsics(panto_dataset);
 
 void CM_SetIntrinsics()
 {
@@ -78,12 +90,12 @@ typeCamera CM_CreateCam(Eigen::Matrix3d R, Eigen::Vector3d t, i32 idx, fp64 Time
     return Camera;
 }
 
-void CM_SetRtfromParam(typeCamera& Camera)
+void CM_SetRtfromParam(typeCamera* Camera)
 {
-    const Eigen::Matrix3d RTransposed = Camera.Parameters.q.toRotationMatrix().transpose();
-    const Eigen::Vector3d TW2C = -RTransposed * Camera.Parameters.t;
-    Camera.Pose.R = RTransposed;
-    Camera.Pose.t = TW2C;
+    const Eigen::Matrix3d RTransposed = Camera->Parameters.q.toRotationMatrix().transpose();
+    const Eigen::Vector3d TW2C = -RTransposed * Camera->Parameters.t;
+    Camera->Pose.R = RTransposed;
+    Camera->Pose.t = TW2C;
 }
 
 Eigen::Vector3d CM_GetCameraCenter(const typeCamera& Camera)
@@ -126,7 +138,7 @@ typeCamera CM_PredictPose(const typeCameraPose& TPreviousFrame, const typeCamera
 
     };
 
-    CM_SetRtfromParam(Prediction);
+    CM_SetParametrization(Prediction);
 
     return Prediction;
 }

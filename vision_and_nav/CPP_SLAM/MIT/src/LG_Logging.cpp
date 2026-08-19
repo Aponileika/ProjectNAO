@@ -1,4 +1,5 @@
 #include "../include/LG_Logging.hpp"
+#include <cstdio>
 
 struct Logger glogger;
 bool gloggerisinit = false;
@@ -49,7 +50,12 @@ void LG_InitLogger()
         std::fopen(logPath.c_str(), "a")
     };
 
-    if (!glogger.fp) exit(1);
+    if (!glogger.fp) 
+    {
+        printf("Failed logging init\n");
+        fflush(stdout);
+        exit(1);
+    }
 
     gloggerisinit = true;
 

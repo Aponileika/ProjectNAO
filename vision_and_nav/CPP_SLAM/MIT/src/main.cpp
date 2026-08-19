@@ -9,17 +9,16 @@
 #include "../include/LG_Logging.hpp"
 #include "../include/CArenaAlloc.h"
 #include "../include/EP_CorrespondingPoints.hpp"
-#include "../include/KEY_Keyframe.hpp"
+#include "../include/KEY_KeyFrame.hpp"
 #include "../include/PT_PantoImagePoint.hpp"
 #include "../include/PT_PantoMapPoints.hpp"
 #include "../include/MAP_Mapping.hpp"
 #include "../include/FR_Frames.hpp"
-#include "../include/PT_Points.hpp"
 #include "../include/SL_SLAM.hpp"
 #include "../include/PANTO_Utils.hpp"
 #include "../include/CM_Camera.hpp"
 #include "../include/OP_BA.hpp"
-#include "../include/VIZ_Visualization.hpp"
+// #include "../include/VIZ_Visualization.hpp"
 #include "../include/PROJ_ProjectiveUtils.hpp"
 #include "../include/PANTO_Utils.hpp"
 #include "../include/DBOW3_DeepBagofWords.hpp"
@@ -30,28 +29,28 @@
 #include "CArenaAlloc.c"
 #include "EP_CorrespondingPoints.cpp"
 #include "FR_Frames.cpp"
-#include "PT_Points.cpp"
 #include "SL_SLAM.cpp"
-#include "PANTO_Utils.cpp"
 #include "CM_Camera.cpp"
 #include "OP_BA.cpp"
 #include "PROJ_ProjectiveUtils.cpp"
 #include "PANTO_Utils.cpp"
-#include "KEY_Keyframe.cpp"
+#include "KEY_KeyFrame.cpp"
 #include "PT_PantoImagePoints.cpp"
 #include "PT_PantoMapPoints.cpp"
 #include "MAP_Mapping.cpp"
 #include "DBOW3_DeepBagofWords.cpp"
 #include "INIT_InitializeSLAM.cpp"
+#include "GRAPH_PantoGraph.cpp"
 
 int main(int argc, char* argv[])
 {
+    setbuf(stdout, NULL);
+    printf("Entered main\n");
     i32 num_loops = 10000;
     if(argc >= 2)
     {
         num_loops = std::stoi(argv[1]);
     }
-    setbuf(stdout, NULL);
     LG_InitLogger();
     LG_Log(LogSeverity::DBG, "Initiating SLAM\n");
     SL_InitSlam();

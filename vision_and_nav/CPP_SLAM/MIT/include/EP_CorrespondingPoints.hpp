@@ -12,12 +12,6 @@
 #include "PT_PantoImagePoint.hpp"
 
 
-struct MatchesRet 
-{
-    PointPair2D Matches;
-    std::pair<cv::Mat, cv::Mat> Descriptors;
-};
-
 struct DescRet
 {
     std::vector<cv::Point2d> Points;
@@ -26,8 +20,6 @@ struct DescRet
 
 void EP_InitCPointExtractor(void);
 DescRet EP_GetDescriptors(const cv::Mat& Img);
-MatchesRet EP_CorrespExtract(cv::Mat img1, cv::Mat img2);
-MatchesRet EP_GetMatches(std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> Points, std::pair<std::vector<cv::Mat>, std::vector<cv::Mat>> Descriptors);
 
 cv::Mat EP_EFromRigid(cv::Mat R, cv::Mat t);
 //Returns Set of matches found by distance < EpiPolarTreshhold to epipolar line
@@ -36,11 +28,5 @@ std::pair<cv::Mat, cv::Mat> EP_GetR21t21(cv::Mat R1, cv::Mat t1, cv::Mat R2, cv:
 Eigen::Matrix3d EP_GetFundamentalMatrix21(const typeCameraPose& Pose1, const typeCameraPose& Pose2);
 bool EP_CheckEpipolarConstraint(const Eigen::Vector2d& Point1, const Eigen::Vector2d& Point2,
     const Eigen::Matrix3d& F21, const Eigen::Matrix3d& F12);
-
-PointPair2D EP_FindCorrpEpipolar(const PointPair2D& corrp, const cv::Mat& E);
-PointPair2D EP_FilterPointPairByMask(const PointPair2D& corrp, const cv::Mat& mask);
-void EP_DrawCorrespondences(const cv::Mat& img1, const cv::Mat& img2, const std::vector<cv::Point2d>& pts1,
-        const std::vector<cv::Point2d>& pts2);
-std::vector<std::vector<Eigen::Vector3d>> EP_PointPair2Eigen(PointPair2D pp);
 
 #endif //__EP_CORRESPONDING_POINTS_HPP_

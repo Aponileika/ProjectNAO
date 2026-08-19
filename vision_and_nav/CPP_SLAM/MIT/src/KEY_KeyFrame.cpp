@@ -1,4 +1,4 @@
-#include "KEY_Keyframe.hpp"
+#include "KEY_KeyFrame.hpp"
 #include "KEY_KeyFramePriv.hpp"
 
 // Since getkeyframe can be reached before setaskeyframe is called this has to be a deque (or just a que really)
@@ -22,20 +22,138 @@ typeFuzzyKeyFrameInference FuzzyInference =
     .SpatialTrackingThreshold = NAN
 };
 
-typeKeyFrame KEY_GetThirdKeyFrame(void)
+typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints)
 {
     typePantoFrame Frame = FR_GetFrame();
     DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
+
+    std::vector<cv::Mat> DescriptorVector;
+
+    DescriptorVector.reserve(Descriptors.Descriptors.rows);
+
+    for(i32 i{}; i < Descriptors.Descriptors.rows; i++)
+    {
+        DescriptorVector.push_back(Descriptors.Descriptors.row(i));
+    }
+
+    u64 LevelsUp = PANTO_DBOW_LEVELSUP;
+    DBoW3::Vocabulary* Vocabulary = DBOW3_GetVocabulary();
+
+    DBoW3::BowVector NewBowVector;
+    DBoW3::FeatureVector NewFeatureVector;
+
+    Vocabulary->transform(DescriptorVector, NewBowVector, NewFeatureVector, LevelsUp);
+
+    typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePointsNoMatch(Descriptors.Points, Descriptors.Descriptors);
+
+    typeKeyFrame KeyFrame = 
+    {
+        .Points = ImagePoints,
+        .BowVector = NewBowVector,
+        .FeatureVector = NewFeatureVector,
+        .Pose = LastKeyFrame.Pose,
+        .ID = 2 
+    };
+
+    const DBoW3::FeatureVector& FeatureVector1 = KeyFrame.FeatureVector;
+    const DBoW3::FeatureVector& FeatureVector2 = LastKeyFrame.FeatureVector;
+
+    auto FeatureIterator1 = FeatureVector1.begin();
+    auto FeatureIterator2 = FeatureVector2.begin();
+
+    std::vector<typePantoImagePoint>& AllImagePoints1 = KeyFrame.Points.ImagePoints;
+    std::vector<typePantoImagePoint>& AllImagePoints2 = LastKeyFrame.Points.ImagePoints;
+
+    while(FeatureIterator1 != FeatureVector1.end() && FeatureIterator2 != FeatureVector2.end())
+    {
+        if(FeatureIterator1->first == FeatureIterator2->first)
+        {
+            //Feature vector match
+            const std::vector<u32>& FeatureIDs1 = FeatureIterator1->second;
+            const std::vector<u32>& FeatureIDs2 = FeatureIterator2->second;
+
+            for(const u32& FeatureID1 : FeatureIDs1)
+            {
+                typePantoImagePoint& ImagePoint1 = AllImagePoints1[FeatureID1];
+
+                u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
+                u32 SecondBestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
+                u64 BestFeatureID = PANTO_ID_NOT_SET;
+
+                if(ImagePoint1.MapPointID != PANTO_ID_NOT_SET)
+                {
+                    continue;
+                }
+
+                for(const u32& FeatureID2 : FeatureIDs2)
+                {
+                    typePantoImagePoint& ImagePoint2 = AllImagePoints2[FeatureID2];
+
+                    if(ImagePoint2.MapPointID == PANTO_ID_NOT_SET)
+                    {
+                        continue;
+                    }
+
+                    const u32 Distance = PANTO_HammingDistance(ImagePoint1.Descriptor, ImagePoint2.Descriptor);
+
+                    if(Distance < BestDistance)
+                    {
+                        SecondBestDistance = BestDistance;
+                        BestDistance = Distance;
+                        BestFeatureID = static_cast<u64>(FeatureID2);
+                    }
+                    else if(Distance < SecondBestDistance)
+                    {
+                        SecondBestDistance = Distance;
+                    }
+                }
+
+                if(BestFeatureID != PANTO_ID_NOT_SET)
+                {
+                    if((BestDistance < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW) &&
+                        (static_cast<fp64>(BestDistance) < PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance)))
+                    {
+                        const typePantoImagePoint& BestMatch = LastKeyFrame.Points.ImagePoints[BestFeatureID];
+                        ImagePoint1.MapPointID = BestMatch.MapPointID;
+                        GlobalMapPoints[BestMatch.MapPointID].KeyFrameIDs.push_back(2);
+                        GlobalMapPoints[BestMatch.MapPointID].ImagePointIDs.push_back(ImagePoint1.ID);
+                    }
+                }
+            }
+
+            ++FeatureIterator1;
+            ++FeatureIterator2;
+        }
+        else if(FeatureIterator1->first < FeatureIterator2->first)
+        {
+            FeatureIterator1 = FeatureVector1.lower_bound(FeatureIterator2->first);
+        }
+        else
+        {
+            FeatureIterator2 = FeatureVector2.lower_bound(FeatureIterator1->first);
+        }
+    }
+
+    return KeyFrame;
 }
 
 typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints)
 {
+    LG_Log(LogSeverity::DBG, "[KEY_GetKeyFrame] Predicted q = (%f, %f, %f, %f), t = (%f, %f, %f)\n",
+        PredictedPose.Parameters.q.w(),
+        PredictedPose.Parameters.q.x(),
+        PredictedPose.Parameters.q.y(),
+        PredictedPose.Parameters.q.z(),
+        PredictedPose.Parameters.t[0],
+        PredictedPose.Parameters.t[1],
+        PredictedPose.Parameters.t[2]);
     typePantoFrame Frame = FR_GetFrame();
     PredictedPose.TimeStamp = Frame.TimeStamp;
     DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
     CurrentDescriptors.push(Descriptors.Descriptors);
     typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePoints(Descriptors.Points, Descriptors.Descriptors, LastFrameMapPoints, PredictedPose);
-    typeKeyFrame KeyFrame = {
+    typeKeyFrame KeyFrame = 
+    {
         .Points = ImagePoints,
         .BowVector = {},
         .FeatureVector = {},
@@ -67,7 +185,7 @@ bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
     return false;
 }
 
-void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocabulary& Vocabulary)
+void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocabulary* Vocabulary)
 {
     KeyFrame.ID = ID;
     const cv::Mat& Descriptors = CurrentDescriptors.front();
@@ -80,7 +198,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocab
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
 
-    Vocabulary.transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
+    Vocabulary->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
 
     CurrentDescriptors.pop();
 }
@@ -90,8 +208,8 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
     const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Pose.Pose, KeyFrame2.Pose.Pose);
     const Eigen::Matrix3d F12 = F21.transpose();
 
-    Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Pose.Pose);
-    Eigen::Matrix<fp64, 3, 4> Rt2 = CM_GetRt(KeyFrame2.Pose.Pose);
+    Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Pose);
+    Eigen::Matrix<fp64, 3, 4> Rt2 = CM_GetRt(KeyFrame2.Pose);
 
     std::vector<typePantoImagePoint>& AllImagePoints1 = KeyFrame1.Points.ImagePoints;
     std::vector<typePantoImagePoint>& AllImagePoints2 = KeyFrame2.Points.ImagePoints;
@@ -122,7 +240,7 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
                 u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
                 u64 BestFeatureID = PANTO_ID_NOT_SET;
 
-                if(ImagePoint1.MapPointID != PANTO_ID_NOT_SET)
+                if(ImagePoint1.MapPointID == PANTO_ID_NOT_SET)
                 {
                     continue;
                 }
@@ -131,7 +249,7 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
                 {
                     typePantoImagePoint& ImagePoint2 = AllImagePoints2[FeatureID2];
 
-                    if(ImagePoint2.MapPointID != PANTO_ID_NOT_SET)
+                    if(ImagePoint2.MapPointID == PANTO_ID_NOT_SET)
                     {
                         continue;
                     }
@@ -208,6 +326,12 @@ fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<
         {
             LocalDepth.push_back(PointCamera.z());
         }
+    }
+
+    if(LocalDepth.empty())
+    {
+        LG_Log(LogSeverity::DBG, "[KEY_GetLocalMapMedianDepth] No valid positive-depth local map points\n");
+        return 0.0;
     }
 
     const std::size_t Middle = LocalDepth.size() / 2;

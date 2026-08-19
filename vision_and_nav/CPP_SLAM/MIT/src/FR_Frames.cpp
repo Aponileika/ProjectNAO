@@ -37,9 +37,12 @@ int FR_InitFrameGetter()
 {
     if(PANTO_USE_DATASET == true)
     {
-        reader.path = panto_sequence_path;
-        reader.curr_frame = 0;
+        reader.path = std::string(PANTO_DATASET_BASE_PATH) +
+        std::string(panto_dataset_path) + "/" +
+        std::string(panto_sequence_path) + "/";
+        reader.curr_frame = 1;
         reader.frame_idx = 0;
+        LG_Log(LogSeverity::DBG, "[FR_InitFrameGetter] Dataset path: %s\n", reader.path.c_str());
     }
     else
     {

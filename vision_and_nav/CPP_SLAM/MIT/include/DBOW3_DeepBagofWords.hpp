@@ -3,7 +3,6 @@
 #include <DBoW3/DBoW3.h>
 #include "Config.hpp"
 
-void DBOW3_InitVocabulary(void);
-DBoW3::Vocabulary DBOW3_GetVocabulary(void);
+DBoW3::Vocabulary* DBOW3_GetVocabulary(void);
 
 #endif // __DBOW3_DEEPBAGOFWORDS_HPP_

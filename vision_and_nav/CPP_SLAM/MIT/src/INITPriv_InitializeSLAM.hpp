@@ -78,11 +78,8 @@ public:
     void Estimate(const std::vector<Eigen::Vector2d>& Points1, const std::vector<Eigen::Vector2d>& Points2, const u64 Seed)
     {
         std::mt19937_64 Generator(Seed);
-
         const std::size_t NumPoints = Points1.size();
-
         std::vector<u64> PointIndexes(NumPoints);
-
         std::iota(PointIndexes.begin(), PointIndexes.end(), 0);
 
         for(u64 i = 0; i < PANTO_INIT_RANSAC_LOOP_CNT; i++)
@@ -92,20 +89,16 @@ public:
 
             for(u64 j = 0; j < PANTO_FUNDAMENTAL_MIN_POINTS; ++j)
             {
-
                 std::uniform_int_distribution<u64> Distribution(j, NumPoints - 1);
-
                 const u64 RandomIndex = Distribution(Generator);
-
                 std::swap(PointIndexes[j], PointIndexes[RandomIndex]);
-
-                const u64 RandomSampleIndex = PointIndexes[i];
+                const u64 RandomSampleIndex = PointIndexes[j];
 
                 const Eigen::Vector2d& Point1 = Points1[RandomSampleIndex];
                 const Eigen::Vector2d& Point2 = Points2[RandomSampleIndex];
 
-                PointsMinimal1.col(i) << Point1.x(), Point1.y(), 1.0;
-                PointsMinimal2.col(i) << Point2.x(), Point2.y(), 1.0;
+                PointsMinimal1.col(j) << Point1.x(), Point1.y(), 1.0;
+                PointsMinimal2.col(j) << Point2.x(), Point2.y(), 1.0;
             }
 
             Model FCurrent = F_EstimateMinimal(PointsMinimal1, PointsMinimal2);
@@ -452,15 +445,15 @@ public:
 
                 std::swap(PointIndexes[j], PointIndexes[RandomIndex]);
 
-                const u64 RandomSampleIndex = PointIndexes[i];
+                const u64 RandomSampleIndex = PointIndexes[j];
 
                 if(j < PANTO_HOMOGRAPHY_MIN_POINTS)
                 {
                     const Eigen::Vector2d& Point1 = Points1[RandomSampleIndex];
                     const Eigen::Vector2d& Point2 = Points2[RandomSampleIndex];
 
-                    PointsMinimal1.col(i) << Point1.x(), Point1.y(), 1.0;
-                    PointsMinimal2.col(i) << Point2.x(), Point2.y(), 1.0;
+                    PointsMinimal1.col(j) << Point1.x(), Point1.y(), 1.0;
+                    PointsMinimal2.col(j) << Point2.x(), Point2.y(), 1.0;
                 }
 
             }
@@ -516,6 +509,11 @@ public:
             Errors[i] = std::max(DistanceSquared12, DistanceSquared21);
         }
         return Errors;
+    }
+
+    fp64 GetErrorThreshold(void) const override
+    {
+        return ErrorThreshold;
     }
 
     typeInitReconstruction Reconstruct( const std::vector<Eigen::Vector2d>& Points1, const std::vector<Eigen::Vector2d>& Points2,

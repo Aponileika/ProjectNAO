@@ -35,7 +35,8 @@ LDFLAGS := \
   -L$(OPENBLAS)/lib \
   -L$(TBB)/lib \
   -L$(EXT_LIB_DIR) \
-  -L$(OPENCV)/lib
+  -L$(OPENCV)/lib \
+  -Wl,-rpath,$(EXT_LIB_DIR)
 
 LDLIBS := \
   -lceres \
@@ -43,6 +44,7 @@ LDLIBS := \
   -lgflags \
   -lopenblas \
   -ltbb \
+  -lDBoW3 \
   $(OPENCVLIBS)
 
 

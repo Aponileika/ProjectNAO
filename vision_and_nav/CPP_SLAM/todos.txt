@@ -18,9 +18,14 @@ What to do next:
 
     - (DONE) Chirality check for 3d point insertion, same as slam orb baseline / median depth > 0.01f, so baseline larger than 1% of median scene depth.
 
-    - Implement initialization, see paper that uses historical data, next step ST-RANSAC, see algorithm 1 of paper.
+    - (DONE) Implement initialization, see paper that uses historical data, next step ST-RANSAC, see algorithm 1 of paper.
 
-    - Check implamentation of PT_MatchMapPointsToKeyFrame, bugged after change of structure of keyframe cellblock thingy
+    - (DONE) Check implamentation of PT_MatchMapPointsToKeyFrame, bugged after change of structure of keyframe cellblock thingy
+
+    - Keep debugging, can compile, run and see what goes wrong.
+
+    - MAP_CreateLocalMap, make sure local mappoints are only added once, currently they are
+      added several times
 
     - Implement keyframe removal functionality and mappoint removal functionality.
 

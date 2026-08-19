@@ -4,20 +4,22 @@
 #include <string>
 #include "CArenaAlloc.h"
 
-namespace PantoRandomNumber 
+inline std::mt19937& PANTO_GetRandomGenerator(void)
 {
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    static std::random_device RandomDevice;
+    static std::mt19937 Generator(RandomDevice());
+
+    return Generator;
 }
 
-inline i64 PANTO_GetUniformRandom(const u64 Low, const u64 High)
+inline i64 PANTO_GetUniformRandom( const u64 Low, const u64 High)
 {
-    std::uniform_int_distribution<std::size_t> dist(Low, High);
-    
-    return dist(PantoRandomNumber::gen);
+    std::uniform_int_distribution<u64> Distribution(Low, High);
+
+    return static_cast<i64>(Distribution(PANTO_GetRandomGenerator()));
 }
 
-const char* PANTO_SLAMSTARTMSG =
+inline constexpr const char* PANTO_SLAMSTARTMSG =
 "        _____                 ^\n"
 "    ___/_____\\___             |\n"
 "  _/  _     _  \\_        .----O----.      [o_o]\n"
@@ -32,9 +34,6 @@ const char* PANTO_SLAMSTARTMSG =
 #define CERES_NUM_THREADS 8
 #define CERES_HUBER_THRESHOLD 2.0f
 
-//LOOK INTO USAC
-#define OPENCV_RANSACMETHOD cv::USAC_DEFAULT
-//#define RANSACMETHOD cv::RANSAC
 #define OPENCV_PROBECORRECT 0.99f
 #define OPENCV_RANSACEPIXELT 2.0f
 #define OPENCV_RANSACMAXITERS 2000
@@ -72,14 +71,20 @@ const char* PANTO_SLAMSTARTMSG =
 //fx, fy, s, cx, cy
 //k1, k2, p1, p2, k3
 #define DATASET_INTRINSICS \
-    X(TUM_FREIBURG1_XYZ, \
-            (517.3f), (516.5f), (0.0f), (318.6f), (255.3f), \
-            (0.2624f), (-0.9531f), (-0.0054f), (0.0026f), (1.1633f)) \
-    X(WEBCAM_JE, \
-            (9.747187409387847*100.0f), (9.765223334221673*100.0f), (0.0f), \
-            (6.663249058750432*100.0f), (3.374737864029501*100.0f), \
-            (6.475901025911835*0.01f), (-1.903655376657792*0.1f), (-3.666863513699757*0.001f), \
-            (2.119531347424837*0.001f), (1.113497353924944*0.1f))
+X(TUM_FREIBURG1_XYZ, \
+    517.3, 516.5, 0.0, 318.6, 255.3, \
+    0.2624, -0.9531, -0.0054, 0.0026, 1.1633) \
+X(WEBCAM_JE, \
+    9.747187409387847 * 100.0, \
+    9.765223334221673 * 100.0, \
+    0.0, \
+    6.663249058750432 * 100.0, \
+    3.374737864029501 * 100.0, \
+    6.475901025911835 * 0.01, \
+   -1.903655376657792 * 0.1, \
+   -3.666863513699757 * 0.001, \
+    2.119531347424837 * 0.001, \
+    1.113497353924944 * 0.1)
 
 enum class Dataset : u8
 {
@@ -102,7 +107,7 @@ constexpr auto panto_dataset_path = DATASET_PATH_TUM_FREIBURG1_XYZ;
 constexpr auto panto_sequence_path = SEQUENCE_PATH_TUM_FREIBURG1_XYZ_RGB_ORDERED;
 const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 
-#define PANTO_LOGPATH "/Users/Jonathan/Programmering/FIA/ProjectNAO/vision_and_nav/CPP_SLAM/logs/log.txt"
+#define PANTO_LOGPATH "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/logs/log.txt"
 
 #define CV_NFEATURES 2000
 #define PANTO_MATCHRATIO 0.8f
@@ -132,7 +137,8 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 
 #define PANTO_TIMESTAMP_NOT_SET -1.0f
 
-const std::string PANTO_VocabFilePath("PantoVocabulary.dbow3");
+inline constexpr const char* PANTO_VocabFilePath =
+    "PantoVocabulary.dbow3";
 
 // Controls how many children in vocab tree
 #define PANTO_DBOW_BRANCHING_FACTOR 10
@@ -140,7 +146,7 @@ const std::string PANTO_VocabFilePath("PantoVocabulary.dbow3");
 // Controls how deep vocab tree 
 #define PANTO_DBOW_DEPTH 5
 
-#define PANTO_DBOW_LEVELSUP (PANTO_DBOW_DEPTH - 1);
+#define PANTO_DBOW_LEVELSUP (PANTO_DBOW_DEPTH - 1)
 
 #define PANTO_INIT_ERROR_THRESHOLD_INLIER_HOMOGRAPHY 5.991*PANTO_PIXEL_MEAS_STD_DEV*PANTO_PIXEL_MEAS_STD_DEV
 

@@ -7,7 +7,6 @@
 #include "CArenaAlloc.h"
 #include "Config.hpp"
 
-
 typedef struct
 {
     cv::Mat Frame;

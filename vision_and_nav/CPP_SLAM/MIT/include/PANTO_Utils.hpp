@@ -39,8 +39,7 @@ T PANTO_Cv2Eigen(cv::Matx33d cvmat)
     return eigenmat;
 }
 
-typedef std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> PointPair2D;
-std::vector<std::vector<Eigen::Vector3d>> PANTO_PointPair2Eigen(PointPair2D pp);
+u32 PANTO_HammingDistance(const typeDescriptor& a, const typeDescriptor& b);
 u32 PANTO_HammingDistance(typeDescriptor& a, typeDescriptor& b);
 
 #endif //__VT_VECUTILS_HPP_

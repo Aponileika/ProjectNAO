@@ -2,11 +2,6 @@
 
 typeSLAM PantoSLAM;
 
-static cv::Mat __SL_GetNextFrame(u64 num_views);
-void __SL_PrintSlam();
-static void __SL_SlamStart();
-void __SL_SlamLoopBundle();
-PointPair2D __SL_SlamLoopPnP();
 typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameData& PreviousFrameDataCopy, const typeKeyFrame& NewKeyFrame,
         const typeLocalMapInfo& LocalMapInfo);
 
@@ -43,45 +38,77 @@ void SL_PantoSLAM(i32 num_loops)
 
     INIT_DestroyInitData();
 
-    typeKeyFrame ThirdKeyFrame = KEY_GetThirdKeyFrame();
+    typeKeyFrame ThirdKeyFrame = KEY_GetThirdKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints);
+    MAP_AppendKeyFrame(PantoSLAM.GlobalMap, ThirdKeyFrame);
+
+    OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
+
+    PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
+    PantoSLAM.PreviousFrameData.PreviousPreviousFramePose = PantoSLAM.GlobalMap.KeyFrames[1].Pose;
+    PantoSLAM.PreviousFrameData.PreviousFramePose = PantoSLAM.GlobalMap.KeyFrames.back().Pose;
+    PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFramePose.Pose, PantoSLAM.PreviousFrameData.PreviousPreviousFramePose.Pose);
 
     for(i32 i = 0; i < num_loops; i++)
     {
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Starting loop %d\n", i);
+
         typeKeyFrame NewKeyFrame = KEY_GetKeyFrame(PantoSLAM.NextFramePosePrediction, PantoSLAM.PreviousFrameData.PreviousFrameMapPoints);
+
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Inserting preliminary keyframe\n");
         MAP_InsertPreliminaryKeyFrame(PantoSLAM.GlobalMap, NewKeyFrame);
+
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Running first tracking optimization\n");
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
         
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Creating local map\n");
         PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, NewKeyFrame);
 
-        const typeLocalMapInfo LocalMapInfo  = MAP_MatchMapPointLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, NewKeyFrame);
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Matching local map points\n");
+        const typeLocalMapInfo LocalMapInfo  = MAP_MatchMapPointLocalMap(PantoSLAM.LocalMap, NewKeyFrame);
 
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Running second tracking optimization\n");
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {});
 
         const typePreviousFrameData PreviousFrameDataCopy = PantoSLAM.PreviousFrameData;
 
-        PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, NewKeyFrame);
+        PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
         PantoSLAM.PreviousFrameData.PreviousPreviousFramePose = PantoSLAM.PreviousFrameData.PreviousFramePose;
-        PantoSLAM.PreviousFrameData.PreviousFramePose = NewKeyFrame.Pose;
+        PantoSLAM.PreviousFrameData.PreviousFramePose = PantoSLAM.GlobalMap.KeyFrames.back().Pose;
         PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFramePose.Pose, PantoSLAM.PreviousFrameData.PreviousPreviousFramePose.Pose);
 
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Evaluating keyframe insertion\n");
         typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, NewKeyFrame, LocalMapInfo);
 
         if(KEY_IsKeyFrame(KeyFrameInfo))
         {
+            LG_Log(LogSeverity::DBG, "[SLAMLoop] Current frame selected as keyframe\n");
+
             PantoSLAM.AccumulatedDistance = 0.0f;
 
             KEY_SetAsKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1, PantoSLAM.Vocabulary);
             GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints);
+
             const u64 NumNewPoints = MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, PantoSLAM.GlobalMap.KeyFrames.back());
-            GRAPH_UpdateCovisibility(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.MapPoints, NumNewPoints);
+
+            LG_Log(LogSeverity::DBG, "[SLAMLoop] Created %llu new map points\n", static_cast<unsigned long long>(NumNewPoints));
+
+            GRAPH_UpdateCovisibility(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.MapPoints, NumNewPoints, PantoSLAM.GlobalMap.KeyFrames.back().ID);
+
+            LG_Log(LogSeverity::DBG, "[SLAMLoop] Running local bundle adjustment\n");
             OP_BundleAdjust(PantoSLAM.GlobalMap, typeLocal, PantoSLAM.LocalMap);
+
+            LG_Log(LogSeverity::DBG, "[SLAMLoop] Culling local map\n");
             MAP_CullLocalMap(PantoSLAM.GlobalMap, PantoSLAM.LocalMap);
+
             // Loop closure + Full bundle adjust
         }
         else
         {
+            LG_Log(LogSeverity::DBG, "[SLAMLoop] Removing preliminary keyframe\n");
             MAP_RemovePreliminaryKeyFrame(PantoSLAM.GlobalMap);
         }
+
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Finished loop %d\n", i);
     }
 }
 

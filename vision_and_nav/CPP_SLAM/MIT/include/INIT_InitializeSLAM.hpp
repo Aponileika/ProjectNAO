@@ -13,12 +13,13 @@
 #ifndef INIT_INITIALIZESLAM_HPP_
 #define INIT_INITIALIZESLAM_HPP_
 #include <vector>
-#include <DBoW3.h>
 #include <ranges>
 #include <thread>
 #include <functional>
 #include <memory>
+#include <DBoW3/DBoW3.h>
 #include <DBoW3/BowVector.h>
+#include <DBoW3/FeatureVector.h>
 #include "MAP_Mapping.hpp"
 #include "CM_Camera.hpp"
 #include "CArenaAlloc.h"
@@ -28,7 +29,7 @@
 #include "EP_CorrespondingPoints.hpp"
 #include "DBOW3_DeepBagofWords.hpp"
 #include "PANTO_Utils.hpp"
-#include "KEY_Keyframe.hpp"
+#include "KEY_KeyFrame.hpp"
 #include "PT_Types.hpp"
 #include "PT_PantoImagePoint.hpp"
 

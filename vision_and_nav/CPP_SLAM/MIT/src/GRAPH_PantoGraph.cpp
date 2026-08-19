@@ -1,7 +1,7 @@
 #include "../include/GRAPH_PantoGraph.hpp"
 #include <cstring>
 
-void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& GlobalMapPoints)
+void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints)
 {
     const typePantoKeypointFrame& KeyPointFrame = KeyFrame.Points;
     std::vector<u64> CovisibilityCount(KeyFrame.ID, 0);
@@ -13,6 +13,11 @@ void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFr
         {
             for(const u64& KeyFrameID : GlobalMapPoints[MapPointID].KeyFrameIDs)
             {
+                if(KeyFrameID == KeyFrame.ID)
+                {
+                    continue;
+                }
+
                 CovisibilityCount[KeyFrameID]++;
             }
         }
@@ -20,7 +25,7 @@ void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFr
 
     std::vector<typeCovisibility> Covisibility;
 
-    for(u64 KeyFrameID{}; KeyFrameID <= KeyFrame.ID; KeyFrameID++)
+    for(u64 KeyFrameID{}; KeyFrameID < KeyFrame.ID; KeyFrameID++)
     {
         u64 Count = CovisibilityCount[KeyFrameID];
 
@@ -108,8 +113,7 @@ void GRAPH_UpdateCovisibility(typeCovisibilityGraph& CovisibilityGraph, const st
         }
 
         WasCovisible = false;
-        for(typeCovisibility& Covisibility :
-                CovisibilityGraph[i])
+        for(typeCovisibility& Covisibility : CovisibilityGraph[i])
         {
             if(Covisibility.KeyFrameID == NewKeyFrameID)
             {

@@ -1,9 +1,9 @@
 #include "MAP_Mapping.hpp"
 #include <cstddef>
 
-void MAP_InitializeGlobalMap(, const std::vector<typeKeyFrame>& KeyFrames)
+void MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame)
 {
-    Map.KeyFrames = KeyFrames;
+    GlobalMap.KeyFrames.push_back(KeyFrame);
 }
 
 void MAP_InsertPreliminaryKeyFrame(typeGlobalMap& Map, typeKeyFrame& KeyFrame)
@@ -38,6 +38,14 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeKeyFra
         }
     }
 
+    for(std::size_t i{}; i < NumberOfKeyFrames; i++)
+    {
+        if(KeyFrameCount[i] > 0)
+        {
+            LocalMap.KeyFrames.push_back(GlobalMap.KeyFrames[i]);
+        }
+    }
+
     for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
     {
         for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
@@ -49,24 +57,16 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeKeyFra
         }
     }
 
-    for(std::size_t i{}; i < NumberOfKeyFrames; i++)
-    {
-        if(KeyFrameCount[i] > 0)
-        {
-            LocalMap.KeyFrames.push_back(GlobalMap.KeyFrames[i]);
-        }
-    }
-
     return LocalMap;
 }
 
-std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Map, const typeKeyFrame& NewKeyFrame)
+std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Map, const typeKeyFrame& LastKeyFrame)
 {
-    const typePantoKeypointFrame& LastKeyFrame = NewKeyFrame.Points;
+    const typePantoKeypointFrame& LastKeyFramePoints = LastKeyFrame.Points;
     std::vector<typePantoMapPoint> LastKeyFrameMapPoints;
     const std::vector<typePantoMapPoint>& MapPoints = Map.MapPoints;
 
-    for(const typePantoImagePoint& ImagePoint : LastKeyFrame.ImagePoints)
+    for(const typePantoImagePoint& ImagePoint : LastKeyFramePoints.ImagePoints)
     {
         if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
         {
@@ -80,10 +80,12 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(const typeLocalMap& LocalMap, typeKey
 {
     const std::vector<typePantoMapPoint>& LocalMapPoints = LocalMap.MapPoints;
 
+    LG_Log(LogSeverity::DBG, "[MAP_MatchMapPointLocalMap] Getting median scene depth");
     const fp64 MedianDepth = KEY_GetLocalMapMedianDepth(NewKeyFrame, LocalMapPoints);
 
     const u64 NumLocalMapPoints = static_cast<u64>(LocalMapPoints.size());
     const typeCamera& Pose = NewKeyFrame.Pose;
+    LG_Log(LogSeverity::DBG, "[MAP_MatchMapPointLocalMap] Matching mappoints to keyframe");
     const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(NewKeyFrame.Points, LocalMapPoints, Pose);
 
     const fp64 TrackingRatio = static_cast<fp64>(NumTrackedMapPoints) / static_cast<fp64>(NumLocalMapPoints);

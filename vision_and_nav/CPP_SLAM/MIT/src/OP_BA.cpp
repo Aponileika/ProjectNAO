@@ -29,15 +29,19 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, typeLoca
         case typePoseAndPoints:
             __OP_BuildProblem(Map, Problem);
             options.linear_solver_type = ceres::SPARSE_SCHUR;
+            break;
         case typePose:
             __OP_BuildProblemPoseOnly(Map, Problem);
             options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+            break;
         case typeTracking:
             __OP_BuildProblemTracking(Map, Problem);
             options.linear_solver_type = ceres::DENSE_QR;
+            break;
         case typeLocal:
             __OP_BuildProblemLocal(Map, Problem, LocalMap);
             options.linear_solver_type = ceres::DENSE_SCHUR;
+            break;
     }
 
     ceres::Solver::Summary summary;
@@ -184,7 +188,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem)
     //Set the first camera constant
 
     typeKeyFrame& KeyFrame = Map.KeyFrames.back();
-    assert(KeyFrame.ID == PANTO_ID_NOT_SET);
+    assert(KeyFrame.ID != PANTO_ID_NOT_SET);
     typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
 
     Problem.AddParameterBlock(Parameters.q.coeffs().data(), 4);
@@ -264,12 +268,6 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, typeLoc
             {
                 Problem.AddParameterBlock(Map.MapPoints[MapPointID].Point.data(), 4);
                 Problem.SetManifold(Map.MapPoints[MapPointID].Point.data(), new ceres::SphereManifold<4>());
-            }
-            else
-            {
-                // Dont optimize points with no associated 3d point
-                Problem.AddParameterBlock(Map.MapPoints[MapPointID].Point.data(), 4);
-                Problem.SetParameterBlockConstant(Map.MapPoints[MapPointID].Point.data());
             }
         }
     }
