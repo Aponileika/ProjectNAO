@@ -142,6 +142,17 @@ const std::string PANTO_VocabFilePath("PantoVocabulary.dbow3");
 
 #define PANTO_DBOW_LEVELSUP (PANTO_DBOW_DEPTH - 1);
 
+#define PANTO_INIT_ERROR_THRESHOLD_INLIER_HOMOGRAPHY 5.991*PANTO_PIXEL_MEAS_STD_DEV*PANTO_PIXEL_MEAS_STD_DEV
+
+#define PANTO_INIT_ERROR_THRESHOLD_INLIER_FUNDAMENTAL 3.841*PANTO_PIXEL_MEAS_STD_DEV*PANTO_PIXEL_MEAS_STD_DEV
+
+#define PANTO_INIT_STRANSAC_RATIO_INLIER_OUTLIER_THRESHOLD 0.6f
+
+#define PANTO_INIT_RANSAC_LOOP_CNT 500
+
+#define PANTO_FUNDAMENTAL_MIN_POINTS 8
+#define PANTO_HOMOGRAPHY_MIN_POINTS 4
+
 
 /*                      
  ******************************************************************                                                  

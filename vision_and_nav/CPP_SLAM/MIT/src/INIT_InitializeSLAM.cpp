@@ -1,5 +1,7 @@
 #include "../include/INIT_InitializeSLAM.hpp"
 #include "INITPriv_InitializeSLAM.hpp"
+#include <memory>
+#include <random>
 
 static typePantoInitData InitData = 
 {
@@ -92,9 +94,10 @@ void INITPriv_MatchHistoricalFrames(void)
                     {
                         const typeInitImagePoint& TopCandidate = HistoricalFrame.ImagePoints[BestFeatureID];
                         const u64 FeatureTrackID = TopCandidate.FeatureTrackID;
+
                         if(FeatureTrackID == PANTO_ID_NOT_SET)
                         {
-                            std::vector<i64> NewTrack(InitData.InitFrames.size(), -1);
+                            std::vector<u64> NewTrack(InitData.InitFrames.size(), PANTO_ID_NOT_SET);
                             *(NewTrack.rbegin()) = TopCandidate.ID;
                             *(NewTrack.rbegin() - 1) = ImagePointNew.ID;
                             typeFeatureTrack FeatureTrack = 
@@ -127,11 +130,109 @@ void INITPriv_MatchHistoricalFrames(void)
     }
 }
 
-void INITPriv_STRANSAC(void)
+std::vector<typeInitImagePoint> INITPriv_STRANSAC(void)
 {
-    for(typeInitFrame& InitFrame : InitData.InitFrames)
+    const typeInitFrame& LatestFrame = InitData.InitFrames.back();
+
+    // Get all feature tracks from the newest frame
+    std::vector<u64> LatestFrameFeatureTrackIDs;
+
+    LatestFrameFeatureTrackIDs.reserve(LatestFrame.ImagePoints.size());
+
+    for(const typeInitImagePoint& ImagePoint : LatestFrame.ImagePoints) 
     {
+        const u64 FeatureTrackID = ImagePoint.FeatureTrackID;
+        if(FeatureTrackID == PANTO_ID_NOT_SET)
+        {
+            continue;
+        }
+        
+        LatestFrameFeatureTrackIDs.push_back(FeatureTrackID);
     }
+
+    for(typeInitFrame& HistoricalFrame : InitData.InitFrames)
+    {
+
+        const u64 HistoricalFrameID = HistoricalFrame.ID;
+        if(HistoricalFrameID == LatestFrame.ID)
+        {
+            continue;
+        }
+
+        // Get all feature tracks from the newest frame
+        std::vector<u64> HistoricalFrameFeatureTrackIDs;
+        HistoricalFrameFeatureTrackIDs.reserve(LatestFrame.ImagePoints.size());
+
+        std::vector<u64> CommonFeatureTrackIDs;
+        CommonFeatureTrackIDs.reserve(LatestFrame.ImagePoints.size());
+
+        std::vector<Eigen::Vector2d> LatestFramePoints;
+        LatestFramePoints.reserve(LatestFrame.ImagePoints.size());
+
+        std::vector<Eigen::Vector2d> HistoricalFramePoints;
+        HistoricalFramePoints.reserve(LatestFrame.ImagePoints.size());
+
+        for(const u64 TrackID : LatestFrameFeatureTrackIDs) 
+        {
+            const u64 HistoricalFeatureID = InitData.FeatureTracks[TrackID].FeatureTrack[HistoricalFrameID];
+
+            if(HistoricalFeatureID == PANTO_ID_NOT_SET)
+            {
+                continue;
+            }
+            
+            const u64 NewFeatureID = InitData.FeatureTracks[TrackID].FeatureTrack[LatestFrame.ID];
+
+            CommonFeatureTrackIDs.push_back(TrackID);
+
+            LatestFramePoints.push_back(LatestFrame.ImagePoints[NewFeatureID].Point);
+            HistoricalFramePoints.push_back(HistoricalFrame.ImagePoints[HistoricalFeatureID].Point);
+        }
+        std::unique_ptr<ImageToImageMapping> Mapping = INITPriv_ScoredFAndHEstimation(LatestFramePoints, HistoricalFramePoints);
+
+        std::vector<fp64> Error = Mapping->Error(LatestFramePoints, HistoricalFramePoints);
+
+        const fp64 MappingErrorThreshold = Mapping->GetErrorThreshold();
+        for(std::size_t i{}; i < Error.size(); i++)
+        {
+            typeFeatureTrack& FeatureTrack = InitData.FeatureTracks[CommonFeatureTrackIDs[i]];
+
+            if(Error[i] < MappingErrorThreshold)
+            {
+                ++FeatureTrack.InlierCount;
+            }
+            else
+            {
+                ++FeatureTrack.OutlierCount;
+            }
+        }
+    }
+
+    std::vector<typeInitImagePoint> StationaryFeatures;
+    StationaryFeatures.reserve(LatestFrame.ImagePoints.size());
+    for(const typeInitImagePoint& NewImagePoint : LatestFrame.ImagePoints)
+    {
+        const u64 FeatureTrackID = NewImagePoint.FeatureTrackID;
+        if(FeatureTrackID == PANTO_ID_NOT_SET)
+        {
+            continue;
+        }
+
+        const typeFeatureTrack& FeatureTrack = InitData.FeatureTracks[FeatureTrackID];
+        const u64 Total = FeatureTrack.InlierCount + FeatureTrack.OutlierCount;
+        if(Total == 0)
+        {
+            continue;
+        }
+
+        const fp64 Ratio = static_cast<fp64>(FeatureTrack.InlierCount) / static_cast<fp64>(Total);
+        if(Ratio > PANTO_INIT_STRANSAC_RATIO_INLIER_OUTLIER_THRESHOLD)
+        {
+            StationaryFeatures.push_back(NewImagePoint);
+        }
+    }
+
+    return StationaryFeatures;
 }
 
 std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::vector<Eigen::Vector2d>& PointFrameNew, const std::vector<Eigen::Vector2d>& PointFrameHistorical)
@@ -139,8 +240,10 @@ std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::v
     std::unique_ptr<FundamentalMatrixMapping> Fundamental = std::make_unique<FundamentalMatrixMapping>();
     std::unique_ptr<HomographyMapping> Homography = std::make_unique<HomographyMapping>();
 
-    std::thread HomographyThread(&HomographyMapping::Estimate, Homography.get(), std::cref(PointFrameNew), std::cref(PointFrameHistorical));
-    std::thread FundamentalThread(&FundamentalMatrixMapping::Estimate, Fundamental.get(), std::cref(PointFrameNew), std::cref(PointFrameHistorical));
+    const u64 Seed = INITPriv_RandomSeed();
+
+    std::thread HomographyThread(&HomographyMapping::Estimate, Homography.get(), std::cref(PointFrameNew), std::cref(PointFrameHistorical), Seed);
+    std::thread FundamentalThread(&FundamentalMatrixMapping::Estimate, Fundamental.get(), std::cref(PointFrameNew), std::cref(PointFrameHistorical), Seed);
 
     HomographyThread.join();
     FundamentalThread.join();
@@ -151,6 +254,16 @@ std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::v
     }
 
     return Homography;
+}
+
+u64 INITPriv_RandomSeed(void)
+{
+    std::random_device RandomDevice;
+
+    u64 High = static_cast<u64>(RandomDevice());
+    u64 Low  = static_cast<u64>(RandomDevice());
+
+    return (High << 32) | Low;
 }
 
 bool INITPriv_EnoughStationaryFeatures(void)

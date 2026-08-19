@@ -30,7 +30,7 @@
 // set to PANTO_FEATURE_TRACK_NOT_OBSERVED if no track exists
 typedef struct
 {
-    std::vector<i64> FeatureTrack;
+    std::vector<u64> FeatureTrack;
     u64 InlierCount;
     u64 OutlierCount;
 }typeFeatureTrack;
