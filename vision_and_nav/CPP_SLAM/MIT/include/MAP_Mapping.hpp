@@ -23,6 +23,7 @@ typedef struct
     fp64 MedianDepth;
 }typeLocalMapInfo;
 
+void MAP_InitializeGlobalMap(typeGlobalMap& Map, const std::vector<typeKeyFrame>& KeyFrame);
 void MAP_InsertPreliminaryKeyFrame(typeGlobalMap& Map, typeKeyFrame& KeyFrame);
 void MAP_RemovePreliminaryKeyFrame(typeGlobalMap& Map);
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame);

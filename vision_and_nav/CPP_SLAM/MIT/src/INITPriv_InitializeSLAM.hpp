@@ -881,6 +881,7 @@ u64 INITPriv_RandomSeed(void);
 std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::vector<Eigen::Vector2d>& PointFrameNew, const std::vector<Eigen::Vector2d>& PointFrameHistorical);
 std::vector<u64> INITPriv_GetCandidateFrameIDs(std::vector<u64> StationaryTrackIDs);
 typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFrame, const typeInitFrame& NewFrame, const std::vector<u64>& StationaryTrackIDs);
+typePantoKeypointFrame INITPriv_GetKeyPointFrame(u64 InitFrameID);
 void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points, 
         const cv::Mat& Descriptors, const fp64 TimeStamp);
 

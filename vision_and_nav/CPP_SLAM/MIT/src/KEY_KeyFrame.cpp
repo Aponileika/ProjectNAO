@@ -22,6 +22,12 @@ typeFuzzyKeyFrameInference FuzzyInference =
     .SpatialTrackingThreshold = NAN
 };
 
+typeKeyFrame KEY_GetThirdKeyFrame(void)
+{
+    typePantoFrame Frame = FR_GetFrame();
+    DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
+}
+
 typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints)
 {
     typePantoFrame Frame = FR_GetFrame();

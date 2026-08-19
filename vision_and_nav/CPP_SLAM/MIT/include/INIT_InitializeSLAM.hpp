@@ -18,6 +18,8 @@
 #include <thread>
 #include <functional>
 #include <memory>
+#include <DBoW3/BowVector.h>
+#include "MAP_Mapping.hpp"
 #include "CM_Camera.hpp"
 #include "CArenaAlloc.h"
 #include "Config.hpp"
@@ -65,6 +67,7 @@ typedef struct
 typedef struct
 {
     std::vector<typeInitImagePoint> ImagePoints;
+    DBoW3::BowVector BoWVector;
     DBoW3::FeatureVector FeatureVector;
     u64 ID;
     fp64 TimeStamp;
@@ -79,7 +82,7 @@ typedef struct
 
 void INIT_CreateInitData(void);
 typeInitReconstruction INIT_ProcessNewFrame(void);
-void INIT_DestroyInitStruct(void);
-std::vector<typeKeyFrame> INIT_ConstructInitialKeyFrames(typeInitReconstruction Reconstruction);
+void INIT_DestroyInitData(void);
+typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction);
 
 #endif // INIT_INITIALIZESLAM_HPP_

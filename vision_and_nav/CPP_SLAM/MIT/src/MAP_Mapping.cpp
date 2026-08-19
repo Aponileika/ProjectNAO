@@ -1,6 +1,11 @@
 #include "MAP_Mapping.hpp"
 #include <cstddef>
 
+void MAP_InitializeGlobalMap(, const std::vector<typeKeyFrame>& KeyFrames)
+{
+    Map.KeyFrames = KeyFrames;
+}
+
 void MAP_InsertPreliminaryKeyFrame(typeGlobalMap& Map, typeKeyFrame& KeyFrame)
 {
     const u64 ID = Map.KeyFrames.size();

@@ -78,9 +78,11 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
 
 void INIT_DestroyInitData(void)
 {
+    InitData.InitFrames.resize(0);
+    InitData.FeatureTracks.resize(0);
 }
 
-std::vector<typeKeyFrame> INIT_ConstructInitialKeyFrames(const typeInitReconstruction& Reconstruction)
+typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
 {
     assert(Reconstruction.Valid == true);
     assert(Reconstruction.MapPoints.size() > 0);
@@ -96,12 +98,15 @@ std::vector<typeKeyFrame> INIT_ConstructInitialKeyFrames(const typeInitReconstru
     {
         const typeInitMapPoint& InitMapPoint = Reconstruction.MapPoints[i];
 
+        std::vector<u64> ImagePointIDs(2, 0);
+        ImagePointIDs[0] = InitMapPoint.InitImagePointID.first;
+        ImagePointIDs[1] = InitMapPoint.InitImagePointID.second;
+
+        typeDescriptor Descriptor = InitData.InitFrames[SecondFrameID].ImagePoints[ImagePointIDs[1]].Descriptor;
+
         std::vector<u64> KeyFrameIDs(2, 0);
-        KeyFrameIDs[0] = InitMapPoint.InitImagePointID.first;
-        KeyFrameIDs[1] = InitMapPoint.InitImagePointID.second;
-
-
-        typeDescriptor Descriptor
+        KeyFrameIDs[0] = FirstFrameID;
+        KeyFrameIDs[1] = SecondFrameID;
 
         InitialMapPoints.push_back(
             {
@@ -111,64 +116,79 @@ std::vector<typeKeyFrame> INIT_ConstructInitialKeyFrames(const typeInitReconstru
                 .ImagePointIDs = ImagePointIDs,
                 .ID = static_cast<u64>(i)
             });
-                
-    Eigen::Vector4d Point;
-    typeDescriptor Descriptor;
-    std::vector<u64> KeyFrameIDs;
-    std::vector<u64> ImagePointIDs;
-    u64 ID;
     }
 
-typedef struct
-{
-    Eigen::Vector4d Point4D;
-    std::pair<u64, u64> InitImagePointID;
-}typeInitMapPoint;
+    std::vector<typePantoKeypointFrame> ImagePoints;
+    ImagePoints.reserve(2);
 
-typedef struct
-{
-    Eigen::Matrix3d R;
-    Eigen::Vector3d t;
-    u64 NumPointsInFront;
-    std::vector<typeInitMapPoint> MapPoints;
-    std::pair<u64, u64> ChosenInitFrameID;
-    bool Valid;
-}typeInitReconstruction;
-typedef struct
-{
-    typePantoKeypointFrame Points;
-    DBoW3::BowVector BowVector;
-    DBoW3::FeatureVector FeatureVector;
-    typeCamera Pose;
-    u64 ID;
-}typeKeyFrame;
-typedef struct
-{
-    /**
-     * Contains the undistorted point
-     * */
-    Eigen::Vector2d Point;
-    typeDescriptor Descriptor;
-    u64 MapPointID;
-    u64 ID;
-    u64 CellID;
-}typePantoImagePoint;
+    ImagePoints.push_back(INITPriv_GetKeyPointFrame(FirstFrameID));
+    ImagePoints.push_back(INITPriv_GetKeyPointFrame(SecondFrameID));
 
-typedef struct
-{
-    Eigen::Vector4d Point;
-    typeDescriptor Descriptor;
-    std::vector<u64> KeyFrameIDs;
-    std::vector<u64> ImagePointIDs;
-    u64 ID;
-}typePantoMapPoint;
 
-typedef struct
-{
-    std::vector<typePantoImagePoint> ImagePoints;
-    std::array<std::vector<u64>, PANTO_CELL_SIZE*PANTO_CELL_SIZE> CellIndexingArray;
-}typePantoKeypointFrame;
+    Eigen::Matrix3d FirstR = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d Firstt(0, 0, 0);
+    typeCamera FirstCamera = CM_CreateCam(FirstR, Firstt, 0, InitData.InitFrames[FirstFrameID].TimeStamp);
 
+    Eigen::Matrix3d SecondR = Reconstruction.R;
+    Eigen::Vector3d Secondt = Reconstruction.t;
+    typeCamera SecondCamera = CM_CreateCam(SecondR, Secondt, 1, InitData.InitFrames[SecondFrameID].TimeStamp);
+
+    std::vector<typeKeyFrame> KeyFrames;
+    KeyFrames.push_back(
+        {
+            .Points = ImagePoints[0],
+            .BowVector = InitData.InitFrames[FirstFrameID].BoWVector,
+            .FeatureVector = InitData.InitFrames[FirstFrameID].FeatureVector,
+            .Pose = FirstCamera,
+            .ID = 0
+        });
+
+    KeyFrames.push_back(
+        {
+            .Points = ImagePoints[1],
+            .BowVector = InitData.InitFrames[SecondFrameID].BoWVector,
+            .FeatureVector = InitData.InitFrames[SecondFrameID].FeatureVector,
+            .Pose = SecondCamera,
+            .ID = 1
+        });
+    
+    return {.KeyFrames = KeyFrames, .MapPoints = InitialMapPoints};
+}
+
+typePantoKeypointFrame INITPriv_GetKeyPointFrame(u64 InitFrameID)
+{
+    typePantoKeypointFrame Ret{};
+
+    const typeInitFrame& Frame = InitData.InitFrames[InitFrameID];
+
+    const u64 NumImagePoints = Frame.ImagePoints.size();
+
+    for(std::size_t i{}; i < NumImagePoints; i++)
+    {
+        const typeInitImagePoint& InitImagePoint = Frame.ImagePoints[i];
+
+        Eigen::Vector2d Point = InitImagePoint.Point;
+        u64 CellX = static_cast<u64>(Point[0]) / PANTO_CELL_SIZE;
+        u64 CellY = static_cast<u64>(Point[1]) / PANTO_CELL_SIZE;
+
+        u64 CellIndex = CellY * PANTO_GRID_COLUMNS + CellX;
+
+        typeDescriptor Descriptor = InitImagePoint.Descriptor;
+
+        typePantoImagePoint CandidateImagePoint = 
+        {
+            .Point = Point,
+            .Descriptor = Descriptor,
+            .MapPointID = PANTO_ID_NOT_SET,
+            .ID = static_cast<u64>(i),
+            .CellID = CellIndex
+        };
+
+        Ret.ImagePoints.push_back(CandidateImagePoint);
+        Ret.CellIndexingArray[CellIndex].push_back(i);
+    }
+
+    return Ret;
 }
 
 /** 
@@ -524,9 +544,7 @@ void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points,
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
 
-    DBoW3::BowVector DummyBow;
-
-    Vocabulary.transform(DescriptorVector, DummyBow, InitFrame.FeatureVector, Levels);
+    Vocabulary.transform(DescriptorVector, InitFrame.BoWVector, InitFrame.FeatureVector, Levels);
 
     const std::size_t NPoints = Points.size();
 

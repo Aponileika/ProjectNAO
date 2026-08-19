@@ -36,9 +36,8 @@ typedef struct
     u64 ID;
 }typeKeyFrame;
 
-
+typeKeyFrame KEY_GetThirdKeyFrame(void);
 typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints);
-//TODO
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information);
 void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocabulary& Vocabulary);
 void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints);

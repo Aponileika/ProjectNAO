@@ -28,14 +28,22 @@ void SL_PantoSLAM(i32 num_loops)
 {
     bool Initialized = false;
     INIT_CreateInitData();
+    typeInitReconstruction Reconstruction{};
+
     while(!Initialized)
     {
-        typeInitReconstruction Reconstruction = INIT_ProcessNewFrame();
+        Reconstruction = INIT_ProcessNewFrame();
         if(Reconstruction.Valid)
         {
             Initialized = true;
         }
     }
+
+    PantoSLAM.GlobalMap = INIT_ConstructInitialMap(Reconstruction);
+
+    INIT_DestroyInitData();
+
+    typeKeyFrame ThirdKeyFrame = KEY_GetThirdKeyFrame();
 
     for(i32 i = 0; i < num_loops; i++)
     {
