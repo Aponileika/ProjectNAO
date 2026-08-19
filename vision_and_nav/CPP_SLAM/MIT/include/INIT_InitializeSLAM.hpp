@@ -15,6 +15,9 @@
 #include <vector>
 #include <DBoW3.h>
 #include <ranges>
+#include <thread>
+#include <functional>
+#include <memory>
 #include "CArenaAlloc.h"
 #include "Config.hpp"
 #include "PT_PantoImagePoint.hpp"

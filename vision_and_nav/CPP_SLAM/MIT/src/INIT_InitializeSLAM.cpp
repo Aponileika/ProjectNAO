@@ -1,5 +1,4 @@
 #include "../include/INIT_InitializeSLAM.hpp"
-#include "BowVector.h"
 #include "INITPriv_InitializeSLAM.hpp"
 
 static typePantoInitData InitData = 
@@ -128,12 +127,30 @@ void INITPriv_MatchHistoricalFrames(void)
     }
 }
 
-template<typename Mapping>
 void INITPriv_STRANSAC(void)
 {
     for(typeInitFrame& InitFrame : InitData.InitFrames)
     {
     }
+}
+
+std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::vector<Eigen::Vector2d>& PointFrameNew, const std::vector<Eigen::Vector2d>& PointFrameHistorical)
+{
+    std::unique_ptr<FundamentalMatrixMapping> Fundamental = std::make_unique<FundamentalMatrixMapping>();
+    std::unique_ptr<HomographyMapping> Homography = std::make_unique<HomographyMapping>();
+
+    std::thread HomographyThread(&HomographyMapping::Estimate, Homography.get(), std::cref(PointFrameNew), std::cref(PointFrameHistorical));
+    std::thread FundamentalThread(&FundamentalMatrixMapping::Estimate, Fundamental.get(), std::cref(PointFrameNew), std::cref(PointFrameHistorical));
+
+    HomographyThread.join();
+    FundamentalThread.join();
+
+    if(Fundamental->MaxScore > Homography->MaxScore)
+    {
+        return Fundamental;
+    }
+
+    return Homography;
 }
 
 bool INITPriv_EnoughStationaryFeatures(void)

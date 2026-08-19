@@ -1,6 +1,6 @@
 #ifndef __DBOW3_DEEPBAGOFWORDS_HPP_
 #define __DBOW3_DEEPBAGOFWORDS_HPP_
-#include <DBoW3.h>
+#include <DBoW3/DBoW3.h>
 #include "Config.hpp"
 
 void DBOW3_InitVocabulary(void);
