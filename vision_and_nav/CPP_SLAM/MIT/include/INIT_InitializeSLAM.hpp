@@ -18,14 +18,33 @@
 #include <thread>
 #include <functional>
 #include <memory>
+#include "CM_Camera.hpp"
 #include "CArenaAlloc.h"
 #include "Config.hpp"
 #include "PT_PantoImagePoint.hpp"
-#include "PT_Types.hpp"
 #include "FR_Frames.hpp"
 #include "EP_CorrespondingPoints.hpp"
 #include "DBOW3_DeepBagofWords.hpp"
 #include "PANTO_Utils.hpp"
+#include "KEY_Keyframe.hpp"
+#include "PT_Types.hpp"
+#include "PT_PantoImagePoint.hpp"
+
+typedef struct
+{
+    Eigen::Vector4d Point4D;
+    std::pair<u64, u64> InitImagePointID;
+}typeInitMapPoint;
+
+typedef struct
+{
+    Eigen::Matrix3d R;
+    Eigen::Vector3d t;
+    u64 NumPointsInFront;
+    std::vector<typeInitMapPoint> MapPoints;
+    std::pair<u64, u64> ChosenInitFrameID;
+    bool Valid;
+}typeInitReconstruction;
 
 // set to PANTO_FEATURE_TRACK_NOT_OBSERVED if no track exists
 typedef struct
@@ -58,9 +77,9 @@ typedef struct
     bool EnoughStationaryPointsForInit;
 }typePantoInitData;
 
-void INIT_CreateInitStruct(void);
-void INIT_ProcessNewFrame(void);
-std::pair<typeInitFrame, typeInitFrame> INIT_Initialize(void);
+void INIT_CreateInitData(void);
+typeInitReconstruction INIT_ProcessNewFrame(void);
 void INIT_DestroyInitStruct(void);
+std::vector<typeKeyFrame> INIT_ConstructInitialKeyFrames(typeInitReconstruction Reconstruction);
 
 #endif // INIT_INITIALIZESLAM_HPP_

@@ -152,7 +152,8 @@ const std::string PANTO_VocabFilePath("PantoVocabulary.dbow3");
 
 #define PANTO_FUNDAMENTAL_MIN_POINTS 8
 #define PANTO_HOMOGRAPHY_MIN_POINTS 4
-
+#define PANTO_INIT_MIN_STATIONARY_POINTS 50
+#define PANTO_NUM_THREADS_MAX 4
 
 /*                      
  ******************************************************************                                                  

@@ -1,8 +1,55 @@
 #ifndef INITPRIV_INITIALIZESLAM_HPP_
 #define INITPRIV_INITIALIZESLAM_HPP_
 #include "../include/INIT_InitializeSLAM.hpp"
+#include "PT_PantoMapPoints.hpp"
 #include <cmath>
 #include <random>
+
+template <int N>
+static void INITPriv_NormalizePoints2D( const Eigen::Matrix<fp64, 3, N>& Points, Eigen::Matrix<fp64, 3, N>& PointsNormalized, Eigen::Matrix3d& T)
+{
+    fp64 MeanX = 0.0;
+    fp64 MeanY = 0.0;
+
+    for(i32 i = 0; i < N; ++i)
+    {
+        const fp64 InvZ = 1.0 / Points(2, i);
+        MeanX += Points(0, i) * InvZ;
+        MeanY += Points(1, i) * InvZ;
+    }
+
+    MeanX /= static_cast<fp64>(N);
+    MeanY /= static_cast<fp64>(N);
+
+    fp64 MeanDistance = 0.0;
+
+    for(i32 i = 0; i < N; ++i)
+    {
+        const fp64 InvZ = 1.0 / Points(2, i);
+        const fp64 X = Points(0, i) * InvZ;
+        const fp64 Y = Points(1, i) * InvZ;
+
+        const fp64 DX = X - MeanX;
+        const fp64 DY = Y - MeanY;
+
+        MeanDistance += std::sqrt(DX * DX + DY * DY);
+    }
+
+    MeanDistance /= static_cast<fp64>(N);
+
+    fp64 Scale = 1.0;
+    if(MeanDistance > std::numeric_limits<fp64>::epsilon())
+    {
+        Scale = std::sqrt(2.0) / MeanDistance;
+    }
+
+    T <<
+        Scale, 0.0,   -Scale * MeanX,
+        0.0,   Scale, -Scale * MeanY,
+        0.0,   0.0,    1.0;
+
+    PointsNormalized = T * Points;
+}
 
 class ImageToImageMapping
 {
@@ -10,6 +57,9 @@ public:
     virtual std::vector<fp64> Error(const std::vector<Eigen::Vector2d>& Point1, const std::vector<Eigen::Vector2d>& Point2) const = 0; 
 
     virtual fp64 GetErrorThreshold() const = 0;
+
+    virtual typeInitReconstruction Reconstruct( const std::vector<Eigen::Vector2d>& Points1, const std::vector<Eigen::Vector2d>& Points2,
+        const std::vector<std::pair<u64, u64>>& ImagePointIDs, const std::pair<u64, u64>& InitFrameIDs, const Eigen::Matrix3d& K) const = 0;
 
     virtual ~ImageToImageMapping() = default;
 };
@@ -66,7 +116,7 @@ public:
 
             for(const fp64 Error : Errors)
             {
-                if(Error < PANTO_INIT_ERROR_THRESHOLD_INLIER_FUNDAMENTAL)
+                if(Error < ErrorThreshold)
                 {
                     Score += 1.0 - Error / ErrorThreshold;
                 }
@@ -113,35 +163,225 @@ public:
         return ErrorThreshold;
     }
 
-private:
-    static Model F_EstimateMinimal(const Eigen::Matrix<fp64, 3, PANTO_FUNDAMENTAL_MIN_POINTS>& Points1, const Eigen::Matrix<fp64, 3, PANTO_FUNDAMENTAL_MIN_POINTS>& Points2)
+    typeInitReconstruction Reconstruct( const std::vector<Eigen::Vector2d>& Points1, const std::vector<Eigen::Vector2d>& Points2,
+    const std::vector<std::pair<u64, u64>>& ImagePointIDs, const std::pair<u64, u64>& InitFrameIDs, const Eigen::Matrix3d& K) const override
     {
-        //8-point algorithm
-        Eigen::Matrix<fp64, 8, 9> A;
+        assert(Points1.size() == Points2.size());
+        assert(Points1.size() == ImagePointIDs.size());
 
-        for(u64 i = 0; i < 8; ++i)
+        typeInitReconstruction BestReconstruction{};
+        BestReconstruction.NumPointsInFront = 0;
+        BestReconstruction.ChosenInitFrameID = InitFrameIDs;
+        BestReconstruction.Valid = false;
+
+        /*
+         * x2^T F x1 = 0
+         *
+         * E = K^T F K
+         */
+        const Eigen::Matrix3d E =
+            K.transpose() * FundamentalMatrix * K;
+
+        Eigen::JacobiSVD<Eigen::Matrix3d> SVD(
+            E,
+            Eigen::ComputeFullU | Eigen::ComputeFullV);
+
+        Eigen::Matrix3d U = SVD.matrixU();
+        Eigen::Matrix3d V = SVD.matrixV();
+
+        if(U.determinant() < 0.0)
         {
-            const fp64 x1 = Points1(0, i);
-            const fp64 y1 = Points1(1, i);
-            const fp64 x2 = Points2(0, i);
-            const fp64 y2 = Points2(1, i);
-
-            A.row(i) << x2 * x1,
-                x2 * y1, 
-                x2, 
-                y2 * x1, 
-                y2 * y1, 
-                y2, 
-                x1, 
-                y1, 
-                1.0; 
+            U.col(2) *= -1.0;
         }
 
-        Eigen::JacobiSVD<Eigen::Matrix<fp64, 8, 9>> SVD(A, Eigen::ComputeFullV);
+        if(V.determinant() < 0.0)
+        {
+            V.col(2) *= -1.0;
+        }
 
-        const Eigen::Matrix<fp64, 9, 1> FVector = SVD.matrixV().col(8);
+        Eigen::Matrix3d W;
 
-        Model F = Eigen::Map< const Eigen::Matrix<fp64, 3, 3, Eigen::RowMajor>>(FVector.data());
+        W <<
+             0.0, -1.0, 0.0,
+             1.0,  0.0, 0.0,
+             0.0,  0.0, 1.0;
+
+        Eigen::Matrix3d R1 =
+            U * W * V.transpose();
+
+        Eigen::Matrix3d R2 =
+            U * W.transpose() * V.transpose();
+
+        if(R1.determinant() < 0.0)
+        {
+            R1 = -R1;
+        }
+
+        if(R2.determinant() < 0.0)
+        {
+            R2 = -R2;
+        }
+
+        Eigen::Vector3d t = U.col(2);
+        t.normalize();
+
+        const std::array<Eigen::Matrix3d, 4> Rotations = { R1, R1, R2, R2 };
+
+        const std::array<Eigen::Vector3d, 4> Translations = { t, -t, t, -t };
+
+        Eigen::Matrix<fp64, 3, 4> Rt1 = Eigen::Matrix<fp64, 3, 4>::Zero();
+
+        Rt1.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
+
+        /*
+         * Undistorted PIXEL coordinates:
+         *
+         * P1 = K [I | 0]
+         */
+        const Eigen::Matrix<fp64, 3, 4> P1 =
+            K * Rt1;
+
+        for(u64 HypothesisID = 0;
+            HypothesisID < 4;
+            ++HypothesisID)
+        {
+            const Eigen::Matrix3d& R =
+                Rotations[HypothesisID];
+
+            const Eigen::Vector3d& Translation =
+                Translations[HypothesisID];
+
+            Eigen::Matrix<fp64, 3, 4> Rt2;
+
+            Rt2.block<3, 3>(0, 0) = R;
+            Rt2.col(3) = Translation;
+
+            const Eigen::Matrix<fp64, 3, 4> P2 =
+                K * Rt2;
+
+            std::vector<typeInitMapPoint> MapPoints;
+            MapPoints.reserve(Points1.size());
+
+            u64 NumPointsInFront = 0;
+
+            for(std::size_t i = 0;
+                i < Points1.size();
+                ++i)
+            {
+                const Eigen::Vector4d Point4D =
+                    PROJ_TriangulateDLT(
+                        Points1[i],
+                        Points2[i],
+                        P1,
+                        P2);
+
+                if(!Point4D.allFinite())
+                {
+                    continue;
+                }
+
+                const Eigen::Vector3d PointCamera1 =
+                    Point4D.head<3>();
+
+                if(PointCamera1.z() <= 0.0)
+                {
+                    continue;
+                }
+
+                const Eigen::Vector3d PointCamera2 =
+                    R * PointCamera1 + Translation;
+
+                if(PointCamera2.z() <= 0.0)
+                {
+                    continue;
+                }
+
+                MapPoints.push_back(
+                {
+                    .Point4D = Point4D,
+                    .InitImagePointID = ImagePointIDs[i]
+                });
+
+                ++NumPointsInFront;
+            }
+
+            if(NumPointsInFront >
+               BestReconstruction.NumPointsInFront)
+            {
+                BestReconstruction.R = R;
+                BestReconstruction.t = Translation;
+
+                BestReconstruction.MapPoints =
+                    std::move(MapPoints);
+
+                BestReconstruction.NumPointsInFront =
+                    NumPointsInFront;
+
+                BestReconstruction.Valid = true;
+            }
+        }
+
+        return BestReconstruction;
+    }
+
+
+private:
+    static Model F_EstimateMinimal( const Eigen::Matrix<fp64, 3, PANTO_FUNDAMENTAL_MIN_POINTS>& Points1, const Eigen::Matrix<fp64, 3, PANTO_FUNDAMENTAL_MIN_POINTS>& Points2)
+    {
+        Eigen::Matrix<fp64, 3, PANTO_FUNDAMENTAL_MIN_POINTS> PointsNormalized1;
+        Eigen::Matrix<fp64, 3, PANTO_FUNDAMENTAL_MIN_POINTS> PointsNormalized2;
+
+        Eigen::Matrix3d T1;
+        Eigen::Matrix3d T2;
+
+        INITPriv_NormalizePoints2D<PANTO_FUNDAMENTAL_MIN_POINTS>( Points1, PointsNormalized1, T1);
+
+        INITPriv_NormalizePoints2D<PANTO_FUNDAMENTAL_MIN_POINTS>( Points2, PointsNormalized2, T2);
+
+        Eigen::Matrix<fp64, 8, 9> A;
+
+        for(i32 i = 0; i < PANTO_FUNDAMENTAL_MIN_POINTS; ++i)
+        {
+            const fp64 X1 = PointsNormalized1(0, i);
+            const fp64 Y1 = PointsNormalized1(1, i);
+            const fp64 X2 = PointsNormalized2(0, i);
+            const fp64 Y2 = PointsNormalized2(1, i);
+
+            A.row(i) << X2 * X1,
+                X2 * Y1,
+                X2,
+                Y2 * X1,
+                Y2 * Y1,
+                Y2,
+                X1,
+                Y1,
+                1.0;
+        }
+
+        Eigen::JacobiSVD<Eigen::Matrix<fp64, 8, 9>> SVD_A( A, Eigen::ComputeFullV);
+
+        const Eigen::Matrix<fp64, 9, 1> FVector = SVD_A.matrixV().col(8);
+
+        Eigen::Matrix3d FNormalized = Eigen::Map<const Eigen::Matrix<fp64, 3, 3, Eigen::RowMajor>>(FVector.data());
+
+        Eigen::JacobiSVD<Eigen::Matrix3d> SVD_F(FNormalized, Eigen::ComputeFullU | Eigen::ComputeFullV);
+
+        Eigen::Vector3d SingularValues = SVD_F.singularValues();
+
+        Eigen::Matrix3d Sigma = Eigen::Matrix3d::Zero();
+        Sigma(0, 0) = SingularValues(0);
+        Sigma(1, 1) = SingularValues(1);
+        Sigma(2, 2) = 0.0;
+
+        FNormalized = SVD_F.matrixU() * Sigma * SVD_F.matrixV().transpose();
+
+        Model F = T2.transpose() * FNormalized * T1;
+
+        const fp64 FNorm = F.norm();
+        if(FNorm > std::numeric_limits<fp64>::epsilon())
+        {
+            F /= FNorm;
+        }
 
         return F;
     }
@@ -186,7 +426,9 @@ public:
 
     fp64 MaxScore = 0.0;
 
-    Model Estimate(const std::vector<Eigen::Vector2d>& Points1, const std::vector<Eigen::Vector2d>& Points2, const u64 Seed)
+    const fp64 ErrorThreshold = PANTO_INIT_ERROR_THRESHOLD_INLIER_HOMOGRAPHY;
+
+    void Estimate(const std::vector<Eigen::Vector2d>& Points1, const std::vector<Eigen::Vector2d>& Points2, const u64 Seed)
     {
         std::mt19937_64 Generator(Seed);
 
@@ -225,34 +467,420 @@ public:
 
             Model HCurrent = H_EstimateMinimal(PointsMinimal1, PointsMinimal2);
 
-            std::vector<fp64> Error = H_Error(Points1, Points2, HCurrent);
-        }
+            std::vector<fp64> Errors = H_Error(Points1, Points2, HCurrent);
 
+            fp64 Score = 0;
+
+            for(const fp64 Error : Errors)
+            {
+                if(Error < ErrorThreshold)
+                {
+                    Score += 1.0 - Error / ErrorThreshold;
+                }
+            }
+            if(Score > MaxScore)
+            {
+                MaxScore = Score;
+                Homography = HCurrent;
+            }
+        }
     }
 
-    std::vector<fp64> Error(const std::vector<Eigen::Vector2d>& Point1, const std::vector<Eigen::Vector2d>& Point2) const override
+    std::vector<fp64> Error( const std::vector<Eigen::Vector2d>& Points1, const std::vector<Eigen::Vector2d>& Points2) const override
     {
-        // remember to divide by the error threshold
-        return std::vector<fp64>{};
+        assert(Points1.size() == Points2.size());
+
+        std::vector<fp64> Errors(Points1.size());
+
+        const Model& H = Homography;
+        const Model HInverse = H.inverse();
+
+        for(std::size_t i = 0; i < Points1.size(); ++i)
+        {
+            const Eigen::Vector3d Point1( Points1[i].x(), Points1[i].y(), 1.0);
+            const Eigen::Vector3d Point2( Points2[i].x(), Points2[i].y(), 1.0);
+
+            const Eigen::Vector3d ProjectedPoint2Homogeneous = H * Point1;
+            const Eigen::Vector3d ProjectedPoint1Homogeneous = HInverse * Point2;
+
+            const Eigen::Vector2d ProjectedPoint2( ProjectedPoint2Homogeneous.x() / ProjectedPoint2Homogeneous.z(),
+                ProjectedPoint2Homogeneous.y() / ProjectedPoint2Homogeneous.z());
+
+            const Eigen::Vector2d ProjectedPoint1( ProjectedPoint1Homogeneous.x() / ProjectedPoint1Homogeneous.z(),
+                ProjectedPoint1Homogeneous.y() / ProjectedPoint1Homogeneous.z());
+
+            const fp64 DistanceSquared12 = (Points2[i] - ProjectedPoint2).squaredNorm();
+
+            const fp64 DistanceSquared21 = (Points1[i] - ProjectedPoint1).squaredNorm();
+
+            Errors[i] = std::max(DistanceSquared12, DistanceSquared21);
+        }
+        return Errors;
+    }
+
+    typeInitReconstruction Reconstruct( const std::vector<Eigen::Vector2d>& Points1, const std::vector<Eigen::Vector2d>& Points2,
+    const std::vector<std::pair<u64, u64>>& ImagePointIDs, const std::pair<u64, u64>& InitFrameIDs, const Eigen::Matrix3d& K) const override
+    {
+        assert(Points1.size() == Points2.size());
+        assert(Points1.size() == ImagePointIDs.size());
+
+        typeInitReconstruction BestReconstruction{};
+        BestReconstruction.NumPointsInFront = 0;
+        BestReconstruction.ChosenInitFrameID = InitFrameIDs;
+        BestReconstruction.Valid = false;
+
+        const Eigen::Matrix3d A =
+            K.inverse() * Homography * K;
+
+        const Eigen::JacobiSVD<Eigen::Matrix3d> SVD(
+            A,
+            Eigen::ComputeFullU | Eigen::ComputeFullV);
+
+        const Eigen::Matrix3d U = SVD.matrixU();
+        const Eigen::Matrix3d V = SVD.matrixV();
+
+        const Eigen::Vector3d SingularValues =
+            SVD.singularValues();
+
+        const fp64 d1 = SingularValues(0);
+        const fp64 d2 = SingularValues(1);
+        const fp64 d3 = SingularValues(2);
+
+        if(d1 / d2 < 1.00001 ||
+           d2 / d3 < 1.00001)
+        {
+            return BestReconstruction;
+        }
+
+        const fp64 s =
+            U.determinant() * V.determinant();
+
+        std::array<Eigen::Matrix3d, 8> Rotations;
+        std::array<Eigen::Vector3d, 8> Translations;
+
+        /*
+         * Solutions 0..3
+         */
+        const fp64 Aux1 =
+            std::sqrt(
+                (d1 * d1 - d2 * d2) /
+                (d1 * d1 - d3 * d3));
+
+        const fp64 Aux3 =
+            std::sqrt(
+                (d2 * d2 - d3 * d3) /
+                (d1 * d1 - d3 * d3));
+
+        const std::array<fp64, 4> X1 =
+        {
+             Aux1,
+             Aux1,
+            -Aux1,
+            -Aux1
+        };
+
+        const std::array<fp64, 4> X3 =
+        {
+             Aux3,
+            -Aux3,
+             Aux3,
+            -Aux3
+        };
+
+        const fp64 AuxSinTheta =
+            std::sqrt(
+                (d1 * d1 - d2 * d2) *
+                (d2 * d2 - d3 * d3)) /
+            ((d1 + d3) * d2);
+
+        const fp64 CosTheta =
+            (d2 * d2 + d1 * d3) /
+            ((d1 + d3) * d2);
+
+        const std::array<fp64, 4> SinTheta =
+        {
+             AuxSinTheta,
+            -AuxSinTheta,
+            -AuxSinTheta,
+             AuxSinTheta
+        };
+
+        for(u64 i = 0; i < 4; ++i)
+        {
+            Eigen::Matrix3d RPrime =
+                Eigen::Matrix3d::Identity();
+
+            RPrime(0, 0) = CosTheta;
+            RPrime(0, 2) = -SinTheta[i];
+            RPrime(2, 0) = SinTheta[i];
+            RPrime(2, 2) = CosTheta;
+
+            Rotations[i] =
+                s * U * RPrime * V.transpose();
+
+            Eigen::Vector3d tPrime;
+
+            tPrime <<
+                X1[i],
+                0.0,
+                -X3[i];
+
+            tPrime *= d1 - d3;
+
+            Eigen::Vector3d t =
+                U * tPrime;
+
+            if(t.norm() > 0.0)
+            {
+                t.normalize();
+            }
+
+            Translations[i] = t;
+        }
+
+        /*
+         * Solutions 4..7
+         */
+        const fp64 AuxSinPhi =
+            std::sqrt(
+                (d1 * d1 - d2 * d2) *
+                (d2 * d2 - d3 * d3)) /
+            ((d1 - d3) * d2);
+
+        const fp64 CosPhi =
+            (d1 * d3 - d2 * d2) /
+            ((d1 - d3) * d2);
+
+        const std::array<fp64, 4> SinPhi =
+        {
+             AuxSinPhi,
+            -AuxSinPhi,
+            -AuxSinPhi,
+             AuxSinPhi
+        };
+
+        for(u64 i = 0; i < 4; ++i)
+        {
+            Eigen::Matrix3d RPrime =
+                Eigen::Matrix3d::Identity();
+
+            RPrime(0, 0) = CosPhi;
+            RPrime(0, 2) = SinPhi[i];
+            RPrime(1, 1) = -1.0;
+            RPrime(2, 0) = SinPhi[i];
+            RPrime(2, 2) = -CosPhi;
+
+            Rotations[i + 4] =
+                s * U * RPrime * V.transpose();
+
+            Eigen::Vector3d tPrime;
+
+            tPrime <<
+                X1[i],
+                0.0,
+                X3[i];
+
+            tPrime *= d1 + d3;
+
+            Eigen::Vector3d t =
+                U * tPrime;
+
+            if(t.norm() > 0.0)
+            {
+                t.normalize();
+            }
+
+            Translations[i + 4] = t;
+        }
+
+        Eigen::Matrix<fp64, 3, 4> Rt1 =
+            Eigen::Matrix<fp64, 3, 4>::Zero();
+
+        Rt1.block<3, 3>(0, 0) =
+            Eigen::Matrix3d::Identity();
+
+        const Eigen::Matrix<fp64, 3, 4> P1 =
+            K * Rt1;
+
+        for(u64 HypothesisID = 0;
+            HypothesisID < 8;
+            ++HypothesisID)
+        {
+            const Eigen::Matrix3d& R =
+                Rotations[HypothesisID];
+
+            const Eigen::Vector3d& Translation =
+                Translations[HypothesisID];
+
+            Eigen::Matrix<fp64, 3, 4> Rt2;
+
+            Rt2.block<3, 3>(0, 0) = R;
+            Rt2.col(3) = Translation;
+
+            const Eigen::Matrix<fp64, 3, 4> P2 =
+                K * Rt2;
+
+            std::vector<typeInitMapPoint> MapPoints;
+            MapPoints.reserve(Points1.size());
+
+            u64 NumPointsInFront = 0;
+
+            for(std::size_t i = 0;
+                i < Points1.size();
+                ++i)
+            {
+                const Eigen::Vector4d Point4D =
+                    PROJ_TriangulateDLT(
+                        Points1[i],
+                        Points2[i],
+                        P1,
+                        P2);
+
+                if(!Point4D.allFinite())
+                {
+                    continue;
+                }
+
+                const Eigen::Vector3d PointCamera1 =
+                    Point4D.head<3>();
+
+                if(PointCamera1.z() <= 0.0)
+                {
+                    continue;
+                }
+
+                const Eigen::Vector3d PointCamera2 =
+                    R * PointCamera1 + Translation;
+
+                if(PointCamera2.z() <= 0.0)
+                {
+                    continue;
+                }
+
+                MapPoints.push_back(
+                {
+                    .Point4D = Point4D,
+                    .InitImagePointID = ImagePointIDs[i]
+                });
+
+                ++NumPointsInFront;
+            }
+
+            if(NumPointsInFront >
+               BestReconstruction.NumPointsInFront)
+            {
+                BestReconstruction.R = R;
+                BestReconstruction.t = Translation;
+
+                BestReconstruction.MapPoints =
+                    std::move(MapPoints);
+
+                BestReconstruction.NumPointsInFront =
+                    NumPointsInFront;
+
+                BestReconstruction.Valid = true;
+            }
+        }
+
+        return BestReconstruction;
     }
 
 private:
 
-    static Model H_EstimateMinimal(const Eigen::Matrix<fp64, 3, PANTO_HOMOGRAPHY_MIN_POINTS>& Points1, const Eigen::Matrix<fp64, 3, PANTO_HOMOGRAPHY_MIN_POINTS>& Points2)
+    static Model H_EstimateMinimal( const Eigen::Matrix<fp64, 3, PANTO_HOMOGRAPHY_MIN_POINTS>& Points1, const Eigen::Matrix<fp64, 3, PANTO_HOMOGRAPHY_MIN_POINTS>& Points2)
     {
-        //4-point algorithm
+        Eigen::Matrix<fp64, 3, PANTO_HOMOGRAPHY_MIN_POINTS> PointsNormalized1;
+        Eigen::Matrix<fp64, 3, PANTO_HOMOGRAPHY_MIN_POINTS> PointsNormalized2;
+
+        Eigen::Matrix3d T1;
+        Eigen::Matrix3d T2;
+
+        INITPriv_NormalizePoints2D<PANTO_HOMOGRAPHY_MIN_POINTS>( Points1, PointsNormalized1, T1);
+
+        INITPriv_NormalizePoints2D<PANTO_HOMOGRAPHY_MIN_POINTS>( Points2, PointsNormalized2, T2);
+
+        Eigen::Matrix<fp64, 8, 9> A;
+
+        for(i32 i = 0; i < PANTO_HOMOGRAPHY_MIN_POINTS; ++i)
+        {
+            const fp64 X1 = PointsNormalized1(0, i);
+            const fp64 Y1 = PointsNormalized1(1, i);
+            const fp64 X2 = PointsNormalized2(0, i);
+            const fp64 Y2 = PointsNormalized2(1, i);
+
+            A.row(2 * i) <<
+                -X1, -Y1, -1.0,
+                 0.0, 0.0, 0.0,
+                 X2 * X1, X2 * Y1, X2;
+
+            A.row(2 * i + 1) <<
+                 0.0, 0.0, 0.0,
+                -X1, -Y1, -1.0,
+                 Y2 * X1, Y2 * Y1, Y2;
+        }
+
+        Eigen::JacobiSVD<Eigen::Matrix<fp64, 8, 9>> SVD_A( A, Eigen::ComputeFullV);
+
+        const Eigen::Matrix<fp64, 9, 1> HVector = SVD_A.matrixV().col(8);
+
+        Eigen::Matrix3d HNormalized = Eigen::Map<const Eigen::Matrix<fp64, 3, 3, Eigen::RowMajor>>(HVector.data());
+
+        Model H = T2.inverse() * HNormalized * T1;
+
+        if(std::abs(H(2, 2)) > std::numeric_limits<fp64>::epsilon())
+        {
+            H /= H(2, 2);
+        }
+        else
+        {
+            const fp64 HNorm = H.norm();
+            if(HNorm > std::numeric_limits<fp64>::epsilon())
+            {
+                H /= HNorm;
+            }
+        }
+
+        return H;
     }
 
-    std::vector<fp64> H_Error(const std::vector<Eigen::Vector2d>& Point1, const std::vector<Eigen::Vector2d>& Point2, const Model& H) 
+    std::vector<fp64> H_Error(const std::vector<Eigen::Vector2d>& Points1, const std::vector<Eigen::Vector2d>& Points2, const Model& H) 
     {
+        assert(Points1.size() == Points2.size());
+
+        std::vector<fp64> Errors(Points1.size());
+
+        const Model HInverse = H.inverse();
+
+        for(std::size_t i = 0; i < Points1.size(); ++i)
+        {
+            const Eigen::Vector3d Point1( Points1[i].x(), Points1[i].y(), 1.0);
+            const Eigen::Vector3d Point2( Points2[i].x(), Points2[i].y(), 1.0);
+
+            const Eigen::Vector3d ProjectedPoint2Homogeneous = H * Point1;
+            const Eigen::Vector3d ProjectedPoint1Homogeneous = HInverse * Point2;
+
+            const Eigen::Vector2d ProjectedPoint2( ProjectedPoint2Homogeneous.x() / ProjectedPoint2Homogeneous.z(),
+                ProjectedPoint2Homogeneous.y() / ProjectedPoint2Homogeneous.z());
+
+            const Eigen::Vector2d ProjectedPoint1( ProjectedPoint1Homogeneous.x() / ProjectedPoint1Homogeneous.z(),
+                ProjectedPoint1Homogeneous.y() / ProjectedPoint1Homogeneous.z());
+
+            const fp64 DistanceSquared12 = (Points2[i] - ProjectedPoint2).squaredNorm();
+
+            const fp64 DistanceSquared21 = (Points1[i] - ProjectedPoint1).squaredNorm();
+
+            Errors[i] = std::max(DistanceSquared12, DistanceSquared21);
+        }
+        return Errors;
     }
 };
 
 void INITPriv_MatchHistoricalFrames(void);
-std::vector<typeInitImagePoint> INITPriv_STRANSAC(void);
+std::vector<u64> INITPriv_STRANSAC(void);
 u64 INITPriv_RandomSeed(void);
 std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::vector<Eigen::Vector2d>& PointFrameNew, const std::vector<Eigen::Vector2d>& PointFrameHistorical);
-bool INITPriv_EnoughStationaryFeatures(void);
+std::vector<u64> INITPriv_GetCandidateFrameIDs(std::vector<u64> StationaryTrackIDs);
+typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFrame, const typeInitFrame& NewFrame, const std::vector<u64>& StationaryTrackIDs);
 void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points, 
         const cv::Mat& Descriptors, const fp64 TimeStamp);
 

@@ -24,8 +24,19 @@ void SL_InitSlam()
     FR_InitFrameGetter();
 }
 
-void SL_SlamLoop(i32 num_loops)
+void SL_PantoSLAM(i32 num_loops)
 {
+    bool Initialized = false;
+    INIT_CreateInitData();
+    while(!Initialized)
+    {
+        typeInitReconstruction Reconstruction = INIT_ProcessNewFrame();
+        if(Reconstruction.Valid)
+        {
+            Initialized = true;
+        }
+    }
+
     for(i32 i = 0; i < num_loops; i++)
     {
         typeKeyFrame NewKeyFrame = KEY_GetKeyFrame(PantoSLAM.NextFramePosePrediction, PantoSLAM.PreviousFrameData.PreviousFrameMapPoints);

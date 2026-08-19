@@ -22,6 +22,7 @@
 #include "EP_CorrespondingPoints.hpp"
 #include "Config.hpp"
 #include "GRAPH_PantoGraph.hpp"
+#include "INIT_InitializeSLAM.hpp"
 
 typedef struct
 {
@@ -42,6 +43,6 @@ typedef struct
 }typeSLAM;
 
 void SL_InitSlam();
-void SL_SlamLoop(i32 num_loops);
+void SL_PantoSLAM(i32 num_loops);
 
 #endif //__SL__SLAM_HPP_

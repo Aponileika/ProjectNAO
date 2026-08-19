@@ -17,7 +17,6 @@
 #include "../include/PT_Points.hpp"
 #include "../include/SL_SLAM.hpp"
 #include "../include/PANTO_Utils.hpp"
-#include "../include/VW_Views.hpp"
 #include "../include/CM_Camera.hpp"
 #include "../include/OP_BA.hpp"
 #include "../include/VIZ_Visualization.hpp"
@@ -25,6 +24,7 @@
 #include "../include/PANTO_Utils.hpp"
 #include "../include/DBOW3_DeepBagofWords.hpp"
 #include "../include/Config.hpp"
+#include "../include/INIT_InitializeSLAM.hpp"
 
 #include "LG_Logging.cpp"
 #include "CArenaAlloc.c"
@@ -35,7 +35,6 @@
 #include "PANTO_Utils.cpp"
 #include "CM_Camera.cpp"
 #include "OP_BA.cpp"
-#include "VIZ_Visualization.cpp"
 #include "PROJ_ProjectiveUtils.cpp"
 #include "PANTO_Utils.cpp"
 #include "KEY_Keyframe.cpp"
@@ -43,6 +42,7 @@
 #include "PT_PantoMapPoints.cpp"
 #include "MAP_Mapping.cpp"
 #include "DBOW3_DeepBagofWords.cpp"
+#include "INIT_InitializeSLAM.cpp"
 
 int main(int argc, char* argv[])
 {
@@ -59,6 +59,6 @@ int main(int argc, char* argv[])
     LG_Log(LogSeverity::DBG, "[main] OpenCV is using %lld threads \n", cv::getNumThreads());
     CM_SetIntrinsics();
     LG_Log(LogSeverity::DBG, "Starting SLAMLoop\n");
-    SL_SlamLoop(num_loops);
+    SL_PantoSLAM(num_loops);
     return 0;
 }

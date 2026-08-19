@@ -51,12 +51,15 @@ void CM_SetRtfromParam(typeCamera* cam);
 Eigen::Vector3d CM_GetCameraCenter(const typeCamera& Camera);
 typeCamera CM_PredictPose(const typeCameraPose& TPreviousFrame, const typeCameraPose& TPreviousPreviousFrame);
 
-inline Eigen::Matrix<fp64, 3, 4>CM_GetRt(const typeCameraPose& CameraPose)
+inline Eigen::Matrix<fp64, 3, 4>CM_GetRt(const typeCamera& CameraPose)
 {
     Eigen::Matrix<fp64, 3, 4> Rt;
 
-    Rt.block<3, 3>(0, 0) = CameraPose.R;
-    Rt.col(3) = CameraPose.t;
+    Rt.block<3, 3>(0, 0) = CameraPose.Pose.R;
+    Rt.col(3) = CameraPose.Pose.t;
+
+    Rt = CM_GetIntrinsics()->K * Rt;
+
     return Rt;
 }
 
