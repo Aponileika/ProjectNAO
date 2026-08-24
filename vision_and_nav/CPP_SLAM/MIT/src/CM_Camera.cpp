@@ -50,7 +50,6 @@ typeCameraIntrinsics* CM_GetIntrinsics()
     return &ci;
 }
 
-
 void CM_SetParametrization(typeCamera& Camera)
 {
     /*We use the reparametrization based on
@@ -58,12 +57,9 @@ void CM_SetParametrization(typeCamera& Camera)
      * [R t] will lead to drastic changes in camera
      * center when t is large and R is small,
      * for example when going straight forward
-     * see TSBB33 lecture 5. We parametrize
-     * R with unit quaternions, since I cannot
-     * seem to find a good implementation of 
-     * expm and logm.
+     * see TSBB33 lecture 5. 
      */
-    Eigen::Quaterniond q(Camera.Pose.R);
+    Eigen::Quaterniond q(Camera.Pose.R.transpose());
     q.normalize();
     Camera.Parameters.q = q;
 

@@ -18,7 +18,8 @@ OPENBLAS := $(shell brew --prefix openblas)
 TBB := $(shell brew --prefix tbb)
 
 CXX := clang++
-CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -O2 -std=c++20 \
+
+BASE_CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -std=c++20 \
 	-DGLOG_USE_GLOG_EXPORT \
 	-I$(INCLUDE_DIR) \
 	-I$(CERES)/include \
@@ -26,6 +27,14 @@ CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -O2 -std=c++20 \
 	-I$(SUITESPARSE)/include \
 	-I$(EXT_INCLUDE_DIR) \
 	-I$(OPENCV)/include/opencv4
+
+ifeq ($(DEBUG),1)
+	CXXFLAGS := $(BASE_CXXFLAGS) -O0 -g -fsanitize=address -fno-omit-frame-pointer
+	SANITIZER_LDFLAGS := -fsanitize=address
+else
+	CXXFLAGS := $(BASE_CXXFLAGS) -O2
+	SANITIZER_LDFLAGS :=
+endif
 
 LDFLAGS := \
   -L$(CERES)/lib \
@@ -36,7 +45,8 @@ LDFLAGS := \
   -L$(TBB)/lib \
   -L$(EXT_LIB_DIR) \
   -L$(OPENCV)/lib \
-  -Wl,-rpath,$(EXT_LIB_DIR)
+  -Wl,-rpath,$(EXT_LIB_DIR) \
+  $(SANITIZER_LDFLAGS)
 
 LDLIBS := \
   -lceres \
@@ -50,8 +60,8 @@ LDLIBS := \
 
 .PHONY: FORCE clean
 
-main : FORCE $(sourcedir)main.cpp  
-	$(CXX)  -o main $(sourcedir)main.cpp \
+main : FORCE $(sourcedir)main.cpp
+	$(CXX) -o main $(sourcedir)main.cpp \
 	$(CXXFLAGS) \
 	$(LDFLAGS) \
 	$(LDLIBS) \

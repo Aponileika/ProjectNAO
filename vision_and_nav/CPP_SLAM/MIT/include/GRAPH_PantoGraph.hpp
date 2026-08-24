@@ -16,7 +16,8 @@ typedef struct
 
 typedef std::vector<std::vector<typeCovisibility>> typeCovisibilityGraph;
 
-void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints);
+void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& GlobalMapPoints,
+        const u64 NumKeyFrames);
 std::vector<typeCovisibility> GRAPH_GetAllCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID);
 std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID, const u64 N);
 void GRAPH_UpdateCovisibility(typeCovisibilityGraph& CovisibilityGraph, const std::vector<typePantoMapPoint>& GlobalMapPoints, const u64 NumNewPoints,

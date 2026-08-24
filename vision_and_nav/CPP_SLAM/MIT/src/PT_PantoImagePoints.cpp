@@ -9,13 +9,13 @@
  * from opencv format to our preferred format, initializes the map ID as PANTO_ID_NOT_SET 
  * After that it loops through all provided map points, projects them onto the image, if the projection
  * is valid (in front of the camera and valid (u, v) coordinates) it calculates
- * all possible cells based on PANTO_MAPPOINT_MATCH_SEARCH_AREA and matches its descriptor
+ * all possible cells based on PANTO_MAPPOINT_MATCH_SEARCH_RADIUS and matches its descriptor
  * with the image descriptors, if the top 2 candidates pass the ratio test or the top
  * candidate is similar enough (distance <  PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD)
  * it is accepted as a match and its MapPointID is set
  * */
-typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points, 
-        cv::Mat Descriptors, std::vector<typePantoMapPoint> CandidateMapPoints, typeCamera Pose)
+typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>& Points, 
+        const cv::Mat& Descriptors, const std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose)
 {
     std::size_t NumImagePoints = Points.size();
     assert((static_cast<std::size_t>(Descriptors.rows) == NumImagePoints));
@@ -55,7 +55,7 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(std::vector<cv::Point2d> Points
     return ImagePoints;
 }
 
-typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(std::vector<cv::Point2d> Points, cv::Mat Descriptors)
+typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Point2d>& Points, const cv::Mat& Descriptors)
 {
     std::size_t NumImagePoints = Points.size();
     assert((static_cast<std::size_t>(Descriptors.rows) == NumImagePoints));
@@ -126,11 +126,11 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
                 LG_Log(LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] Projected point %zu -> (%f, %f)\n", i, u, v);
             }
 
-            const u64 MinCellX = static_cast<u64>((u - PANTO_MAPPOINT_MATCH_SEARCH_AREA) / PANTO_CELL_SIZE);
-            const u64 MaxCellX = static_cast<u64>((u + PANTO_MAPPOINT_MATCH_SEARCH_AREA) / PANTO_CELL_SIZE);
+            const i64 MinCellX = std::max<i64>( 0, static_cast<i64>((u - PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
+            const i64 MaxCellX = std::min<i64>( PANTO_GRID_COLUMNS - 1, static_cast<i64>((u + PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
+            const i64 MinCellY = std::max<i64>( 0, static_cast<i64>((v - PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
+            const i64 MaxCellY = std::min<i64>( PANTO_GRID_ROWS - 1, static_cast<i64>((v + PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
 
-            const u64 MinCellY = static_cast<u64>((v - PANTO_MAPPOINT_MATCH_SEARCH_AREA) / PANTO_CELL_SIZE);
-            const u64 MaxCellY = static_cast<u64>((v + PANTO_MAPPOINT_MATCH_SEARCH_AREA) / PANTO_CELL_SIZE);
             if(i < 5)
             {
                 LG_Log(LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] Cells X [%llu,%llu] Y [%llu,%llu]\n",
@@ -147,9 +147,9 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
             Top2Candidates[0] = std::make_pair(typePantoImagePoint{}, PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1);
             Top2Candidates[1] = std::make_pair(typePantoImagePoint{}, PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1);
 
-            for(u64 j(MinCellY); j < MaxCellY; j++)
+            for(i64 j(MinCellY); j <= MaxCellY; j++)
             {
-                for(u64 k(MinCellX); k < MaxCellX; k++)
+                for(i64 k(MinCellX); k <= MaxCellX; k++)
                 {
                     std::vector<u64>& LocalImagePoints = KeyFrame.CellIndexingArray[j * PANTO_GRID_COLUMNS + k];
 
@@ -157,7 +157,13 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
                     {
                         NumCandidateImagePoints++;
 
-                        typePantoImagePoint ImagePoint = KeyFrame.ImagePoints[ImagePointIdx];
+                        typePantoImagePoint& ImagePoint = KeyFrame.ImagePoints[ImagePointIdx];
+
+                        if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
+                        {
+                            continue;
+                        }
+
                         const typeDescriptor& ImagePointDescriptor = ImagePoint.Descriptor;
 
                         const u32 HammingDistance = PANTO_HammingDistance(MapPointDescriptor, ImagePointDescriptor);
@@ -180,9 +186,12 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
             if(Top2Candidates[1].second == PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1) continue;
 
             NumWithTwoCandidates++;
+            LG_Log( LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] MP %zu best = %u, second = %u, ratio = %f\n",
+                    i, Top2Candidates[0].second, Top2Candidates[1].second,
+                    static_cast<fp64>(Top2Candidates[0].second) / static_cast<fp64>(Top2Candidates[1].second));
 
             if((static_cast<fp64>(Top2Candidates[0].second) < PANTO_MATCHRATIO * static_cast<fp64>(Top2Candidates[1].second))
-                    || (Top2Candidates[0].second < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD))
+                    && (Top2Candidates[0].second < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD))
             {
                 const typePantoImagePoint& TopCandidate = Top2Candidates[0].first;
                 KeyFrame.ImagePoints[TopCandidate.ID].MapPointID = MapPoints[i].ID;
@@ -197,6 +206,7 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
         static_cast<unsigned long long>(NumCandidateImagePoints),
         static_cast<unsigned long long>(NumWithTwoCandidates),
         static_cast<unsigned long long>(NumTrackedMapPoints));
+
     return NumTrackedMapPoints;
 }
 

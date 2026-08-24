@@ -15,7 +15,7 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem);
 void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem);
 void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, typeLocalMap& LocalMap);
 
-void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, typeLocalMap LocalMap)
+void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, typeLocalMap* LocalMap)
 {
     ceres::Problem Problem;
     ceres::Solver::Options options;
@@ -39,16 +39,31 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, typeLoca
             options.linear_solver_type = ceres::DENSE_QR;
             break;
         case typeLocal:
-            __OP_BuildProblemLocal(Map, Problem, LocalMap);
+            __OP_BuildProblemLocal(Map, Problem, *LocalMap);
             options.linear_solver_type = ceres::DENSE_SCHUR;
             break;
     }
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, &Problem, &summary);
-    for(typeKeyFrame& KeyFrame : Map.KeyFrames)
+    if(Target == typeTracking)
     {
-        CM_SetRtfromParam(&KeyFrame.Pose);
+        CM_SetRtfromParam(&(Map.KeyFrames.back().Pose));
+    }
+    else if(Target == typeLocal)
+    {
+        for(typeKeyFrame& KeyFrame : LocalMap->KeyFrames)
+        {
+            const u64 KeyFrameID = KeyFrame.ID;
+            CM_SetRtfromParam(&Map.KeyFrames[KeyFrameID].Pose);
+        }
+    }
+    else
+    {
+        for(typeKeyFrame& KeyFrame : Map.KeyFrames)
+        {
+            CM_SetRtfromParam(&KeyFrame.Pose);
+        }
     }
     LG_Log(LogSeverity::DBG, "%s\n", summary.FullReport().c_str());
 }
@@ -197,6 +212,18 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem)
 
     Problem.AddParameterBlock(Parameters.t.data(), 3);
 
+    u64 NumAssociatedMapPoints = 0;
+
+    for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+    {
+        if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
+        {
+            NumAssociatedMapPoints++;
+        }
+    }
+
+    LG_Log( LogSeverity::DBG, "[__OP_BuildProblemTracking] KeyFrame has %llu associated map points\n", static_cast<unsigned long long>(NumAssociatedMapPoints));
+
     for (typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
     {
         const u64 MapPointID = ImagePoint.MapPointID;
@@ -242,25 +269,34 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, typeLoc
     */
     //We need to add the camera parameters first so we can
     //Set the first camera constant
-    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames) 
+    //bool FirstKeyFrame = true;
+
+    bool FirstKeyFrame = true;
+
+    for(const typeKeyFrame& LocalKeyFrame : LocalMap.KeyFrames) 
     {
-        typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+        const u64 KeyFrameID = LocalKeyFrame.ID;
+        typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
 
         Problem.AddParameterBlock(Parameters.q.coeffs().data(), 4);
         Problem.SetManifold(Parameters.q.coeffs().data(),
-                             new ceres::EigenQuaternionManifold());
+                new ceres::EigenQuaternionManifold());
 
         Problem.AddParameterBlock(Parameters.t.data(), 3);
 
-        if (KeyFrame.ID == 0) 
+        if(FirstKeyFrame)
         {
             Problem.SetParameterBlockConstant(Parameters.q.coeffs().data());
             Problem.SetParameterBlockConstant(Parameters.t.data());
+            FirstKeyFrame = false;
         }
     }
 
-    for(const typeKeyFrame& KeyFrame: LocalMap.KeyFrames)
+    for(const typeKeyFrame& LocalKeyFrame: LocalMap.KeyFrames)
     {
+        const u64 KeyFrameID = LocalKeyFrame.ID;
+        const typeKeyFrame& KeyFrame = Map.KeyFrames[KeyFrameID];
+
         for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
             const u64 MapPointID = ImagePoint.MapPointID;
@@ -272,8 +308,11 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, typeLoc
         }
     }
 
-    for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
+    for(const typeKeyFrame& LocalKeyFrame : LocalMap.KeyFrames) 
     {
+        const u64 KeyFrameID = LocalKeyFrame.ID;
+        typeKeyFrame& KeyFrame = Map.KeyFrames[KeyFrameID];
+
         for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
             const u64 MapPointID = ImagePoint.MapPointID;
@@ -290,10 +329,10 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, typeLoc
                 typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
 
                 Problem.AddResidualBlock(costfunc,
-                                          lossfunc,
-                                          Parameters.q.coeffs().data(),
-                                          Parameters.t.data(),
-                                          Map.MapPoints[MapPointID].Point.data());
+                        lossfunc,
+                        Parameters.q.coeffs().data(),
+                        Parameters.t.data(),
+                        Map.MapPoints[MapPointID].Point.data());
             }
         }
     }

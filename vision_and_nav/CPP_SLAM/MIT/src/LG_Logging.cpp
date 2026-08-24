@@ -74,7 +74,7 @@ void LG_CloseLogger()
     gloggerisinit = false;
 }
 
-static const char* Severity_str[2] = {"{DBG}", "{ERROR}"};
+static const char* Severity_str[3] = {"{DBG}", "{ERROR}", "{DATA}"};
 
 void LG_Log(LogSeverity severity, const char* fmt, ...)
 {
@@ -86,7 +86,7 @@ void LG_Log(LogSeverity severity, const char* fmt, ...)
     va_list args_copy;
     va_copy(args_copy, args);
 
-    if((i32)severity > 2)return;
+    if((i32)severity > 3)return;
     fprintf(glogger.fp, "%s \n", Severity_str[(i32)severity]);
     std::vfprintf(glogger.fp, fmt, args);
     std::vprintf(fmt, args_copy);

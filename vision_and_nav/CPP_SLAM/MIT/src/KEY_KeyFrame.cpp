@@ -46,12 +46,15 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePa
 
     typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePointsNoMatch(Descriptors.Points, Descriptors.Descriptors);
 
+    typeCamera PredictedPose = LastKeyFrame.Pose;
+    PredictedPose.TimeStamp = Frame.TimeStamp;
+
     typeKeyFrame KeyFrame = 
     {
         .Points = ImagePoints,
         .BowVector = NewBowVector,
         .FeatureVector = NewFeatureVector,
-        .Pose = LastKeyFrame.Pose,
+        .Pose = PredictedPose,
         .ID = 2 
     };
 
@@ -63,6 +66,8 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePa
 
     std::vector<typePantoImagePoint>& AllImagePoints1 = KeyFrame.Points.ImagePoints;
     std::vector<typePantoImagePoint>& AllImagePoints2 = LastKeyFrame.Points.ImagePoints;
+
+    u64 NumMatches = 0;
 
     while(FeatureIterator1 != FeatureVector1.end() && FeatureIterator2 != FeatureVector2.end())
     {
@@ -93,6 +98,23 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePa
                     {
                         continue;
                     }
+                    const typePantoMapPoint& MapPoint =
+                    GlobalMapPoints[ImagePoint2.MapPointID];
+
+                    Eigen::Vector2d ProjectedPoint{};
+
+                    if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
+                    {
+                        continue;
+                    }
+
+                    const fp64 ProjectionError =
+                        (ProjectedPoint - ImagePoint1.Point).norm();
+
+                    if(ProjectionError > PANTO_MAPPOINT_MATCH_SEARCH_RADIUS)
+                    {
+                        continue;
+                    }
 
                     const u32 Distance = PANTO_HammingDistance(ImagePoint1.Descriptor, ImagePoint2.Descriptor);
 
@@ -117,6 +139,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePa
                         ImagePoint1.MapPointID = BestMatch.MapPointID;
                         GlobalMapPoints[BestMatch.MapPointID].KeyFrameIDs.push_back(2);
                         GlobalMapPoints[BestMatch.MapPointID].ImagePointIDs.push_back(ImagePoint1.ID);
+                        NumMatches++;
                     }
                 }
             }
@@ -134,6 +157,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePa
         }
     }
 
+    LG_Log(LogSeverity::DBG, "[KEY_GetThirdKeyFrame] Matched %llu map points\n", static_cast<unsigned long long>(NumMatches));
     return KeyFrame;
 }
 
@@ -147,6 +171,7 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePa
         PredictedPose.Parameters.t[0],
         PredictedPose.Parameters.t[1],
         PredictedPose.Parameters.t[2]);
+
     typePantoFrame Frame = FR_GetFrame();
     PredictedPose.TimeStamp = Frame.TimeStamp;
     DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
@@ -165,12 +190,33 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePa
 
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
 {
+    LG_Log( LogSeverity::DBG,
+        "[KEY_IsKeyFrame] Incoming information: VelocityChange = %f, LocalMapTrackingRatio = %f, AcumulatedDistanceTravelled = %f\n",
+        Information.VelocityChange,
+        Information.LocalMapTrackingRatio,
+        Information.AcumulatedDistanceTravelled);
+
+    LG_Log( LogSeverity::DBG,
+        "[KEY_IsKeyFrame] Bootstrap before update: NumFrames = %llu, VelocityChange = %f, LocalMapTrackingRatio = %f, AcumulatedDistanceTravelled = %f\n",
+        static_cast<unsigned long long>(BootStrapData.NumFrames),
+        BootStrapData.VelocityChange,
+        BootStrapData.LocalMapTrackingRatio,
+        BootStrapData.AcumulatedDistanceTravelled);
+
     if(BootStrapData.NumFrames < PANTO_NUM_BOOTSTRAP_FRAMES)
     {
         ++BootStrapData.NumFrames;
         BootStrapData.AcumulatedDistanceTravelled = Information.AcumulatedDistanceTravelled;
         BootStrapData.LocalMapTrackingRatio       += Information.LocalMapTrackingRatio;
         BootStrapData.VelocityChange              += Information.VelocityChange;
+
+        LG_Log( LogSeverity::DBG,
+            "[KEY_IsKeyFrame] Bootstrap after update: NumFrames = %llu, VelocityChange = %f, LocalMapTrackingRatio = %f, AcumulatedDistanceTravelled = %f\n",
+            static_cast<unsigned long long>(BootStrapData.NumFrames),
+            BootStrapData.VelocityChange,
+            BootStrapData.LocalMapTrackingRatio,
+            BootStrapData.AcumulatedDistanceTravelled);
+
         return true;
     }
     if(!BootStrapData.BootStrapDataSolved)
@@ -185,7 +231,7 @@ bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
     return false;
 }
 
-void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocabulary* Vocabulary)
+void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints, const u64& ID, const DBoW3::Vocabulary* Vocabulary)
 {
     KeyFrame.ID = ID;
     const cv::Mat& Descriptors = CurrentDescriptors.front();
@@ -197,6 +243,20 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, const u64& ID, const DBoW3::Vocab
     }
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
+
+    for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+    {
+        const u64 MapPointID = ImagePoint.MapPointID;
+        if(MapPointID == PANTO_ID_NOT_SET)
+        {
+            continue;
+        }
+
+        const u64 ImagePointID = ImagePoint.ID;
+
+        GlobalMapPoints[MapPointID].ImagePointIDs.push_back(ImagePointID);
+        GlobalMapPoints[MapPointID].KeyFrameIDs.push_back(ID);
+    }
 
     Vocabulary->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
 
@@ -240,7 +300,7 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
                 u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
                 u64 BestFeatureID = PANTO_ID_NOT_SET;
 
-                if(ImagePoint1.MapPointID == PANTO_ID_NOT_SET)
+                if(ImagePoint1.MapPointID != PANTO_ID_NOT_SET)
                 {
                     continue;
                 }
@@ -249,7 +309,7 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
                 {
                     typePantoImagePoint& ImagePoint2 = AllImagePoints2[FeatureID2];
 
-                    if(ImagePoint2.MapPointID == PANTO_ID_NOT_SET)
+                    if(ImagePoint2.MapPointID != PANTO_ID_NOT_SET)
                     {
                         continue;
                     }
@@ -281,6 +341,9 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
                         const typePantoMapPoint NewPoint = PT_CreatePantoMapPoint(MapPoint, ImagePoint1.Descriptor, 
                                 KeyFrameIDs, ImagePointIDs, MapPointID);
                         GlobalMapPoints.push_back(NewPoint);
+
+                        ImagePoint1.MapPointID = MapPointID;
+                        ImagePoint2.MapPointID = MapPointID;
                     }
                 }
             }
@@ -353,6 +416,13 @@ void KEYPriv_SolveBootStrapData(void)
     fp64 MeanTrackingRatio = BootStrapData.LocalMapTrackingRatio / NumFrames;
     fp64 MeanDistanceBetweenFrames = BootStrapData.AcumulatedDistanceTravelled / NumFrames;
 
+    LG_Log( LogSeverity::DBG,
+        "[KEYPriv_SolveBootStrapData] NumFrames = %llu, MeanVelocityChange = %f, MeanTrackingRatio = %f, MeanDistanceBetweenFrames = %f\n",
+        static_cast<unsigned long long>(NumFrames),
+        MeanVelocityChange,
+        MeanTrackingRatio,
+        MeanDistanceBetweenFrames);
+
     FuzzyInference.VelocityParamameters.second = MeanVelocityChange * PANTO_KEYFRAME_MEAN_VELOCITY_THRESHOLD_GAIN;
     FuzzyInference.VelocityParamameters.first = MeanVelocityChange;
 
@@ -362,8 +432,28 @@ void KEYPriv_SolveBootStrapData(void)
     FuzzyInference.AccumulatedDistanceParameters.second = MeanDistanceBetweenFrames * PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN;
     FuzzyInference.AccumulatedDistanceParameters.first = MeanDistanceBetweenFrames; 
 
+    LG_Log( LogSeverity::DBG,
+        "[KEYPriv_SolveBootStrapData] VelocityParameters Low = %f, High = %f\n",
+        FuzzyInference.VelocityParamameters.first,
+        FuzzyInference.VelocityParamameters.second);
+
+    LG_Log( LogSeverity::DBG,
+        "[KEYPriv_SolveBootStrapData] TrackingRatioParameters Low = %f, High = %f\n",
+        FuzzyInference.TrackingRatioParameters.first,
+        FuzzyInference.TrackingRatioParameters.second);
+
+    LG_Log( LogSeverity::DBG,
+        "[KEYPriv_SolveBootStrapData] AccumulatedDistanceParameters Low = %f, High = %f\n",
+        FuzzyInference.AccumulatedDistanceParameters.first,
+        FuzzyInference.AccumulatedDistanceParameters.second);
+
     FuzzyInference.MaxRuleThreshold = PANTO_KEYFRAME_FUZZY_MAX_RULE_THRESHOLD;
     FuzzyInference.SpatialTrackingThreshold = PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD;
+
+    LG_Log( LogSeverity::DBG,
+        "[KEYPriv_SolveBootStrapData] MaxRuleThreshold = %f, SpatialTrackingThreshold = %f\n",
+        FuzzyInference.MaxRuleThreshold,
+        FuzzyInference.SpatialTrackingThreshold);
 
     BootStrapData.BootStrapDataSolved = true;
 }
@@ -386,6 +476,34 @@ bool KEYPriv_IsKeyFrame(const typeKeyFrameInformation& KeyFrameInformation)
     fp64 SpatialMembership = FUZZY_UNIONRULEINFERENCE(MinVelTracking, MinDistTracking);
     
     bool Decision = (MaxMemberShip > FuzzyInference.MaxRuleThreshold) || (SpatialMembership > FuzzyInference.SpatialTrackingThreshold);
+
+    LG_Log(LogSeverity::DBG,
+            "[KEYPriv_IsKeyFrame] Inputs: VelocityChange = %.6f, AccumulatedDistance = %.6f, TrackingRatio = %.6f\n",
+            KeyFrameInformation.VelocityChange,
+            KeyFrameInformation.AcumulatedDistanceTravelled,
+            KeyFrameInformation.LocalMapTrackingRatio);
+
+    LG_Log(LogSeverity::DBG,
+            "[KEYPriv_IsKeyFrame] Memberships: Velocity = %.6f, Distance = %.6f, Tracking = %.6f\n",
+            VelocityMembership,
+            DistanceMembership,
+            TrackingMembership);
+
+    LG_Log(LogSeverity::DBG,
+            "[KEYPriv_IsKeyFrame] Rules: MaxMembership = %.6f / %.6f, SpatialMembership = %.6f / %.6f, MinVelTracking = %.6f, MinDistTracking = %.6f\n",
+            MaxMemberShip,
+            FuzzyInference.MaxRuleThreshold,
+            SpatialMembership,
+            FuzzyInference.SpatialTrackingThreshold,
+            MinVelTracking,
+            MinDistTracking);
+
+    LG_Log(LogSeverity::DBG,
+            "[KEYPriv_IsKeyFrame] Decision = %s, MaxRuleTriggered = %s, SpatialRuleTriggered = %s\n",
+            Decision ? "true" : "false",
+            MaxMemberShip > FuzzyInference.MaxRuleThreshold ? "true" : "false",
+            SpatialMembership > FuzzyInference.SpatialTrackingThreshold ? "true" : "false");
+
     return Decision;
 }
 

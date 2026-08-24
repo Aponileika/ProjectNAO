@@ -39,6 +39,16 @@ Eigen::Vector4d PROJ_CV2NormalizedEigen(cv::Mat vec)
     return ret / norm;
 }
 
+void PROJ_NormalizeToSpherical(Eigen::Vector4d& Vec)
+{
+    Vec /= Vec.norm();
+}
+
+Eigen::Vector4d PROJ_NormalizeToSpherical(const Eigen::Vector4d& Point)
+{
+    return Point / Point.norm();
+}
+
 cv::Mat PROJ_ToHomogFromCart(cv::Point2d point)
 {
     return (cv::Mat_<fp64>(3, 1) << 

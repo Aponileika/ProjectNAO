@@ -23,6 +23,9 @@ typedef struct
     std::vector<u64> KeyFrameIDs;
     std::vector<u64> ImagePointIDs;
     u64 ID;
+    u64 NumVisible;
+    u64 NumFound;
+    u64 FirstKFKID;
 }typePantoMapPoint;
 
 typedef struct
@@ -30,5 +33,6 @@ typedef struct
     std::vector<typePantoImagePoint> ImagePoints;
     std::array<std::vector<u64>, PANTO_CELL_SIZE*PANTO_CELL_SIZE> CellIndexingArray;
 }typePantoKeypointFrame;
+
 
 #endif // __PT_TYPES_HPP_

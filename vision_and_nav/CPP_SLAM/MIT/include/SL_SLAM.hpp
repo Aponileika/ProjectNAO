@@ -42,7 +42,16 @@ typedef struct
     DBoW3::Vocabulary* Vocabulary;
 }typeSLAM;
 
+struct typeTimingStatistics
+{
+    u64 Count = 0;
+    fp64 Sum = 0.0;
+    fp64 SumSquared = 0.0;
+};
+
 void SL_InitSlam();
 void SL_PantoSLAM(i32 num_loops);
+void SL_AddTimingSample(typeTimingStatistics& Statistics, const fp64& Time);
+void SL_LogTimingStatistics(const char* Name, const typeTimingStatistics& Statistics);
 
 #endif //__SL__SLAM_HPP_

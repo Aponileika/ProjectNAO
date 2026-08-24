@@ -44,7 +44,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
 #define PANTO_LOCAL_MAP_SAMPLE_STRIDE 5
-#define PANTO_NUM_BOOTSTRAP_FRAMES 300
+#define PANTO_NUM_BOOTSTRAP_FRAMES 50
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
 #define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 10
@@ -57,7 +57,9 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define PANTO_BASELINE_THRESHOLD 0.01f
 #define PANTO_BASELINE_LARGE_ENOUGH_TRIANGULATION(BaseLine, MedianDepth) ((BaseLine / MedianDepth) > PANTO_BASELINE_THRESHOLD)
 #define PANTO_FEATURE_TRACK_NOT_OBSERVED -1
+#define PANTO_INIT_MIN_NUM_FRAMES 10
 
+using PantoClock = std::chrono::steady_clock;
 
 #define PANTO_USE_DATASET true
 #define PANTO_DATASET_BASE_PATH "./datasets"
@@ -127,7 +129,7 @@ const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 
 #define PANTO_CELL_SIZE 32
 
-#define PANTO_MAPPOINT_MATCH_SEARCH_AREA 20.0f
+#define PANTO_MAPPOINT_MATCH_SEARCH_RADIUS 20.0f
 
 //arbitrary, now same as slam orb
 #define PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD 200
@@ -159,7 +161,7 @@ inline constexpr const char* PANTO_VocabFilePath =
 #define PANTO_FUNDAMENTAL_MIN_POINTS 8
 #define PANTO_HOMOGRAPHY_MIN_POINTS 4
 #define PANTO_INIT_MIN_STATIONARY_POINTS 50
-#define PANTO_NUM_THREADS_MAX 4
+#define PANTO_NUM_THREADS_MAX 6
 
 /*                      
  ******************************************************************                                                  

@@ -28,6 +28,8 @@ void INIT_CreateInitData(void)
 
 typeInitReconstruction INIT_ProcessNewFrame(void)
 {
+    static u32 NumFrames = 1;
+
     LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Processing new initialization frame\n");
 
     typePantoFrame Frame = FR_GetFrame();
@@ -52,7 +54,9 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
         "[INIT_ProcessNewFrame] ST-RANSAC found %zu stationary tracks\n",
         StationaryTrackIDs.size());
 
-    if(StationaryTrackIDs.size() < PANTO_INIT_MIN_STATIONARY_POINTS)
+    NumFrames++;
+
+    if(StationaryTrackIDs.size() < PANTO_INIT_MIN_STATIONARY_POINTS || NumFrames < PANTO_INIT_MIN_NUM_FRAMES)
     {
         LG_Log(
             LogSeverity::DBG,
@@ -73,15 +77,32 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
     std::vector<u64> CandidateIDs =
         INITPriv_GetCandidateFrameIDs(StationaryTrackIDs);
 
+    const std::size_t NumCandidates = CandidateIDs.size();
+
+    if(NumCandidates == 0)
+    {
+        LG_Log(
+            LogSeverity::DBG,
+            "[INIT_ProcessNewFrame] No candidate initialization frames\n");
+
+        return
+        {
+            .R{},
+            .t{},
+            .NumPointsInFront{},
+            .MapPoints{},
+            .ChosenInitFrameID{},
+            .Valid = false
+        };
+    }
+
+    std::vector<std::thread> ReconstructionThreads;
+    ReconstructionThreads.reserve(NumCandidates);
+
     LG_Log(
         LogSeverity::DBG,
         "[INIT_ProcessNewFrame] Found %zu candidate initialization frames\n",
         CandidateIDs.size());
-
-    const std::size_t NumCandidates = CandidateIDs.size();
-
-    std::vector<std::thread> ReconstructionThreads;
-    ReconstructionThreads.reserve(NumCandidates);
 
     std::vector<typeInitReconstruction> Reconstruction(NumCandidates);
 
@@ -139,6 +160,12 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
         static_cast<unsigned long long>(BestReconstructionIndex),
         MostPoints);
 
+    LG_Log(
+        LogSeverity::DBG,
+        "[INIT_ProcessNewFrame] Selected initialization frames %llu and %llu\n",
+        static_cast<unsigned long long>(InitData.InitFrames[CandidateIDs[BestReconstructionIndex]].ID),
+        static_cast<unsigned long long>(InitData.InitFrames.back().ID));
+
     return Reconstruction[BestReconstructionIndex];
 }
 
@@ -156,6 +183,8 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
 
     const u64 FirstFrameID = Reconstruction.ChosenInitFrameID.first;
     const u64 SecondFrameID = Reconstruction.ChosenInitFrameID.second;
+    LG_Log(LogSeverity::DBG, "FirstFrameID = %llu\n", FirstFrameID); 
+    LG_Log(LogSeverity::DBG, "SecondFrameID= %llu\n", SecondFrameID); 
 
     std::vector<typePantoMapPoint> InitialMapPoints;
     InitialMapPoints.reserve(Reconstruction.MapPoints.size());
@@ -177,8 +206,8 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
         typeDescriptor Descriptor = InitData.InitFrames[SecondFrameID].ImagePoints[ImagePointIDs[1]].Descriptor;
 
         std::vector<u64> KeyFrameIDs(2, 0);
-        KeyFrameIDs[0] = FirstFrameID;
-        KeyFrameIDs[1] = SecondFrameID;
+        KeyFrameIDs[0] = 0;
+        KeyFrameIDs[1] = 1;
 
         InitialMapPoints.push_back(
             {

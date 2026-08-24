@@ -13,11 +13,14 @@ typePantoMapPoint PT_CreatePantoMapPoint(const Eigen::Vector4d& Point, const typ
 
     typePantoMapPoint MapPoint = 
     {
-        .Point = Point,
+        .Point = PROJ_NormalizeToSpherical(Point),
         .Descriptor = Descriptor,
         .KeyFrameIDs = VecKeyFrameIDs,
         .ImagePointIDs = VecImagePointIDs,
-        .ID = ID
+        .ID = ID,
+        .NumVisible = 1,
+        .NumFound = 1,
+        .FirstKFKID = KeyFrameIDs.second,
     };
 
     return MapPoint;
@@ -38,3 +41,5 @@ bool PT_IsInfront(const Eigen::Vector4d& Point, const typeCamera& Camera)
     PointCart = R * PointCart + t;
     return(PointCart.z() > 0.0f);
 }
+
+

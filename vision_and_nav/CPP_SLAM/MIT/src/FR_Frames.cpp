@@ -23,8 +23,6 @@ namespace
     struct dataset_read reader;
 }
 
-using PantoClock = std::chrono::steady_clock;
-
 namespace 
 {
     const PantoClock::time_point StartTime = PantoClock::now();
@@ -65,7 +63,10 @@ typePantoFrame FR_GetFrame(void)
     {
         cv::Mat Frame = __FR_GetFrameDataSet();
         const PantoClock::time_point CurrentTime = PantoClock::now();
-        const fp64 TimeStamp = std::chrono::duration(CurrentTime - StartTime).count();
+        const fp64 TimeStamp = std::chrono::duration<fp64>(CurrentTime - StartTime).count();
+        LG_Log( LogSeverity::DBG,
+            "[FR_GetFrame] Dataset frame timestamp = %.9f s\n",
+            TimeStamp);
         PantoFrame.Frame = Frame; 
         PantoFrame.TimeStamp = TimeStamp;
     }

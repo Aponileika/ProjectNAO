@@ -22,10 +22,19 @@ What to do next:
 
     - (DONE) Check implamentation of PT_MatchMapPointsToKeyFrame, bugged after change of structure of keyframe cellblock thingy
 
-    - Keep debugging, can compile, run and see what goes wrong.
+    - (DONE) Keep debugging, can compile, run and see what goes wrong.
 
-    - MAP_CreateLocalMap, make sure local mappoints are only added once, currently they are
+    - (DONE) MAP_CreateLocalMap, make sure local mappoints are only added once, currently they are
       added several times
+
+    - Recreate viz, viser visualization, preferably live one. 
+
+    - Currently far too many mappoints are created and never culled, add slam orb style culling of new mappoints and keyframes.
+
+    - train vocab with fixed number of features, with spatial distribution enforced. Bags of Binary Words for Fast Place Recognition in
+Image Sequences
+
+    - Check AKAZE opencv implementation, is there any obvious improvement? Cv::mat -> Eigen for easier SIMD optimisation? Keep cv mat for dbow though
 
     - Implement keyframe removal functionality and mappoint removal functionality.
 

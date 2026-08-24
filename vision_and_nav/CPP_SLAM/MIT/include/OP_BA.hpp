@@ -78,7 +78,7 @@ struct OP_ReprojectionError
         T v = T(fy_) * y + T(cy_);
 
         residuals[0] = u - T(ObservedX_);
-        residuals[1] = v - T(ObservedX_);
+        residuals[1] = v - T(ObservedY_);
         return true;
     }
     static ceres::CostFunction* Create(const fp64 ObservedX, const fp64 ObservedY, const struct typeOPCameraIntrinsics* Intrinsics)
@@ -91,6 +91,6 @@ struct OP_ReprojectionError
     const struct typeOPCameraIntrinsics* Intrinsics_;
 };
 
-void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, typeLocalMap LocalMap);
+void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, typeLocalMap* LocalMap);
 
 #endif //__OP_BA_HPP_

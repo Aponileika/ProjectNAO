@@ -12,4 +12,19 @@ typePantoMapPoint PT_CreatePantoMapPoint(const Eigen::Vector4d& Point, const typ
 void PT_AddObservation(typePantoMapPoint& MapPoint, const u64 KeyFrameID, const u64 ImagePointID);
 bool PT_IsInfront(const Eigen::Vector4d& Point, const typeCamera& Camera);
 
+inline fp64 PT_GetFoundRatio(const typePantoMapPoint& MapPoint)
+{
+    return static_cast<fp64>(MapPoint.NumFound) / static_cast<fp64>(MapPoint.NumVisible);
+}
+
+inline u64 PT_GetAge(const typePantoMapPoint& MapPoint, const u64 CurrentKFKID)
+{
+    return CurrentKFKID - MapPoint.FirstKFKID;
+}
+
+inline u64 PT_GetNumObservations(const typePantoMapPoint& MapPoint)
+{
+    return static_cast<u64>(MapPoint.KeyFrameIDs.size());
+}
+
 #endif // __PT_PANTOMAPPOINTS_HPP_

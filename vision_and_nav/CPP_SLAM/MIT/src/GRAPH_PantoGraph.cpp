@@ -1,10 +1,13 @@
 #include "../include/GRAPH_PantoGraph.hpp"
 #include <cstring>
 
-void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints)
+void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& GlobalMapPoints,
+        const u64 NumKeyFrames)
 {
     const typePantoKeypointFrame& KeyPointFrame = KeyFrame.Points;
-    std::vector<u64> CovisibilityCount(KeyFrame.ID, 0);
+    std::vector<u64> CovisibilityCount(NumKeyFrames, 0);
+
+    LG_Log(LogSeverity::DBG, "[GRAPH_AddKeyFrame] Adding KeyFrame %llu to CovisibilityGraph\n",KeyFrame.ID);
 
     for(const typePantoImagePoint& ImagePoint : KeyPointFrame.ImagePoints)
     {
@@ -69,6 +72,7 @@ void GRAPH_UpdateCovisibility(typeCovisibilityGraph& CovisibilityGraph, const st
         const u64 NewKeyFrameID)
 {
     std::vector<u64> CovisibilityCount(CovisibilityGraph.size(), 0);
+    LG_Log(LogSeverity::DBG, "[GRAPH_UpdateCovisibility] Covisibility grah size = %zu\n", CovisibilityGraph.size()); 
     
     for(auto GlobalMapIterator = GlobalMapPoints.end() - NumNewPoints; GlobalMapIterator != GlobalMapPoints.end();
             ++GlobalMapIterator)
@@ -93,7 +97,7 @@ void GRAPH_UpdateCovisibility(typeCovisibilityGraph& CovisibilityGraph, const st
         const u64 Count = CovisibilityCount[i];
 
         bool WasCovisible = false;
-        for(typeCovisibility& Covisibility :  CovisibilityGraph[NewKeyFrameID])
+        for(typeCovisibility& Covisibility : CovisibilityGraph[NewKeyFrameID])
         {
             if(Covisibility.KeyFrameID == i)
             {

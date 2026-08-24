@@ -22,7 +22,8 @@ struct Logger
 enum class LogSeverity : u8
 {
     DBG = 0, // Everything is fine
-    ERROR = 1 // Must reset SLAM
+    ERROR = 1, // Must reset SLAM
+    DATA = 2 // Must reset SLAM
 };
 
 
