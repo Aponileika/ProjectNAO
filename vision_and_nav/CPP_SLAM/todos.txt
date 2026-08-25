@@ -42,6 +42,7 @@ What to do next:
 
     - Clean up the SL_SLAM main loop a bit, mainly make more things happen in MAP instead of providing map info to KEY
 
+    - Separate tracking local map and local mapping local map (local mapping map == map created after frame is accepted as a keyframe).
     - train vocab with fixed number of features, with spatial distribution enforced. Bags of Binary Words for Fast Place Recognition in
 
     - Check AKAZE opencv implementation, is there any obvious improvement? Cv::mat -> Eigen for easier SIMD optimisation? Keep cv mat for dbow though
