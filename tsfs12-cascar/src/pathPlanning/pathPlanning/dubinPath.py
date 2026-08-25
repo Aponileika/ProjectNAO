@@ -7,13 +7,14 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
     
-def dubinsPath(startPos, startAngle, endPos, endAngle, debug=False):
+def dubinsPath(startPos, startAngle, endPos, endAngle, getDistance=True, debug=False):
     
     spacing = 0.2 #Distance between each point in path
     L = 0.285
     deltaMax = np.pi/6
     multiplierR = 1.0 #Increase R for more robust turn
     R = multiplierR * L / np.tan(deltaMax)
+    zeroVec = np.array([0, 0])
 
     perp = rot(np.array([np.cos(startAngle), np.sin(startAngle)]))
     circleStartCCW = startPos + R * perp
@@ -23,33 +24,41 @@ def dubinsPath(startPos, startAngle, endPos, endAngle, debug=False):
     circleEndCCW = endPos + R * perp
     circleEndCW = endPos - R * perp
 
-    circleVector = circleEndCCW - circleStartCCW
-    circleNorm = circleVector / np.linalg.norm(circleVector)
-    LSL = {
-        "startTang": circleStartCCW + R*rot(-circleNorm),
-        "endTang": circleEndCCW + R*rot(-circleNorm),
-        "startPos": startPos,
-        "endPos": endPos,
-        "startCircle": circleStartCCW,
-        "endCircle": circleEndCCW,
-        "startDir": 1,
-        "endDir": 1
-    }
-    LSL["length"] = getPathLength(LSL, R)
+    
+    if (circleEndCCW == circleStartCCW).all():
+        LSL = False
+    else:
+        circleVector = circleEndCCW - circleStartCCW
+        circleNorm = circleVector / np.linalg.norm(circleVector)
+        LSL = {
+            "startTang": circleStartCCW + R*rot(-circleNorm),
+            "endTang": circleEndCCW + R*rot(-circleNorm),
+            "startPos": startPos,
+            "endPos": endPos,
+            "startCircle": circleStartCCW,
+            "endCircle": circleEndCCW,
+            "startDir": 1,
+            "endDir": 1
+        }
+        LSL["length"] = getPathLength(LSL, R)
 
-    circleVector = circleEndCW - circleStartCW
-    circleNorm = circleVector / np.linalg.norm(circleVector)
-    RSR = {
-        "startTang": circleStartCW + R*rot(circleNorm),
-        "endTang": circleEndCW + R*rot(circleNorm),
-        "startPos": startPos,
-        "endPos": endPos,
-        "startCircle": circleStartCW,
-        "endCircle": circleEndCW,
-        "startDir": -1,
-        "endDir": -1
-    }
-    RSR["length"] = getPathLength(RSR, R)
+    
+    if (circleEndCW == circleStartCW).all():
+        RSR = False
+    else:
+        circleVector = circleEndCW - circleStartCW
+        circleNorm = circleVector / np.linalg.norm(circleVector)
+        RSR = {
+            "startTang": circleStartCW + R*rot(circleNorm),
+            "endTang": circleEndCW + R*rot(circleNorm),
+            "startPos": startPos,
+            "endPos": endPos,
+            "startCircle": circleStartCW,
+            "endCircle": circleEndCW,
+            "startDir": -1,
+            "endDir": -1
+        }
+        RSR["length"] = getPathLength(RSR, R)
     
     #LSR
     LSR = False
@@ -89,15 +98,15 @@ def dubinsPath(startPos, startAngle, endPos, endAngle, debug=False):
             "startDir":-1, "endDir":1}  
         RSL['length'] = getPathLength(RSL, R)
 
-    shortestPath = {'length':np.inf}
     paths = [LSL, RSR, LSR, RSL]
+    validPaths = []
     for path in paths:
         if path:
-            if path['length'] < shortestPath['length']:
-                shortestPath = path
+            validPaths.append(path)
 
-    dubinPath = createPath(shortestPath, R, spacing)
-    dubinPath[0]['theta'] = startAngle
+    for i in range(len(validPaths)):
+        validPaths[i] = createPath(validPaths[i], R, spacing, getDistance)
+        validPaths[i][0] = (validPaths[i][0][0], validPaths[i][0][1], startAngle)
     
     if debug:
         fig, ax = plt.subplots()
@@ -137,10 +146,10 @@ def dubinsPath(startPos, startAngle, endPos, endAngle, debug=False):
     if not dubinsPath:
         return None
 
-    return dubinPath
+    return validPaths
 
 
-def createPath(path, R, spacing):
+def createPath(path, R, spacing, getDistance=True):
     sampledPath = []
 
     #Sample first arc
@@ -157,7 +166,8 @@ def createPath(path, R, spacing):
     sampledPath.extend(sampleArc(start_angle, end_angle, path['endDir'], R, path["endCircle"], spacing))
 
     #Get the distances
-    sampledPath = getPathDistance(sampledPath)
+    if getDistance:
+        sampledPath = getPathDistance(sampledPath)
 
     return sampledPath
 
@@ -169,9 +179,9 @@ def sampleArc(startAngle, endAngle, dir, R, center, spacing):
     sampledPath = []
     for i in range(sampleCount+1):
         circleAngle = startAngle + dir*i*dTheta
-        sampledPath.append({"x": center[0] + R*cos(circleAngle),
-                            "y": center[1] + R*sin(circleAngle),
-                            "theta": mod2pi(circleAngle + dir*pi/2) })
+        sampledPath.append( (center[0] + R*cos(circleAngle),
+                             center[1] + R*sin(circleAngle),
+                             mod2pi(circleAngle + dir*pi/2) ) )
 
     return sampledPath
 
@@ -189,9 +199,9 @@ def sampleTangent(path, spacing):
     
     sampledPath = []
     for i in range(1, sampleCount+1):
-        sampledPath.append({'x':path["startTang"][0] + dx*i,
-                            'y':path["startTang"][1] + dy*i,
-                            'theta':theta})
+        sampledPath.append( (path["startTang"][0] + dx*i,
+                             path["startTang"][1] + dy*i,
+                             theta) )
 
     return sampledPath
 
@@ -202,8 +212,8 @@ def getPathDistance(path):
         start_node = path[i]
         next_node = path[i+1]
         
-        distance += sqrt( (next_node['x'] - start_node['x'])**2 + (next_node['y'] - start_node['y'])**2 )
-        next_node["distance"] = distance
+        distance += sqrt( (next_node[0] - start_node[0])**2 + (next_node[1] - start_node[1])**2 )
+        path[i+1] = (next_node[0], next_node[1], next_node[2], distance)
 
     return path
 

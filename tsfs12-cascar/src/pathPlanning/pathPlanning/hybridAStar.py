@@ -1,6 +1,8 @@
 import numpy as np
 import heapq
 from scipy.ndimage import binary_dilation
+from collections import deque
+from math import sin, cos
 
 import dubinPath
 
@@ -63,32 +65,28 @@ class HybridAStar():
         return binary_dilation(grid != 0, structure=footprint)
 
 
-    def createDistanceGrid(self, start, goal, distanceGrid):
-        queue = [self.worldToGrid(goal.x, goal.y)]
-        done = []
-        distance = self.xy_resolution
-        while len(queue) != 0:
-            while len(queue) != 0:
-                point = queue.pop(0)
-                gx, gy = point
-                distanceGrid[gy, gx] = distance
+    def createDistanceGrid(self, goal):
+        distanceGrid = np.full((self.height, self.width), np.inf)
+        gx, gy = self.worldToGrid(goal.x, goal.y)
 
-                done.append((gx,gy))
+        queue = deque([(gx, gy)])
+        distanceGrid[gy, gx] = 0
 
-            if gx - 1 >= 0:
-                if self.distanceGrid[gy, gx-1] == 0 and ( (gx-1, gy) not in done or (gx-1, gy) not in queue ):
-                    queue.append((gx-1, gy))
-            if gx + 1 < self.width:
-                if self.distanceGrid[gy, gx+1] == 0 and ( (gx+1, gy) not in done or (gx+1, gy) not in queue ):
-                    queue.append((gx+1, gy))
-            if gy - 1 >= 0:
-                if self.distanceGrid[gy-1, gx] == 0 and ( (gx, gy-1) not in done or (gx, gy-1) not in queue ):
-                    queue.append((gx, gy-1))
-            if gy + 1 < self.height:
-                if self.distanceGrid[gy+1, gx] == 0 and ( (gx, gy+1) not in done or (gx, gy+1) not in queue ):
-                    queue.append((gx, gy+1))
+        while queue:
+            x, y = queue.popleft()
+            distance = distanceGrid[y, x] + self.xy_resolution
 
-            distance += self.xy_resolution
+            for nx, ny in ((x-1,y),(x+1,y),(x,y-1),(x,y+1)):
+                if nx < 0 or nx >= self.width or ny < 0 or ny >= self.height:
+                    continue
+                if self.mapGrid[ny, nx]:
+                    continue
+                if distanceGrid[ny, nx] != np.inf:
+                    continue
+
+                distanceGrid[ny, nx] = distance
+                queue.append((nx, ny))
+
         return distanceGrid
 
 
@@ -99,8 +97,8 @@ class HybridAStar():
 
 
     def worldToGrid(self, x, y):
-        gx = int(np.floor(x / self.xy_resolution))
-        gy = int(np.floor(y / self.xy_resolution))
+        gx = int(x / self.xy_resolution)
+        gy = int(y / self.xy_resolution)
 
         return gx, gy
 
@@ -127,7 +125,7 @@ class HybridAStar():
 
     def heuristic(self, startNode, goalNode):
         #gx, gy  = self.worldToGrid(startNode.x, goalNode.y)
-        #return self.distanceGrid[gy, gx] ** 2
+        #return self.distanceGrid[gy, gx]**2
         return (startNode.y - goalNode.y)**2 + (startNode.x - goalNode.x)**2
 
 
@@ -151,8 +149,8 @@ class HybridAStar():
         travelled = 0
         while travelled < self.propogationDistance:
             ds = min(self.propogationDistance-travelled, self.propogationInterval)
-            x += ds * np.cos(theta)
-            y += ds * np.sin(theta)
+            x += ds * cos(theta)
+            y += ds * sin(theta)
 
             gx, gy = self.worldToGrid(x,y)
             if gx < 0 or gx >= self.width or gy < 0 or gy >= self.height:
@@ -179,15 +177,10 @@ class HybridAStar():
         return False
 
 
-    def dubinDictToTuple(self, path):
-        for j in range(len(path)):
-            point = path[j]
-            point = (point['x'], point['y'], point['theta'])
-            path[j] = point
-        return path
-        
-
     def addDubinPaths(self, path, goalNode):
+        # to do:
+        # * Add a binary search instead of linear
+
         path[-1] = (goalNode.x, goalNode.y, goalNode.theta)
 
         lower = 0
@@ -196,7 +189,7 @@ class HybridAStar():
         maxIter = len(path)
         iterations = 0
 
-        while lower + 1 < upper and iterations < maxIter:
+        while lower + 1 < upper and iterations < len(path):
             iterations += 1
             if iterations >= maxIter:
                 print("WARNING ; MAX ITERATIONS REACHED")
@@ -207,13 +200,21 @@ class HybridAStar():
             staticPoint = path[upper]
             for i in range(lower, upper - 1):
                 dynamicPoint = path[i]
-                dubin = dubinPath.dubinsPath(np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], 
-                                                np.array([staticPoint[0], staticPoint[1]]), staticPoint[2])
-                dubin = self.dubinDictToTuple(dubin)
-                collidingPath = self.isColliding(dubin)
+                dubins = dubinPath.dubinsPath(np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], 
+                                             np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], getDistance=False)
+                colliding = []
+                for dubin in dubins:
+                    colliding.append(self.isColliding(dubin))
 
-                if not collidingPath and len(dubin) < upper - i:
-                    upperDubin = dubin
+                shortestPath = None
+                shortestLength = upper - i
+                for dubin, collision in zip(dubins, colliding):
+                    if not collision and len(dubin) <= shortestLength:
+                        shortestLength = len(dubin)
+                        shortestPath = dubin
+
+                if shortestPath != None:
+                    upperDubin = shortestPath
                     upperIndex = i
                     break
 
@@ -222,15 +223,26 @@ class HybridAStar():
             staticPoint = path[lower]
             for i in range(upper, lower + 1, -1):
                 dynamicPoint = path[i]
-                dubin = dubinPath.dubinsPath(np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], 
-                                                np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2])
-                dubin = self.dubinDictToTuple(dubin)
-                collidingPath = self.isColliding(dubin)
+                dubins = dubinPath.dubinsPath(np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], 
+                                             np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], getDistance=False)
+                colliding = []
+                for dubin in dubins:
+                    colliding.append(self.isColliding(dubin))
 
-                if not collidingPath and len(dubin) < i - lower:
-                    lowerDubin = dubin
+                shortestPath = None
+                shortestLength = i - lower
+                for dubin, collision in zip(dubins, colliding):
+                    if not collision and len(dubin) <= shortestLength:
+                        shortestLength = len(dubin)
+                        shortestPath = dubin
+
+                if shortestPath != None:
+                    lowerDubin = shortestPath
                     lowerIndex = i
-                    break            
+                    break              
+
+            if lowerDubin is None:
+                lower += 1
 
             # Add the one that shortens the path most, or the one that exists, provided they are shortcuts
             if upperDubin != None and lowerDubin != None:
@@ -268,7 +280,8 @@ class HybridAStar():
             return None
 
         #self.distanceGrid = np.copy(self.mapGrid)
-        #self.distanceGrid = self.createDistanceGrid(startNode, goalNode, self.distanceGrid)
+        #self.distanceGrid = self.createDistanceGrid(goalNode)
+        #print("Distance map done")
 
         startNode.h = self.heuristic(startNode, goalNode)
         openSet = []
@@ -293,7 +306,9 @@ class HybridAStar():
 
             if self.isFinished(current, goalNode):
                 path = self.reconstruct_path(current)
+                t0 = time.time()
                 path = self.addDubinPaths(path, goalNode)
+                print(time.time()-t0)
                 return path
 
             for dTheta, steeringAngle in zip(self.dThetas, self.steeringAngles):
@@ -374,8 +389,11 @@ if __name__ == "__main__":
         start = (random.uniform(-4, -1), random.uniform(-4, 4), random.uniform(-np.pi, np.pi))
         goal = (random.uniform(1, 4), random.uniform(-4, 4), random.uniform(-np.pi, np.pi))
 
-        start = (-3, 0, 0)
-        goal = (3.5, 0, np.pi)
+        start =  (-2.3626710352909526, 3.8542462746579744, 1.6661474695408183)
+        goal = (1.0984182966011757, -2.2933858956775968, -0.37632596566964605)
+
+        #start = (-3, 0, 0)
+        #goal = (3.5, 0, np.pi)
 
         print("Search started")
         t0 = time.time()
