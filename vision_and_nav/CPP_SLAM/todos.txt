@@ -29,7 +29,10 @@ What to do next:
 
     - (DONE) Recreate viz, viser visualization, preferably live one, starts localhost server when SLAM starts.
 
-    - Update Descriptors of mappoints. 
+    - (DONE) Update Descriptors of mappoints. 
+
+    - Integrate typePantoVector everywhere things are expected to be deleted at some point, eg. keyframes, 3d points,
+      connections between 3d points with keyframes and 2d points.
 
     - Currently far too many mappoints are created and never culled, add slam orb style culling of new mappoints and keyframes.
 
