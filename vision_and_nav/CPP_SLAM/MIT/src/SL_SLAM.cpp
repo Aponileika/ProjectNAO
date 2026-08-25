@@ -99,7 +99,7 @@ void SL_PantoSLAM(i32 num_loops)
 
         const PantoClock::time_point FrameStartTime = PantoClock::now();
 
-        typeKeyFrame NewKeyFrame = KEY_GetKeyFrame(PantoSLAM.NextFramePosePrediction, PantoSLAM.PreviousFrameData.PreviousFrameMapPoints);
+        typeKeyFrame CurrentKeyFrame = KEY_GetKeyFrame(PantoSLAM.NextFramePosePrediction, PantoSLAM.PreviousFrameData.PreviousFrameMapPoints);
 
         const PantoClock::time_point FrameEndTime = PantoClock::now();
 
@@ -113,7 +113,9 @@ void SL_PantoSLAM(i32 num_loops)
                 FrameTime);
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Inserting preliminary keyframe\n");
-        MAP_InsertPreliminaryKeyFrame(PantoSLAM.GlobalMap, NewKeyFrame);
+        MAP_InsertPreliminaryKeyFrame(PantoSLAM.GlobalMap, CurrentKeyFrame);
+        
+        typeKeyFrame& NewKeyFrame = PantoSLAM.GlobalMap.KeyFrames.back();
 
         const PantoClock::time_point FirstTrackingStartTime = PantoClock::now();
 
@@ -134,7 +136,7 @@ void SL_PantoSLAM(i32 num_loops)
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Creating local map\n");
 
-        PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, NewKeyFrame);
+        PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Local Map size = %zu\n",PantoSLAM.LocalMap.KeyFrames.size()); 
 
@@ -152,7 +154,7 @@ void SL_PantoSLAM(i32 num_loops)
         const PantoClock::time_point LocalMapMatchingStartTime = PantoClock::now();
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Matching local map points\n");
-        const typeLocalMapInfo LocalMapInfo  = MAP_MatchMapPointLocalMap(PantoSLAM.LocalMap, NewKeyFrame);
+        const typeLocalMapInfo LocalMapInfo  = MAP_MatchMapPointLocalMap(PantoSLAM.LocalMap, PantoSLAM.GlobalMap.KeyFrames.back());
 
         const PantoClock::time_point LocalMapMatchingEndTime = PantoClock::now();
 
@@ -195,7 +197,8 @@ void SL_PantoSLAM(i32 num_loops)
         const PantoClock::time_point KeyFrameEvaluationStartTime = PantoClock::now();
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Evaluating keyframe insertion\n");
-        typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, NewKeyFrame, LocalMapInfo);
+        typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, PantoSLAM.GlobalMap.KeyFrames.back(), LocalMapInfo);
+
         if(i >= PANTO_NUM_BOOTSTRAP_FRAMES)
         {
             NumTestedKeyFrames+=1.0;
@@ -269,6 +272,7 @@ void SL_PantoSLAM(i32 num_loops)
             LG_Log(LogSeverity::DATA, "[SLAMTiming] Loop %d local map culling = %.6f s\n",
                     i,
                     CullingTime);
+            VIZ_WriteColmap(PantoSLAM.GlobalMap);
 
         }
         else
@@ -301,11 +305,10 @@ void SL_PantoSLAM(i32 num_loops)
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Finished loop %d\n", i);
 
-        if((i % 5) == 0)
-        {
-            VIZ_WriteColmap(PantoSLAM.GlobalMap);
-        }
     }
+
+    MAP_RetriangulateLOST(PantoSLAM.GlobalMap);
+    VIZ_WriteColmap(PantoSLAM.GlobalMap);
 
     const PantoClock::time_point SLAMEndTime = PantoClock::now();
 

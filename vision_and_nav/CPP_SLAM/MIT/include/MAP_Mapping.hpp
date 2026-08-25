@@ -35,5 +35,6 @@ u64 MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap, typ
 void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap);
 void MAP_LogKeyFrameProjectionError(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& GlobalMapPoints);
 void MAP_LogGlobalMapProjectionErrors(const typeGlobalMap& GlobalMap);
+void MAP_RetriangulateLOST(typeGlobalMap& GlobalMap);
 
 #endif // __MAP_MAPPING_HPP_

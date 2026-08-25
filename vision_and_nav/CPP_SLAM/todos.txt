@@ -31,13 +31,16 @@ What to do next:
 
     - (DONE) Update Descriptors of mappoints. 
 
+    - (DONE I think) Check if previous frame mappoints works as expected, i think it does now but not sure. 
+
     - Integrate typePantoVector everywhere things are expected to be deleted at some point, eg. keyframes, 3d points,
       connections between 3d points with keyframes and 2d points.
+
+    - Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive.
 
     - Currently far too many mappoints are created and never culled, add slam orb style culling of new mappoints and keyframes.
 
     - train vocab with fixed number of features, with spatial distribution enforced. Bags of Binary Words for Fast Place Recognition in
-Image Sequences
 
     - Check AKAZE opencv implementation, is there any obvious improvement? Cv::mat -> Eigen for easier SIMD optimisation? Keep cv mat for dbow though
 
@@ -46,5 +49,3 @@ Image Sequences
     - Implement threading, use same structure as orb, tracking <-> local mapping <-> global mapping threads. std::jthread / thread? 
       Think about how to mutex or not to, or copy? Make a decision dont just autopilot into a too restrictive mutex situation.
 
-General:
-    - Add Logging to the rewrite (as in add debug logs)

@@ -307,3 +307,96 @@ void MAP_LogGlobalMapProjectionErrors(const typeGlobalMap& GlobalMap)
 }
 
 
+void MAP_RetriangulateLOST(typeGlobalMap& GlobalMap)
+{
+    std::vector<std::vector<Eigen::Vector3d>> PixelCoords;
+    std::vector<std::vector<Eigen::Matrix4d>> Transforms;
+    std::vector<u64> MapPointIDs;
+
+    PixelCoords.reserve(GlobalMap.MapPoints.size());
+    Transforms.reserve(GlobalMap.MapPoints.size());
+    MapPointIDs.reserve(GlobalMap.MapPoints.size());
+
+    for(typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
+    {
+        assert(MapPoint.KeyFrameIDs.size() ==
+                MapPoint.ImagePointIDs.size());
+
+        if(MapPoint.KeyFrameIDs.size() < 2)
+        {
+            continue;
+        }
+
+        std::vector<Eigen::Vector3d> MapPointPixelCoords;
+        std::vector<Eigen::Matrix4d> MapPointTransforms;
+
+        MapPointPixelCoords.reserve(MapPoint.KeyFrameIDs.size());
+        MapPointTransforms.reserve(MapPoint.KeyFrameIDs.size());
+
+        for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
+        {
+            const u64 KeyFrameID = MapPoint.KeyFrameIDs[i];
+            const u64 ImagePointID = MapPoint.ImagePointIDs[i];
+
+            const typeKeyFrame& KeyFrame =
+                GlobalMap.KeyFrames[KeyFrameID];
+
+            const typePantoImagePoint& ImagePoint =
+                KeyFrame.Points.ImagePoints[ImagePointID];
+
+            Eigen::Vector3d PixelCoord
+            {
+                ImagePoint.Point.x(),
+                ImagePoint.Point.y(),
+                1.0
+            };
+
+            Eigen::Matrix4d Transform =
+                Eigen::Matrix4d::Identity();
+
+            Transform.block<3, 3>(0, 0) =
+                KeyFrame.Pose.Pose.R;
+
+            Transform.block<3, 1>(0, 3) =
+                KeyFrame.Pose.Pose.t;
+
+            MapPointPixelCoords.push_back(PixelCoord);
+            MapPointTransforms.push_back(Transform);
+        }
+
+        PixelCoords.push_back(std::move(MapPointPixelCoords));
+        Transforms.push_back(std::move(MapPointTransforms));
+        MapPointIDs.push_back(MapPoint.ID);
+    }
+
+    if(PixelCoords.empty())
+    {
+        return;
+    }
+
+    assert(!GlobalMap.KeyFrames.empty());
+    assert(GlobalMap.KeyFrames[0].Pose.Intrinsics != nullptr);
+
+    const Eigen::Matrix3d K =
+        GlobalMap.KeyFrames[0].Pose.Intrinsics->K;
+
+    const std::vector<Eigen::Vector4d> RetriangulatedPoints =
+        PROJ_TriangulateLOST(
+                PixelCoords,
+                Transforms,
+                K);
+
+    assert(RetriangulatedPoints.size() ==
+            MapPointIDs.size());
+
+    for(std::size_t i{}; i < RetriangulatedPoints.size(); i++)
+    {
+        GlobalMap.MapPoints[MapPointIDs[i]].Point =
+            PROJ_NormalizeToSpherical(
+                    RetriangulatedPoints[i]);
+    }
+
+    LG_Log(LogSeverity::DBG,
+            "[MAP_RetriangulateLOST] Retriangulated %llu map points\n",
+            static_cast<unsigned long long>(RetriangulatedPoints.size()));
+}

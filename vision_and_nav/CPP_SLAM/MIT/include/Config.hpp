@@ -45,7 +45,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
 #define PANTO_LOCAL_MAP_SAMPLE_STRIDE 5
-#define PANTO_NUM_BOOTSTRAP_FRAMES 50
+#define PANTO_NUM_BOOTSTRAP_FRAMES 30
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
 #define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 20
@@ -58,7 +58,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define PANTO_BASELINE_THRESHOLD 0.01f
 #define PANTO_BASELINE_LARGE_ENOUGH_TRIANGULATION(BaseLine, MedianDepth) ((BaseLine / MedianDepth) > PANTO_BASELINE_THRESHOLD)
 #define PANTO_FEATURE_TRACK_NOT_OBSERVED -1
-#define PANTO_INIT_MIN_NUM_FRAMES 10
+#define PANTO_INIT_MIN_NUM_FRAMES 20
 constexpr const char* PANTO_COLMAP_PATH = "./colmap";
 constexpr const char* PANTO_COLMAP_PYTHON_SCRIPT_PATH = "./colmap/vis_colmap.py";
 constexpr const char* PANTO_PATH_TO_PYTHON_INTERPRETER = "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/.venv/bin/python";
