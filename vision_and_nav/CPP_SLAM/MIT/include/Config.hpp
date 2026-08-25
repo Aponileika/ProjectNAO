@@ -2,6 +2,7 @@
 #define CONFIG_HPP_
 #include <random>
 #include <string>
+#include <cmath>
 #include "CArenaAlloc.h"
 
 inline std::mt19937& PANTO_GetRandomGenerator(void)
@@ -39,7 +40,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define OPENCV_RANSACMAXITERS 2000
 #define PANTO_NEWFRAMECORRPTHRESHOLD 30
 #define PANTO_INITFRAMETHRESHOLDCORRP 50
-#define OPENCV_AKAZETHRESHOLD 0.0005f
+#define OPENCV_AKAZETHRESHOLD 0.001
 #define OPENCV_AKAZE_NOCTAVES 4
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
@@ -47,7 +48,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define PANTO_NUM_BOOTSTRAP_FRAMES 50
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
-#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 10
+#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 20
 #define PANTO_KEYFRAME_MEAN_VELOCITY_THRESHOLD_GAIN 4
 #define PANTO_KEYFRAME_MEAN_TRACKING_HIGH_THRESHOLD_GAIN 0.8f
 #define PANTO_KEYFRAME_MEAN_TRACKING_LOW_THRESHOLD_GAIN 0.2f
@@ -58,6 +59,15 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define PANTO_BASELINE_LARGE_ENOUGH_TRIANGULATION(BaseLine, MedianDepth) ((BaseLine / MedianDepth) > PANTO_BASELINE_THRESHOLD)
 #define PANTO_FEATURE_TRACK_NOT_OBSERVED -1
 #define PANTO_INIT_MIN_NUM_FRAMES 10
+constexpr const char* PANTO_COLMAP_PATH = "./colmap";
+constexpr const char* PANTO_COLMAP_PYTHON_SCRIPT_PATH = "./colmap/vis_colmap.py";
+constexpr const char* PANTO_PATH_TO_PYTHON_INTERPRETER = "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/.venv/bin/python";
+#define CONFIG_PRINT_LOGS_TO_STDOUT false
+
+constexpr fp64 PANTO_MINIMUMPARALLAX = 1.0 * M_PI / 180.0;
+
+inline const fp64 PANTO_MAXIMUMCOSPARALLAX = std::cos(PANTO_MINIMUMPARALLAX);
+
 
 using PantoClock = std::chrono::steady_clock;
 

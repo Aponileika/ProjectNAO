@@ -72,6 +72,7 @@ typedef struct
     DBoW3::FeatureVector FeatureVector;
     u64 ID;
     fp64 TimeStamp;
+    std::string ImagePath;
 }typeInitFrame;
 
 typedef struct

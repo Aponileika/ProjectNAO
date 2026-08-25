@@ -66,9 +66,8 @@ void CM_SetParametrization(typeCamera& Camera)
     Camera.Parameters.t = -Camera.Pose.R.transpose() * Camera.Pose.t;
 }
 
-typeCamera CM_CreateCam(Eigen::Matrix3d R, Eigen::Vector3d t, i32 idx, fp64 TimeStamp)
+typeCamera CM_CreateCam(Eigen::Matrix3d R, Eigen::Vector3d t, fp64 TimeStamp)
 {
-    std::string image_name = "frame" + std::to_string(idx) + ".png";
     typePoseParameters Param = {};
     typeCameraPose Pose = {
         R,
@@ -79,7 +78,6 @@ typeCamera CM_CreateCam(Eigen::Matrix3d R, Eigen::Vector3d t, i32 idx, fp64 Time
         CM_GetIntrinsics(),
         Pose,
         Param,
-        image_name,
         TimeStamp
     };
     CM_SetParametrization(Camera);
@@ -129,7 +127,6 @@ typeCamera CM_PredictPose(const typeCameraPose& TPreviousFrame, const typeCamera
         .Intrinsics = Intrinsics,
         .Pose = TPrediction,
         .Parameters = {},
-        .image_name = "",
         .TimeStamp = PANTO_TIMESTAMP_NOT_SET
 
     };

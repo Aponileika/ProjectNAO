@@ -89,7 +89,10 @@ void LG_Log(LogSeverity severity, const char* fmt, ...)
     if((i32)severity > 3)return;
     fprintf(glogger.fp, "%s \n", Severity_str[(i32)severity]);
     std::vfprintf(glogger.fp, fmt, args);
-    std::vprintf(fmt, args_copy);
+    if(CONFIG_PRINT_LOGS_TO_STDOUT == true)
+    {
+        std::vprintf(fmt, args_copy);
+    }
 
     va_end(args_copy);
     va_end(args);

@@ -11,6 +11,7 @@ typedef struct
 {
     cv::Mat Frame;
     fp64 TimeStamp;
+    std::string Path;
 }typePantoFrame;
 
 int FR_InitFrameGetter();

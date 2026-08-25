@@ -21,7 +21,8 @@ void INIT_CreateInitData(void)
     INITPriv_AppendFrame(
         Descriptors.Points,
         Descriptors.Descriptors,
-        FirstFrame.TimeStamp);
+        FirstFrame.TimeStamp,
+        FirstFrame.Path);
 
     LG_Log(LogSeverity::DBG, "[INIT_CreateInitData] Initialization data created\n");
 }
@@ -41,7 +42,8 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
     INITPriv_AppendFrame(
         Descriptors.Points,
         Descriptors.Descriptors,
-        Frame.TimeStamp);
+        Frame.TimeStamp,
+        Frame.Path);
 
     LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Matching historical frames\n");
     INITPriv_MatchHistoricalFrames();
@@ -215,7 +217,10 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
                 .Descriptor = Descriptor,
                 .KeyFrameIDs = KeyFrameIDs,
                 .ImagePointIDs = ImagePointIDs,
-                .ID = static_cast<u64>(i)
+                .ID = static_cast<u64>(i),
+                .NumVisible = 1,
+                .NumFound = 1,
+                .FirstKFKID = KeyFrameIDs[1]
             });
 
         ImagePoints[0].ImagePoints[ImagePointIDs[0]].MapPointID = static_cast<u64>(i);
@@ -224,11 +229,11 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
 
     Eigen::Matrix3d FirstR = Eigen::Matrix3d::Identity();
     Eigen::Vector3d Firstt(0, 0, 0);
-    typeCamera FirstCamera = CM_CreateCam(FirstR, Firstt, 0, InitData.InitFrames[FirstFrameID].TimeStamp);
+    typeCamera FirstCamera = CM_CreateCam(FirstR, Firstt, InitData.InitFrames[FirstFrameID].TimeStamp);
 
     Eigen::Matrix3d SecondR = Reconstruction.R;
     Eigen::Vector3d Secondt = Reconstruction.t;
-    typeCamera SecondCamera = CM_CreateCam(SecondR, Secondt, 1, InitData.InitFrames[SecondFrameID].TimeStamp);
+    typeCamera SecondCamera = CM_CreateCam(SecondR, Secondt, InitData.InitFrames[SecondFrameID].TimeStamp);
 
     std::vector<typeKeyFrame> KeyFrames;
     KeyFrames.push_back(
@@ -237,7 +242,8 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
             .BowVector = InitData.InitFrames[FirstFrameID].BoWVector,
             .FeatureVector = InitData.InitFrames[FirstFrameID].FeatureVector,
             .Pose = FirstCamera,
-            .ID = 0
+            .ID = 0,
+            .ImagePath = InitData.InitFrames[FirstFrameID].ImagePath
         });
 
     KeyFrames.push_back(
@@ -246,7 +252,8 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
             .BowVector = InitData.InitFrames[SecondFrameID].BoWVector,
             .FeatureVector = InitData.InitFrames[SecondFrameID].FeatureVector,
             .Pose = SecondCamera,
-            .ID = 1
+            .ID = 1,
+            .ImagePath = InitData.InitFrames[SecondFrameID].ImagePath
         });
 
     return {.KeyFrames = KeyFrames, .MapPoints = InitialMapPoints};
@@ -662,7 +669,7 @@ typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFram
 }
 
 void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points, 
-        const cv::Mat& Descriptors, const fp64 TimeStamp)
+        const cv::Mat& Descriptors, const fp64 TimeStamp, const std::string& ImagePath)
 {
     std::vector<typeInitFrame>& InitFrames = InitData.InitFrames;
 
@@ -700,6 +707,7 @@ void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points,
         });
     }
 
+    InitFrame.ImagePath = ImagePath;
     InitFrame.ID = static_cast<u64>(InitFrames.size());
     InitFrame.TimeStamp = TimeStamp;
     InitFrames.push_back(InitFrame);

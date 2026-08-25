@@ -13,50 +13,141 @@ from viser.extras.colmap import (
 )
 
 
-def main(root: str):
-    root = Path(root)
+def read_latest_snapshot(root: Path):
+    latest_path = root / "sparse" / "latest.txt"
 
-    sparse_path = root / "sparse" / "0"
-    images_path = root / "images"
-    print(f"sparse path = {sparse_path}");
-    print(f"images path = {images_path}");
+    if not latest_path.exists():
+        return None
 
+    try:
+        return int(latest_path.read_text().strip())
+    except (ValueError, OSError):
+        return None
+
+
+def load_snapshot(root: Path, snapshot_id: int):
+    sparse_path = root / "sparse" / "snapshots" / str(snapshot_id)
+
+    print("[VISER] Reading cameras.bin")
     cameras = read_cameras_binary(sparse_path / "cameras.bin")
+    print(f"[VISER] cameras.bin OK: {len(cameras)} cameras")
+
+    print("[VISER] Reading images.bin")
     images = read_images_binary(sparse_path / "images.bin")
+    print(f"[VISER] images.bin OK: {len(images)} images")
+
+    print("[VISER] Reading points3D.bin")
     points3d = read_points3d_binary(sparse_path / "points3D.bin")
+    print(f"[VISER] points3D.bin OK: {len(points3d)} points")
 
-    server = viser.ViserServer()
+    return cameras, images, points3d
 
-    # -------------------------
-    # Sparse point cloud
-    # -------------------------
-    points = np.array([p.xyz for p in points3d.values()])
-    colors = np.array([p.rgb for p in points3d.values()])
 
-    server.scene.add_point_cloud(
-        name="/colmap/points",
-        points=points,
-        colors=colors,
-        point_size=0.02,
+def initialize_view_from_first_camera(
+    server,
+    images,
+    handles,
+):
+    if handles["camera_initialized"]:
+        return
+
+    if len(images) == 0:
+        return
+
+    first_img_id = min(images.keys())
+    first_img = images[first_img_id]
+
+    T_world_camera = vtf.SE3.from_rotation_and_translation(
+        vtf.SO3(first_img.qvec),
+        first_img.tvec,
+    ).inverse()
+
+    camera_position = np.array(
+        T_world_camera.translation(),
+        dtype=np.float64,
     )
 
-    # -------------------------
-    # Cameras / frustums
-    # -------------------------
+    Rwc = T_world_camera.rotation().as_matrix()
+
+    camera_forward = Rwc @ np.array(
+        [0.0, 0.0, 1.0],
+        dtype=np.float64,
+    )
+
+    camera_up = Rwc @ np.array(
+        [0.0, -1.0, 0.0],
+        dtype=np.float64,
+    )
+
+    viewer_position = (
+        camera_position
+        - 2.0 * camera_forward
+        + 0.5 * camera_up
+    )
+
+    viewer_look_at = (
+        camera_position
+        + 2.0 * camera_forward
+    )
+
+    server.initial_camera.position = tuple(viewer_position)
+    server.initial_camera.look_at = tuple(viewer_look_at)
+
+    for client in server.get_clients().values():
+        client.camera.position = viewer_position
+        client.camera.look_at = viewer_look_at
+
+    handles["camera_initialized"] = True
+
+
+def update_visualization(
+    server,
+    root: Path,
+    cameras,
+    images,
+    points3d,
+    gui_point_size,
+    handles,
+):
+    images_path = root / "images"
+
+    server.scene.reset()
+
+    handles["point_cloud"] = None
+
+    if len(points3d) > 0:
+        points = np.array(
+            [p.xyz for p in points3d.values()],
+            dtype=np.float32,
+        )
+
+        colors = np.array(
+            [p.rgb for p in points3d.values()],
+            dtype=np.uint8,
+        )
+
+        handles["point_cloud"] = server.scene.add_point_cloud(
+            name="/colmap/points",
+            points=points,
+            colors=colors,
+            point_size=gui_point_size.value,
+        )
+
+    initialize_view_from_first_camera(
+        server,
+        images,
+        handles,
+    )
+
     for img_id, img in images.items():
         cam = cameras[img.camera_id]
 
-        # COLMAP stores world-to-camera:
-        #   x_cam = R * x_world + t
-        #
-        # For visualization we usually want camera-to-world,
-        # so invert it.
         T_world_camera = vtf.SE3.from_rotation_and_translation(
-            vtf.SO3(img.qvec),   # qvec is [qw, qx, qy, qz]
+            vtf.SO3(img.qvec),
             img.tvec,
         ).inverse()
 
-        frame = server.scene.add_frame(
+        server.scene.add_frame(
             f"/colmap/frame_{img_id}",
             wxyz=T_world_camera.rotation().wxyz,
             position=T_world_camera.translation(),
@@ -67,14 +158,15 @@ def main(root: str):
         image_file = images_path / img.name
 
         image = None
-        if image_file.exists():
+
+        if image_file.is_file():
             image = iio.imread(image_file)
 
-        # Viser example assumes PINHOLE:
-        # cam.params = (fx, fy, cx, cy)
         if cam.model == "PINHOLE":
             fx, fy, cx, cy = cam.params
-            H, W = cam.height, cam.width
+
+            H = cam.height
+            W = cam.width
 
             server.scene.add_camera_frustum(
                 f"/colmap/frame_{img_id}/frustum",
@@ -84,19 +176,96 @@ def main(root: str):
                 image=image,
             )
         else:
-            print(f"Skipping frustum for image {img_id}: camera model is {cam.model}")
+            print(
+                f"[VISER] Skipping frustum for image {img_id}: "
+                f"camera model is {cam.model}"
+            )
 
+
+def main(root: str):
+    root = Path(root)
+
+    print(f"root path = {root.resolve()}")
+    print(f"images path = {(root / 'images').resolve()}")
+    print(
+        f"snapshot path = "
+        f"{(root / 'sparse' / 'snapshots').resolve()}"
+    )
+
+    server = viser.ViserServer()
+
+    gui_point_size = server.gui.add_slider(
+        "Point size",
+        min=0.001,
+        max=0.1,
+        step=0.001,
+        initial_value=0.02,
+    )
+
+    handles = {
+        "point_cloud": None,
+        "camera_initialized": False,
+    }
+
+    @gui_point_size.on_update
+    def _(_):
+        if handles["point_cloud"] is not None:
+            handles["point_cloud"].point_size = gui_point_size.value
+
+    last_snapshot_id = None
+
+    print("Waiting for SLAM snapshots...")
     print("Open the viser URL shown above in your browser.")
 
     while True:
-        time.sleep(1.0)
+        snapshot_id = read_latest_snapshot(root)
+
+        if snapshot_id is not None and snapshot_id != last_snapshot_id:
+            try:
+                print(f"[VISER] Loading snapshot {snapshot_id}")
+
+                cameras, images, points3d = load_snapshot(
+                    root,
+                    snapshot_id,
+                )
+
+                update_visualization(
+                    server,
+                    root,
+                    cameras,
+                    images,
+                    points3d,
+                    gui_point_size,
+                    handles,
+                )
+
+                last_snapshot_id = snapshot_id
+
+                print(
+                    f"[VISER] Snapshot {snapshot_id}: "
+                    f"{len(images)} cameras, "
+                    f"{len(points3d)} points"
+                )
+
+            except Exception as Error:
+                print(
+                    f"[VISER] Failed to load snapshot "
+                    f"{snapshot_id}: {Error}"
+                )
+
+        time.sleep(0.1)
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("root", help="Path to COLMAP root folder containing images/ and sparse/0/")
+
+    parser.add_argument(
+        "root",
+        help="Path to COLMAP root folder",
+    )
+
     args = parser.parse_args()
 
     main(args.root)

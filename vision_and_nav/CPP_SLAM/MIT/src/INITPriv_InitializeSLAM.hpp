@@ -881,6 +881,6 @@ std::vector<u64> INITPriv_GetCandidateFrameIDs(std::vector<u64> StationaryTrackI
 typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFrame, const typeInitFrame& NewFrame, const std::vector<u64>& StationaryTrackIDs);
 typePantoKeypointFrame INITPriv_GetKeyPointFrame(u64 InitFrameID);
 void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points, 
-        const cv::Mat& Descriptors, const fp64 TimeStamp);
+        const cv::Mat& Descriptors, const fp64 TimeStamp, const std::string& ImagePath);
 
 #endif //  INITPRIV_INITIALIZESLAM_HPP_

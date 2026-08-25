@@ -18,12 +18,13 @@
 #include "../include/PANTO_Utils.hpp"
 #include "../include/CM_Camera.hpp"
 #include "../include/OP_BA.hpp"
-// #include "../include/VIZ_Visualization.hpp"
+#include "../include/VIZ_Visualization.hpp"
 #include "../include/PROJ_ProjectiveUtils.hpp"
 #include "../include/PANTO_Utils.hpp"
 #include "../include/DBOW3_DeepBagofWords.hpp"
 #include "../include/Config.hpp"
 #include "../include/INIT_InitializeSLAM.hpp"
+#include "../include/PANTOVEC_PantoVector.hpp"
 
 #include "LG_Logging.cpp"
 #include "CArenaAlloc.c"
@@ -41,6 +42,7 @@
 #include "DBOW3_DeepBagofWords.cpp"
 #include "INIT_InitializeSLAM.cpp"
 #include "GRAPH_PantoGraph.cpp"
+#include "VIZ_Visualization.cpp"
 
 int main(int argc, char* argv[])
 {
@@ -57,6 +59,8 @@ int main(int argc, char* argv[])
     LG_Log(LogSeverity::DBG, "Setting intrinsics\n");
     LG_Log(LogSeverity::DBG, "[main] OpenCV is using %lld threads \n", cv::getNumThreads());
     CM_SetIntrinsics();
+    LG_Log(LogSeverity::DBG, "Initializing visualization\n");
+    VIZ_InitVisualization();
     LG_Log(LogSeverity::DBG, "Starting SLAMLoop\n");
     SL_PantoSLAM(num_loops);
     return 0;

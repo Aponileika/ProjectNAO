@@ -1,0 +1,13 @@
+#ifndef VIZPRIV_VISUALIZATION_HPP_
+#define VIZPRIV_VISUALIZATION_HPP_
+#include "VIZ_Visualization.hpp"
+#include "KEY_KeyFrame.hpp"
+#include "MAP_Mapping.hpp"
+
+void VIZPriv_WriteCameras(const std::vector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath);
+void VIZPriv_WriteImages(const std::vector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath);
+void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& SnapshotPath);
+void VIZPriv_PublishSnapshot(const u64& SnapshotID);
+void VIZPriv_LoadKeyFrameImages(const std::vector<typeKeyFrame>& KeyFrames);
+
+#endif //  VIZPRIV_VISUALIZATION_HPP_

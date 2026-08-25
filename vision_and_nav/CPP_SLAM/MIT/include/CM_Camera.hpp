@@ -38,14 +38,13 @@ typedef struct
     typeCameraIntrinsics* Intrinsics;
     typeCameraPose Pose;
     typePoseParameters Parameters;
-    std::string image_name;
     fp64 TimeStamp;
 }typeCamera;
 
 
 void CM_SetIntrinsics();
 typeCameraIntrinsics* CM_GetIntrinsics();
-typeCamera CM_CreateCam(Eigen::Matrix3d R, Eigen::Vector3d t, i32 idx, fp64 TimeStamp);
+typeCamera CM_CreateCam(Eigen::Matrix3d R, Eigen::Vector3d t, fp64 TimeStamp);
 void CM_SetParametrization(typeCamera* cam);
 void CM_SetRtfromParam(typeCamera* cam);
 Eigen::Vector3d CM_GetCameraCenter(const typeCamera& Camera);

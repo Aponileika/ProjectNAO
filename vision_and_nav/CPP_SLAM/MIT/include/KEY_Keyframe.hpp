@@ -16,6 +16,8 @@
 #include <CM_Camera.hpp>
 #include <queue>
 #include <cmath>
+#include <limits>
+#include <algorithm>
 
 typedef struct
 {
@@ -35,12 +37,14 @@ typedef struct
     DBoW3::FeatureVector FeatureVector;
     typeCamera Pose;
     u64 ID;
+    std::string ImagePath;
 }typeKeyFrame;
 
 typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints);
 typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints);
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information);
-void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints, const u64& ID, const DBoW3::Vocabulary* Vocabulary);
+void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints, 
+        const std::vector<typeKeyFrame>& GlobalKeyFrames, const u64& ID, const DBoW3::Vocabulary* Vocabulary);
 void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints);
 void KEY_NonValidKeyFrame(void);
 fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints);

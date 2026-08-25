@@ -1,199 +1,432 @@
 #include "VIZ_Visualization.hpp"
-#include "LG_Logging.hpp"
-#include "OB_Observations.hpp"
-#include "PROJ_ProjectiveUtils.hpp"
-#include "VW_Views.hpp"
+#include "VIZPriv_Visualization.hpp"
 
-void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp);
-void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, struct ViewSet vs, FILE *fp);
-void __VIZ_WriteImagesColmap(struct ObservationSet os, struct ViewSet vs, FILE *fp);
+static std::vector<cv::Mat> VIZPriv_KeyFrameImages;
 
-void VIZ_WriteColmap(struct ObservationSet os, struct PointSet ps,
-                     struct ViewSet vs, std::string path) 
+static pid_t VIZPriv_ViewerPID = -1;
+
+void VIZ_InitVisualization(void)
 {
-    const std::string cam_path = path + "cameras.bin";
-    const std::string image_path = path + "images.bin";
-    const std::string point_path = path + "points3D.bin";
-    FILE *fp_point = fopen(point_path.c_str(), "wb+");
-    if (fp_point == NULL) 
-    {
-        perror("Failed to open file");
-        LG_Log(LogSeverity::DBG, "[ERROR] Failed to open file %s\n", point_path.c_str());
-        return;
-    }
-    __VIZ_WritePointsColmap(os, ps, vs, fp_point);
-    fclose(fp_point);
+    VIZPriv_KeyFrameImages.clear();
 
-    FILE *fp_cam = fopen(cam_path.c_str(), "wb+");
-    if (fp_cam == NULL) 
-    {
-        perror("Failed to open file");
-        LG_Log(LogSeverity::DBG, "[ERROR] Failed to open file %s\n", cam_path.c_str());
-        return;
-    }
-    __VIZ_WriteCamerasColmap(vs, fp_cam);
-    fclose(fp_cam);
+    const std::string SparsePath =
+        std::string(PANTO_COLMAP_PATH) + "/sparse";
 
-    FILE *fp_image = fopen(image_path.c_str(), "wb+");
-    if (fp_image == NULL) 
+    const std::string SnapshotPath =
+        SparsePath + "/snapshots";
+
+    const std::string LatestPath =
+        SparsePath + "/latest.txt";
+
+    const std::string TemporaryLatestPath =
+        SparsePath + "/latest.txt.tmp";
+
+    if(std::filesystem::exists(SnapshotPath))
     {
-        perror("Failed to open file");
-        LG_Log(LogSeverity::DBG, "[ERROR] Failed to open file %s\n", image_path.c_str());
-        return;
+        std::filesystem::remove_all(SnapshotPath);
     }
-    __VIZ_WriteImagesColmap(os, vs, fp_image);
-    fclose(fp_image);
+
+    if(std::filesystem::exists(LatestPath))
+    {
+        std::filesystem::remove(LatestPath);
+    }
+
+    if(std::filesystem::exists(TemporaryLatestPath))
+    {
+        std::filesystem::remove(TemporaryLatestPath);
+    }
+
+    std::filesystem::create_directories(SnapshotPath);
+
+    const pid_t PID = fork();
+
+
+    if(PID < 0)
+    {
+        LG_Log(LogSeverity::ERROR, "[VIZ_StartViewer] Failed to fork viewer process\n");
+        std::exit(1);
+    }
+
+    if(PID == 0)
+    {
+        execl(
+                PANTO_PATH_TO_PYTHON_INTERPRETER,
+                PANTO_PATH_TO_PYTHON_INTERPRETER,
+                PANTO_COLMAP_PYTHON_SCRIPT_PATH,
+                PANTO_COLMAP_PATH,
+                static_cast<char*>(nullptr));
+
+        _exit(1);
+    }
+
+    VIZPriv_ViewerPID = PID;
+    std::atexit(VIZ_DestroyVisualization);
+
+    LG_Log(LogSeverity::DBG, "[VIZ_StartViewer] Started viewer process PID = %d\n",
+            static_cast<i32>(PID));
 }
 
-u64 w, h;
-
-void __VIZ_WriteCamerasColmap(struct ViewSet vs, FILE *fp) 
+void VIZ_DestroyVisualization(void)
 {
-    LG_Log(LogSeverity::DBG, "[__VIZ_WriteCamerasColmap] Writing cameras colmap\n");
-    const u64 num_cameras = static_cast<u64>(vs.views.size());
-    LG_Log(LogSeverity::DBG, "[__VIZ_WriteCamerasColmap] num cameras = %llu\n", num_cameras);
-    fwrite(&num_cameras, sizeof(u64), 1, fp);
-
-    const u64 wh[2] = {w, h};
-    CameraIntrinsics *ci = vs.views[0].intrinsics;
-    const fp64 params[4] = {ci->K(0, 0), ci->K(1, 1), ci->K(0, 2), ci->K(1, 2)};
-    for (u64 i = 0; i < num_cameras; i++) 
+    if(VIZPriv_ViewerPID <= 0)
     {
-        const i32 j = static_cast<i32>(i);
-        fwrite(&j, sizeof(i32), 1, fp);
-
-        const i32 model_id = PANTO_CAMERA_MODEL_ID;
-        fwrite(&model_id, sizeof(i32), 1, fp);
-        fwrite(wh, sizeof(u64), 2, fp);
-        fwrite(params, sizeof(fp64), 4, fp);
+        return;
     }
+
+    kill(VIZPriv_ViewerPID, SIGTERM);
+
+    waitpid(
+            VIZPriv_ViewerPID,
+            nullptr,
+            0);
+
+    LG_Log(LogSeverity::DBG,
+            "[VIZ_DestroyVisualization] Stopped viewer process PID = %d\n",
+            static_cast<i32>(VIZPriv_ViewerPID));
+
+    VIZPriv_ViewerPID = -1;
 }
 
-void __VIZ_WritePointsColmap(struct ObservationSet os, struct PointSet ps, struct ViewSet vs, FILE *fp) 
+void VIZ_WriteColmap(const typeGlobalMap& GlobalMap)
 {
-    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] Writing points colmap\n");
-    // dont care
-    const fp64 error = 0.0f;
-    u8 RGB[3] = {0, 0, 0};
+    static u64 SnapshotID = 0;
 
-    const u64 num_points = static_cast<u64>(ps.points.size());
-    fwrite(&num_points, sizeof(u64), 1, fp);
-    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] num points colmap = %llu\n", num_points);
-    const size_t num_imgs = vs.views.size();
-    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] Getting RGB images\n");
-    std::vector<cv::Mat> imgs;
-    imgs.resize(num_imgs);
-    for(size_t i = 0; i < num_imgs; i++)
+    const std::string SnapshotPath =
+        std::string(PANTO_COLMAP_PATH) + "/sparse/snapshots/" + std::to_string(SnapshotID);
+
+    std::filesystem::create_directories(SnapshotPath);
+
+    VIZPriv_LoadKeyFrameImages(GlobalMap.KeyFrames);
+
+    VIZPriv_WriteCameras(GlobalMap.KeyFrames, SnapshotPath);
+    VIZPriv_WriteImages(GlobalMap.KeyFrames, SnapshotPath);
+    VIZPriv_WritePoints(GlobalMap, SnapshotPath);
+
+    LG_Log(LogSeverity::DBG,
+        "[VIZ_WriteColmap] Publishing snapshot %llu from path %s\n",
+        static_cast<unsigned long long>(SnapshotID),
+        SnapshotPath.c_str());
+
+    VIZPriv_PublishSnapshot(SnapshotID);
+
+    SnapshotID++;
+}
+
+void VIZPriv_WriteCameras(const std::vector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
+{
+    const std::string CameraPath = SnapshotPath + "/cameras.bin";
+
+    FILE* fp = fopen(CameraPath.c_str(), "wb");
+
+    if(fp == nullptr)
     {
-        std::string path = "./colmap/images/frame" + std::to_string(i) + ".png";
-        LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] Getting RGB image %s\n", path.c_str());
-        LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] Getting RGB image index %d\n", i);
-        imgs[i] = cv::imread(path, cv::IMREAD_COLOR_RGB);
+        LG_Log(LogSeverity::DBG,
+                "[VIZPriv_WriteCameras] Failed to open %s\n",
+                CameraPath.c_str());
+        return;
     }
-    w = imgs[0].cols;
-    h = imgs[0].rows;
-    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] RGB images have (w, h) = (%lld, %lld)\n", w, h);
-    LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] got all RGB images\n");
-    for (u64 i = 0; i < num_points; i++) 
-    {
-        fwrite(&i, sizeof(u64), 1, fp);
 
-        Eigen::Vector3d point_cart = PROJ_Homog2Cart(ps.points[i]);
-        fwrite(point_cart.data(), sizeof(fp64), 3, fp);
-        const size_t num_obs = ps.observations_indexes[i].size();
-        fp64 R = 0.0f;
-        fp64 G = 0.0f;
-        fp64 B = 0.0f;
-        for(size_t j = 0; j < num_obs; j++)
+    const u64 NumCameras = static_cast<u64>(KeyFrames.size());
+
+    fwrite(&NumCameras, sizeof(u64), 1, fp);
+
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        const i32 CameraID = static_cast<i32>(KeyFrame.ID + 1);
+
+        const i32 ModelID = PANTO_CAMERA_MODEL_ID;
+
+        const typeCameraIntrinsics* Intrinsics =
+            KeyFrame.Pose.Intrinsics;
+
+        assert(Intrinsics != nullptr);
+
+        const u64 Width = PANTO_IMAGE_WIDTH;
+        const u64 Height = PANTO_IMAGE_HEIGHT;
+
+        const fp64 Parameters[4] =
         {
-            cv::Mat img_rgb = imgs[os.view_indexes[ps.observations_indexes[i][j]]];
-            cv::Point2d obs = os.observations[ps.observations_indexes[i][j]];
-            i64 x = static_cast<i64>(floor(obs.x));
-            i64 y = static_cast<i64>(floor(obs.y));
-            //LG_Log(LogSeverity::DBG, "[__VIZ_WritePointsColmap] getting pixel (y, x) = (%lld, %lld)\n", y, x);
-            cv::Vec3b rgb = img_rgb.at<cv::Vec3b>(y, x);
-            R += static_cast<fp64>(rgb[0]);
-            G += static_cast<fp64>(rgb[1]);
-            B += static_cast<fp64>(rgb[2]);
-        }
-        R /= num_obs;
-        G /= num_obs;
-        B /= num_obs;
+            Intrinsics->K(0, 0),
+            Intrinsics->K(1, 1),
+            Intrinsics->K(0, 2),
+            Intrinsics->K(1, 2)
+        };
 
-        RGB[0] = static_cast<u8>(R);
-        RGB[1] = static_cast<u8>(G);
-        RGB[2] = static_cast<u8>(B);
+        fwrite(&CameraID, sizeof(i32), 1, fp);
+        fwrite(&ModelID, sizeof(i32), 1, fp);
+        fwrite(&Width, sizeof(u64), 1, fp);
+        fwrite(&Height, sizeof(u64), 1, fp);
+        fwrite(Parameters, sizeof(fp64), 4, fp);
+    }
+
+    fclose(fp);
+
+    LG_Log(LogSeverity::DBG,
+            "[VIZPriv_WriteCameras] Wrote %llu cameras to %s\n",
+            static_cast<unsigned long long>(NumCameras),
+            CameraPath.c_str());
+}
+
+void VIZPriv_WriteImages(const std::vector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
+{
+    const std::string ImagePath = SnapshotPath + "/images.bin";
+    static_assert(sizeof(u64) == 8);
+    static_assert(sizeof(fp64) == 8);
+
+    FILE* fp = fopen(ImagePath.c_str(), "wb");
+
+    if(fp == nullptr)
+    {
+        LG_Log(LogSeverity::DBG,
+                "[VIZPriv_WriteImages] Failed to open %s\n",
+                ImagePath.c_str());
+        return;
+    }
+
+    const u64 NumImages = static_cast<u64>(KeyFrames.size());
+
+    fwrite(&NumImages, sizeof(u64), 1, fp);
+
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        const i32 ImageID = static_cast<i32>(KeyFrame.ID + 1);
+        const i32 CameraID = static_cast<i32>(KeyFrame.ID + 1);
+
+        fwrite(&ImageID, sizeof(i32), 1, fp);
+
+        const Eigen::Matrix3d& Rcw = KeyFrame.Pose.Pose.R;
+        const Eigen::Vector3d& tcw = KeyFrame.Pose.Pose.t;
+
+        Eigen::Quaterniond Quaternion(Rcw);
+        Quaternion.normalize();
+
+        const fp64 COLMAPQuaternion[4] =
+        {
+            Quaternion.w(),
+            Quaternion.x(),
+            Quaternion.y(),
+            Quaternion.z()
+        };
+
+        fwrite(COLMAPQuaternion, sizeof(fp64), 4, fp);
+        fwrite(tcw.data(), sizeof(fp64), 3, fp);
+
+        fwrite(&CameraID, sizeof(i32), 1, fp);
+
+        const std::filesystem::path ImagePath(KeyFrame.ImagePath);
+        const std::string ImageName = ImagePath.filename().string();
+
+        fwrite(ImageName.c_str(), sizeof(char), ImageName.size() + 1, fp);
+
+        const u64 NumImagePoints =
+            static_cast<u64>(KeyFrame.Points.ImagePoints.size());
+
+        fwrite(&NumImagePoints, sizeof(u64), 1, fp);
+
+        LG_Log(LogSeverity::DBG,
+        "[VIZPriv_WriteImages] ImageID = %d, CameraID = %d, Name = '%s', NumPoints2D = %llu\n",
+        ImageID,
+        CameraID,
+        ImageName.c_str(),
+        static_cast<unsigned long long>(NumImagePoints));
+
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const fp64 Point2D[2] =
+            {
+                ImagePoint.Point.x(),
+                ImagePoint.Point.y()
+            };
+
+            fwrite(Point2D, sizeof(fp64), 2, fp);
+
+            i64 Point3DID = -1;
+
+            if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
+            {
+                Point3DID = static_cast<i64>(ImagePoint.MapPointID + 1);
+            }
+
+            fwrite(&Point3DID, sizeof(i64), 1, fp);
+        }
+    }
+
+    fclose(fp);
+
+    LG_Log(LogSeverity::DBG,
+            "[VIZPriv_WriteImages] Wrote %llu images to %s\n",
+            static_cast<unsigned long long>(NumImages),
+            ImagePath.c_str());
+}
+
+void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap,  const std::string& SnapshotPath)
+{
+    const std::string PointPath = SnapshotPath + "/points3D.bin";
+
+    FILE* fp = fopen(PointPath.c_str(), "wb");
+
+    if(fp == nullptr)
+    {
+        LG_Log(LogSeverity::DBG,
+                "[VIZPriv_WritePoints] Failed to open %s\n",
+                PointPath.c_str());
+        return;
+    }
+
+    const u64 NumPoints =
+        static_cast<u64>(GlobalMap.MapPoints.size());
+
+    fwrite(&NumPoints, sizeof(u64), 1, fp);
+
+    for(const typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
+    {
+        const u64 Point3DID = MapPoint.ID + 1;
+
+        fwrite(&Point3DID, sizeof(u64), 1, fp);
+
+        const Eigen::Vector3d Point =
+            PROJ_Homog2Cart(MapPoint.Point);
+
+        fwrite(Point.data(), sizeof(fp64), 3, fp);
+
+        u8 RGB[3] =
+        {
+            255,
+            255,
+            255
+        };
+
+        assert(MapPoint.KeyFrameIDs.size() ==
+                MapPoint.ImagePointIDs.size());
+
+        if(!MapPoint.KeyFrameIDs.empty())
+        {
+            const u64 KeyFrameID =
+                MapPoint.KeyFrameIDs.front();
+
+            const u64 ImagePointID =
+                MapPoint.ImagePointIDs.front();
+
+            if(KeyFrameID < GlobalMap.KeyFrames.size() &&
+               KeyFrameID < VIZPriv_KeyFrameImages.size())
+            {
+                const typeKeyFrame& KeyFrame =
+                    GlobalMap.KeyFrames[KeyFrameID];
+
+                const cv::Mat& Image =
+                    VIZPriv_KeyFrameImages[KeyFrameID];
+
+                if(ImagePointID < KeyFrame.Points.ImagePoints.size() &&
+                   !Image.empty())
+                {
+                    const typePantoImagePoint& ImagePoint =
+                        KeyFrame.Points.ImagePoints[ImagePointID];
+
+                    const i32 X =
+                        static_cast<i32>(std::round(ImagePoint.Point.x()));
+
+                    const i32 Y =
+                        static_cast<i32>(std::round(ImagePoint.Point.y()));
+
+                    if(X >= 0 &&
+                       Y >= 0 &&
+                       X < Image.cols &&
+                       Y < Image.rows)
+                    {
+                        const cv::Vec3b BGR =
+                            Image.at<cv::Vec3b>(Y, X);
+
+                        RGB[0] = BGR[2];
+                        RGB[1] = BGR[1];
+                        RGB[2] = BGR[0];
+                    }
+                }
+            }
+        }
+
         fwrite(RGB, sizeof(u8), 3, fp);
 
-        const auto &obs_idx = ps.observations_indexes[i];
-        u64 track = static_cast<u64>(num_obs);
+        const fp64 Error = 0.0;
 
-        fwrite(&error, sizeof(fp64), 1, fp);
-        fwrite(&track, sizeof(u64), 1, fp);
-        for (size_t j = 0; j < num_obs; j++) 
+        fwrite(&Error, sizeof(fp64), 1, fp);
+
+        const u64 TrackLength =
+            static_cast<u64>(MapPoint.KeyFrameIDs.size());
+
+        fwrite(&TrackLength, sizeof(u64), 1, fp);
+
+        for(u64 i{}; i < TrackLength; i++)
         {
-            const i32 point_2d_idx = obs_idx[j];
-            const i32 image_id = static_cast<i32>(os.view_indexes[point_2d_idx]);
-            fwrite(&image_id, sizeof(i32), 1, fp);
-            fwrite(&point_2d_idx, sizeof(i32), 1, fp);
+            const i32 ImageID =
+                static_cast<i32>(MapPoint.KeyFrameIDs[i] + 1);
+
+            const i32 Point2DIdx =
+                static_cast<i32>(MapPoint.ImagePointIDs[i]);
+
+            fwrite(&ImageID, sizeof(i32), 1, fp);
+            fwrite(&Point2DIdx, sizeof(i32), 1, fp);
         }
     }
+
+    fclose(fp);
+
+    LG_Log(LogSeverity::DBG,
+            "[VIZPriv_WritePoints] Wrote %llu points to %s\n",
+            static_cast<unsigned long long>(NumPoints),
+            PointPath.c_str());
 }
 
-void __VIZ_WriteImagesColmap(struct ObservationSet os, struct ViewSet vs, FILE *fp) 
+void VIZPriv_PublishSnapshot(const u64& SnapshotID)
 {
-    LG_Log(LogSeverity::DBG, "[__VIZ_WriteImagesColmap] Writing images colmap\n");
-    u64 num_images = vs.views.size();
-    fwrite(&num_images, sizeof(u64), 1, fp);
-    LG_Log(LogSeverity::DBG, "[__VIZ_WriteImagesColmap] num images = %llu\n", num_images);
+    const std::string TemporaryPath =
+        std::string(PANTO_COLMAP_PATH) + "/sparse/latest.txt.tmp";
 
-    for (u64 i = 0; i < num_images; i++) 
+    const std::string LatestPath =
+        std::string(PANTO_COLMAP_PATH) + "/sparse/latest.txt";
+
+    FILE* fp = fopen(TemporaryPath.c_str(), "w");
+
+    if(fp == nullptr)
     {
-        const i32 image_id = static_cast<i32>(i);
-        fwrite(&image_id, sizeof(i32), 1, fp);
+        LG_Log(LogSeverity::DBG,
+                "[VIZPriv_PublishSnapshot] Failed to open temporary latest file\n");
+        return;
+    }
 
-        Param* params = vs.views[i].p;
+    fprintf(fp, "%llu\n",
+            static_cast<unsigned long long>(SnapshotID));
 
-        //colmap expects camera to world!
-        Eigen::Matrix3d R_wc = params->q.toRotationMatrix();
-        Eigen::Vector3d C_w  = params->t;
+    fclose(fp);
 
-        Eigen::Matrix3d R_cw = R_wc.transpose();
-        Eigen::Vector3d t_cw = -R_cw * C_w;
+    std::filesystem::rename(
+            TemporaryPath,
+            LatestPath);
+}
 
-        Eigen::Quaterniond q_cw(R_cw);
-        q_cw.normalize();
+void VIZPriv_LoadKeyFrameImages(const std::vector<typeKeyFrame>& KeyFrames)
+{
+    if(VIZPriv_KeyFrameImages.size() < KeyFrames.size())
+    {
+        VIZPriv_KeyFrameImages.resize(KeyFrames.size());
+    }
 
-        const fp64 quat[4] = {
-            q_cw.w(),
-            q_cw.x(),
-            q_cw.y(),
-            q_cw.z()
-        };
-        fwrite(quat, sizeof(fp64), 4, fp);
-        fwrite(t_cw.data(), sizeof(fp64), 3, fp);
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        assert(KeyFrame.ID < VIZPriv_KeyFrameImages.size());
 
-        // camera id, now same as image
-        fwrite(&image_id, sizeof(i32), 1, fp);
-        LG_Log(LogSeverity::DBG, "[__VIZ_WriteImagesColmap] image id = %d\n", image_id);
-
-        const std::string img_name = vs.views[i].image_name;
-        fwrite(img_name.c_str(), sizeof(char), img_name.size() + 1, fp);
-        LG_Log(LogSeverity::DBG, "[__VIZ_WriteImagesColmap] image name = %s\n", img_name.c_str());
-
-        const u64 num_2d_points = vs.observations_indexes[i].size();
-        fwrite(&num_2d_points, sizeof(fp64), 1, fp);
-
-        const auto &obs_idxs = vs.observations_indexes[i];
-        for (u64 j = 0; j < num_2d_points; j++) 
+        if(!VIZPriv_KeyFrameImages[KeyFrame.ID].empty())
         {
-            const u64 idx = obs_idxs[j];
-            const cv::Point2d p2d = os.observations[idx];
-            const fp64 p2d_raw[2] = {p2d.x, p2d.y};
-            fwrite(&p2d_raw, sizeof(fp64), 2, fp);
+            continue;
+        }
 
-            i64 id3D = os.point_indexes[idx];
-            fwrite(&id3D, sizeof(i64), 1, fp);
+        VIZPriv_KeyFrameImages[KeyFrame.ID] =
+            cv::imread(KeyFrame.ImagePath, cv::IMREAD_COLOR);
+
+        if(VIZPriv_KeyFrameImages[KeyFrame.ID].empty())
+        {
+            LG_Log(LogSeverity::DBG,
+                    "[VIZPriv_LoadKeyFrameImages] Failed to read %s\n",
+                    KeyFrame.ImagePath.c_str());
         }
     }
 }

@@ -211,7 +211,8 @@ void SL_PantoSLAM(i32 num_loops)
 
             PantoSLAM.AccumulatedDistance = 0.0f;
 
-            KEY_SetAsKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints, static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1, PantoSLAM.Vocabulary);
+            KEY_SetAsKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints, PantoSLAM.GlobalMap.KeyFrames,
+                    static_cast<u64>(PantoSLAM.GlobalMap.KeyFrames.size()) - 1, PantoSLAM.Vocabulary);
 
             GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints, PantoSLAM.GlobalMap.KeyFrames.size());
 
@@ -299,6 +300,11 @@ void SL_PantoSLAM(i32 num_loops)
                 LoopTime);
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Finished loop %d\n", i);
+
+        if((i % 5) == 0)
+        {
+            VIZ_WriteColmap(PantoSLAM.GlobalMap);
+        }
     }
 
     const PantoClock::time_point SLAMEndTime = PantoClock::now();
@@ -322,9 +328,11 @@ void SL_PantoSLAM(i32 num_loops)
 
     LG_Log(LogSeverity::DATA, "[SLAMTimingSummary] ========================================\n");
 
-    LG_Log(LogSeverity::DBG, "[SLAMLoop] Num tested / accepted keyframes %lf \n", NumTestedKeyFrames / NumAcceptedKeyFrames);
+    LG_Log(LogSeverity::DBG, "[SLAMLoop] Num accepted / tested keyframes %lf \n", NumAcceptedKeyFrames / NumTestedKeyFrames);
     LG_Log(LogSeverity::DBG, "[SLAMLoop] Num tested %lf \n", NumTestedKeyFrames);
     LG_Log(LogSeverity::DBG, "[SLAMLoop] Num accepted %lf \n", NumAcceptedKeyFrames);
+
+    VIZ_DestroyVisualization();
 }
 
 typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameData& PreviousFrameDataCopy, const typeKeyFrame& NewKeyFrame,

@@ -26,12 +26,6 @@ typePantoMapPoint PT_CreatePantoMapPoint(const Eigen::Vector4d& Point, const typ
     return MapPoint;
 }
 
-void PT_AddObservation(typePantoMapPoint& MapPoint, const u64 KeyFrameID, const u64 ImagePointID)
-{
-    // Calculate the descriptor with lowest median distance to all others as representative descriptor
-    return;
-}
-
 bool PT_IsInfront(const Eigen::Vector4d& Point, const typeCamera& Camera)
 {
     const Eigen::Matrix3d& R =Camera.Pose.R;

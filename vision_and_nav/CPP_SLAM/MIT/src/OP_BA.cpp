@@ -20,7 +20,7 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, typeLoca
     ceres::Problem Problem;
     ceres::Solver::Options options;
     options.max_num_iterations = CERES_MAX_ITER;
-    options.minimizer_progress_to_stdout = true;
+    options.minimizer_progress_to_stdout = false;
 
     options.num_threads = CERES_NUM_THREADS;
 
@@ -65,6 +65,7 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, typeLoca
             CM_SetRtfromParam(&KeyFrame.Pose);
         }
     }
+
     LG_Log(LogSeverity::DBG, "%s\n", summary.FullReport().c_str());
 }
 

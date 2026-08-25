@@ -27,7 +27,9 @@ What to do next:
     - (DONE) MAP_CreateLocalMap, make sure local mappoints are only added once, currently they are
       added several times
 
-    - Recreate viz, viser visualization, preferably live one. 
+    - (DONE) Recreate viz, viser visualization, preferably live one, starts localhost server when SLAM starts.
+
+    - Update Descriptors of mappoints. 
 
     - Currently far too many mappoints are created and never culled, add slam orb style culling of new mappoints and keyframes.
 

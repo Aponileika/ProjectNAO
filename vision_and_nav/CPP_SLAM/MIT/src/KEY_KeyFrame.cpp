@@ -55,7 +55,8 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePa
         .BowVector = NewBowVector,
         .FeatureVector = NewFeatureVector,
         .Pose = PredictedPose,
-        .ID = 2 
+        .ID = 2,
+        .ImagePath = Frame.Path
     };
 
     const DBoW3::FeatureVector& FeatureVector1 = KeyFrame.FeatureVector;
@@ -183,7 +184,8 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePa
         .BowVector = {},
         .FeatureVector = {},
         .Pose = PredictedPose,
-        .ID = PANTO_ID_NOT_SET
+        .ID = PANTO_ID_NOT_SET,
+        .ImagePath = Frame.Path
     };
     return KeyFrame;
 }
@@ -206,7 +208,7 @@ bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
     if(BootStrapData.NumFrames < PANTO_NUM_BOOTSTRAP_FRAMES)
     {
         ++BootStrapData.NumFrames;
-        BootStrapData.AcumulatedDistanceTravelled = Information.AcumulatedDistanceTravelled;
+        BootStrapData.AcumulatedDistanceTravelled += Information.AcumulatedDistanceTravelled;
         BootStrapData.LocalMapTrackingRatio       += Information.LocalMapTrackingRatio;
         BootStrapData.VelocityChange              += Information.VelocityChange;
 
@@ -231,7 +233,8 @@ bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
     return false;
 }
 
-void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints, const u64& ID, const DBoW3::Vocabulary* Vocabulary)
+void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints, 
+        const std::vector<typeKeyFrame>& GlobalKeyFrames, const u64& ID, const DBoW3::Vocabulary* Vocabulary)
 {
     KeyFrame.ID = ID;
     const cv::Mat& Descriptors = CurrentDescriptors.front();
@@ -244,7 +247,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& G
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
 
-    for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
     {
         const u64 MapPointID = ImagePoint.MapPointID;
         if(MapPointID == PANTO_ID_NOT_SET)
@@ -254,8 +257,58 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& G
 
         const u64 ImagePointID = ImagePoint.ID;
 
-        GlobalMapPoints[MapPointID].ImagePointIDs.push_back(ImagePointID);
-        GlobalMapPoints[MapPointID].KeyFrameIDs.push_back(ID);
+        typePantoMapPoint& MapPoint = GlobalMapPoints[MapPointID];
+        MapPoint.ImagePointIDs.push_back(ImagePointID);
+        MapPoint.KeyFrameIDs.push_back(ID);
+
+        std::vector<typeDescriptor> Descriptors;
+        Descriptors.reserve(MapPoint.KeyFrameIDs.size());
+
+        for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
+        {
+            const u64 ImagePointID = MapPoint.ImagePointIDs[i];
+            const u64 KeyFrameID   = MapPoint.KeyFrameIDs[i];
+
+            Descriptors.push_back(GlobalKeyFrames[KeyFrameID]. Points.ImagePoints[ImagePointID]. Descriptor);
+        }
+
+        if(Descriptors.size() == 1)
+        {
+            MapPoint.Descriptor = Descriptors[0];
+            continue;
+        }
+
+        u64 BestDescriptorID = 0;
+        fp64 BestMedianDistance = std::numeric_limits<fp64>::max();
+
+        for(std::size_t i{}; i < Descriptors.size(); i++)
+        {
+            std::vector<i32> Distances;
+            Distances.reserve(Descriptors.size() - 1);
+
+            for(std::size_t j{}; j < Descriptors.size(); j++)
+            {
+                if(i == j)
+                {
+                    continue;
+                }
+
+                Distances.push_back(PANTO_HammingDistance( Descriptors[i],
+                                Descriptors[j]));
+            }
+
+            std::sort(Distances.begin(), Distances.end());
+
+            const fp64 MedianDistance = Distances[Distances.size() / 2];
+
+            if(MedianDistance < BestMedianDistance)
+            {
+                BestMedianDistance = MedianDistance;
+                BestDescriptorID = i;
+            }
+        }
+
+        MapPoint.Descriptor = Descriptors[BestDescriptorID];
     }
 
     Vocabulary->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
@@ -284,6 +337,14 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
 
     const typeCamera& Camera1 = KeyFrame1.Pose;
     const typeCamera& Camera2 = KeyFrame2.Pose;
+
+    const Eigen::Matrix3d K = CM_GetIntrinsics()->K;
+
+    const fp64 fx = K(0, 0);
+    const fp64 fy = K(1, 1);
+
+    const fp64 cx = K(0, 2);
+    const fp64 cy = K(1, 2);
     
     while(FeatureIterator1 != FeatureVector1.end() && FeatureIterator2 != FeatureVector2.end())
     {
@@ -298,12 +359,23 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
                 typePantoImagePoint& ImagePoint1 = AllImagePoints1[FeatureID1];
 
                 u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
+                u32 SecondBestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
                 u64 BestFeatureID = PANTO_ID_NOT_SET;
 
                 if(ImagePoint1.MapPointID != PANTO_ID_NOT_SET)
                 {
                     continue;
                 }
+
+                const Eigen::Vector3d Ray1Camera =
+                {
+                    (ImagePoint1.Point.x() - cx) / fx,
+                    (ImagePoint1.Point.y() - cy) / fy,
+                    1.0
+                };
+
+
+                const Eigen::Vector3d Ray1World = Camera1.Pose.R.transpose() * Ray1Camera;
 
                 for(const u32& FeatureID2 : FeatureIDs2)
                 {
@@ -316,7 +388,7 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
 
                     const u32 Distance = PANTO_HammingDistance(ImagePoint1.Descriptor, ImagePoint2.Descriptor);
 
-                    if(Distance >= BestDistance)
+                    if(Distance >= SecondBestDistance)
                     {
                         continue;
                     }
@@ -326,15 +398,46 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
                         continue;
                     }
 
-                    BestDistance = Distance;
-                    BestFeatureID = static_cast<u64>(FeatureID2);
+
+                    const Eigen::Vector3d Ray2Camera =
+                    {
+                        (ImagePoint2.Point.x() - cx) / fx,
+                        (ImagePoint2.Point.y() - cy) / fy,
+                        1.0
+                    };
+
+
+                    const Eigen::Vector3d Ray2World = Camera2.Pose.R.transpose() * Ray2Camera;
+
+                    const fp64 CosParallax = Ray1World.normalized().dot(Ray2World.normalized());
+
+                    if(CosParallax > PANTO_MAXIMUMCOSPARALLAX)
+                    {
+                        continue;
+                    }
+
+                    if(Distance < BestDistance)
+                    {
+                        SecondBestDistance = BestDistance;
+                        BestDistance = Distance;
+                        BestFeatureID = static_cast<u64>(FeatureID2);
+                    }
+                    else
+                    {
+                        SecondBestDistance = Distance;
+                    }
                 }
 
-                if(BestFeatureID != PANTO_ID_NOT_SET)
+                if(SecondBestDistance == PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1)
+                {
+                    continue;
+                }
+                if(BestFeatureID != PANTO_ID_NOT_SET && BestDistance < PANTO_MATCHRATIO * SecondBestDistance)
                 {
                     typePantoImagePoint& ImagePoint2 = AllImagePoints2[BestFeatureID];
                     std::pair<u64, u64> ImagePointIDs(ImagePoint1.ID, ImagePoint2.ID);
                     Eigen::Vector4d MapPoint = PROJ_TriangulateDLT(ImagePoint1.Point, ImagePoint2.Point, Rt1, Rt2);
+
                     if(PT_IsInfront(MapPoint, Camera1) && PT_IsInfront(MapPoint, Camera2))
                     {
                         const u64 MapPointID = GlobalMapPoints.size();
@@ -347,7 +450,6 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
                     }
                 }
             }
-
             ++FeatureIterator1;
             ++FeatureIterator2;
         }
