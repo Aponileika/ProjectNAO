@@ -1,6 +1,6 @@
 What to do next:
     - (DONE) Finish local mapping pipeline, Matching with DBoW3 feature vectors and feature + ep constraint check.
-    - (SKIP for now) Keyframe culling
+
     - (DONE) Finish GRAPH_UpdateCovisibility function, should iterate and sort covisibility scores, needs to search for each keyframe what their current score
       is first, after this the general pipeline is similar, except single thread, and a bit simplified. We use same tracking and mapping local map.
 
