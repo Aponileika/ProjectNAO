@@ -4,8 +4,9 @@ What to do next:
     - (DONE) Finish GRAPH_UpdateCovisibility function, should iterate and sort covisibility scores, needs to search for each keyframe what their current score
       is first, after this the general pipeline is similar, except single thread, and a bit simplified. We use same tracking and mapping local map.
 
-    - (DONE, probably) Something is off, dont see any typeCamera creations, make sure timestamps are set, currently something is weird. 
-    - (DONE, probably) Add real timestamps to frame so i can calculate velocity. 
+    - (DONE) Something is off, dont see any typeCamera creations, make sure timestamps are set, currently something is weird. 
+
+    - (DONE) Add real timestamps to frame so i can calculate velocity. 
 
     - (DONE) Fuzzy keyframe decision, solve scale ambiguity by using local map as reference, calculate median depth and normalize by that, meaning calculate
       distances and velocity difference and divide them by the median depth, this gives them in units of local map units, so distance is how many local map units
