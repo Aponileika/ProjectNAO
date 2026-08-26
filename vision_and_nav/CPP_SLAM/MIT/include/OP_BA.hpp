@@ -5,9 +5,9 @@
 #include <ceres/ceres.h>
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
-#include "PT_Points.hpp"
 #include "Config.hpp"
 #include "MAP_Mapping.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 
 typedef enum 
 {

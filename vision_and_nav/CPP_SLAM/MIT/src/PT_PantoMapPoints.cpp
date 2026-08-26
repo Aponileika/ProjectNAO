@@ -3,11 +3,11 @@
 typePantoMapPoint PT_CreatePantoMapPoint(const Eigen::Vector4d& Point, const typeDescriptor& Descriptor, const std::pair<u64, u64>& KeyFrameIDs,
         const std::pair<u64, u64>& ImagePointIDs, const u64 ID)
 {
-    std::vector<u64> VecKeyFrameIDs(2);
+    typePantoVector<u64> VecKeyFrameIDs(2);
     VecKeyFrameIDs[0] = KeyFrameIDs.first;
     VecKeyFrameIDs[1] = KeyFrameIDs.second;
 
-    std::vector<u64> VecImagePointIDs(2);
+    typePantoVector<u64> VecImagePointIDs(2);
     VecImagePointIDs[0] = ImagePointIDs.first;
     VecImagePointIDs[1] = ImagePointIDs.second;
 

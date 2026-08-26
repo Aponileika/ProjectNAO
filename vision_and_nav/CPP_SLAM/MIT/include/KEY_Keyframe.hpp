@@ -4,6 +4,7 @@
 #include "PT_Types.hpp"
 #include "DBOW3_DeepBagofWords.hpp"
 #include "Config.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 #include <PT_PantoMapPoints.hpp>
 #include <DBoW3/DBoW3.h>
 #include <DBoW3/BowVector.h>
@@ -40,13 +41,13 @@ typedef struct
     std::string ImagePath;
 }typeKeyFrame;
 
-typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints);
-typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints);
+typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints);
+typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints);
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information);
-void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints, 
-        const std::vector<typeKeyFrame>& GlobalKeyFrames, const u64& ID, const DBoW3::Vocabulary* Vocabulary);
-void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints);
+void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints, 
+        const typePantoVector<typeKeyFrame>& GlobalKeyFrames, const u64& ID, const DBoW3::Vocabulary* Vocabulary);
+std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, typePantoVector<typePantoMapPoint>& GlobalMapPoints);
 void KEY_NonValidKeyFrame(void);
-fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints);
+fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& LocalMapPoints);
 
 #endif //__KEY_KEYFRAME_HPP_

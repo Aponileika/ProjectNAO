@@ -6,6 +6,7 @@
 #include "PROJ_ProjectiveUtils.hpp"
 #include <Eigen/Dense>
 #include <PT_Types.hpp>
+#include "PANTOVEC_PantoVector.hpp"
 
 typePantoMapPoint PT_CreatePantoMapPoint(const Eigen::Vector4d& Point, const typeDescriptor& Descriptor, const std::pair<u64, u64>& KeyFrameIDs,
         const std::pair<u64, u64>& ImagePointIDs, const u64 ID);

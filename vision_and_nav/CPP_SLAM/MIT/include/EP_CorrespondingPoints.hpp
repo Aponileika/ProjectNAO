@@ -10,6 +10,7 @@
 #include "PANTO_Utils.hpp"
 #include "PT_Types.hpp"
 #include "PT_PantoImagePoint.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 
 
 struct DescRet

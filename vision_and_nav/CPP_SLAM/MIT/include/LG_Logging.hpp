@@ -12,6 +12,7 @@
 #include <sstream>
 #include "Config.hpp"
 #include "CArenaAlloc.h"
+#include "PANTOVEC_PantoVector.hpp"
 
 struct Logger
 {

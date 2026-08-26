@@ -31,14 +31,21 @@ What to do next:
 
     - (DONE) Update Descriptors of mappoints. 
 
-    - (DONE I think) Check if previous frame mappoints works as expected, i think it does now but not sure. 
+    - (DONE) Check if previous frame mappoints works as expected, i think it does now but not sure. 
 
-    - Integrate typePantoVector everywhere things are expected to be deleted at some point, eg. keyframes, 3d points,
+    - (DONE not fully tested) Integrate typePantoVector everywhere things are expected to be deleted at some point, eg. keyframes, 3d points,
       connections between 3d points with keyframes and 2d points.
 
-    - Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive.
+    - (DONE) Currently far too many mappoints are created and never culled, add slam orb style culling of new mappoints and keyframes.
 
-    - Currently far too many mappoints are created and never culled, add slam orb style culling of new mappoints and keyframes.
+    - Vizer currently bugged:
+    [VISER] Reading cameras.bin
+    [VISER] Failed to load snapshot 26: unpack requires a buffer of 8 bytes
+    [VISER] Reading cameras.bin
+    [VISER] Failed to load snapshot 26: unpack requires a buffer of 8 bytes
+        most likely a bug in how global map keyframes etc are handled, ie. when preliminary frames are removed are they removed properly?
+
+    - Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive.
 
     - Clean up the SL_SLAM main loop a bit, mainly make more things happen in MAP instead of providing map info to KEY
 

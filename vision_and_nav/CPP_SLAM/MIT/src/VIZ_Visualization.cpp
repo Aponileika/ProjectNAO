@@ -112,7 +112,7 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap)
     SnapshotID++;
 }
 
-void VIZPriv_WriteCameras(const std::vector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
+void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
 {
     const std::string CameraPath = SnapshotPath + "/cameras.bin";
 
@@ -126,9 +126,11 @@ void VIZPriv_WriteCameras(const std::vector<typeKeyFrame>& KeyFrames, const std:
         return;
     }
 
-    const u64 NumCameras = static_cast<u64>(KeyFrames.size());
+    const u64 NumCameras = static_cast<u64>(KeyFrames.active_size());
 
     fwrite(&NumCameras, sizeof(u64), 1, fp);
+
+    u64 NumWritten = 0;
 
     for(const typeKeyFrame& KeyFrame : KeyFrames)
     {
@@ -157,17 +159,19 @@ void VIZPriv_WriteCameras(const std::vector<typeKeyFrame>& KeyFrames, const std:
         fwrite(&Width, sizeof(u64), 1, fp);
         fwrite(&Height, sizeof(u64), 1, fp);
         fwrite(Parameters, sizeof(fp64), 4, fp);
+
+        NumWritten++;
     }
 
-    fclose(fp);
+    assert(NumWritten == NumCameras);
 
     LG_Log(LogSeverity::DBG,
-            "[VIZPriv_WriteCameras] Wrote %llu cameras to %s\n",
+            "[VIZPriv_WriteCameras] Header = %llu, Written = %llu\n",
             static_cast<unsigned long long>(NumCameras),
-            CameraPath.c_str());
+            static_cast<unsigned long long>(NumWritten));
 }
 
-void VIZPriv_WriteImages(const std::vector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
+void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
 {
     const std::string ImagePath = SnapshotPath + "/images.bin";
     static_assert(sizeof(u64) == 8);
@@ -183,7 +187,7 @@ void VIZPriv_WriteImages(const std::vector<typeKeyFrame>& KeyFrames, const std::
         return;
     }
 
-    const u64 NumImages = static_cast<u64>(KeyFrames.size());
+    const u64 NumImages = static_cast<u64>(KeyFrames.active_size());
 
     fwrite(&NumImages, sizeof(u64), 1, fp);
 
@@ -219,7 +223,7 @@ void VIZPriv_WriteImages(const std::vector<typeKeyFrame>& KeyFrames, const std::
         fwrite(ImageName.c_str(), sizeof(char), ImageName.size() + 1, fp);
 
         const u64 NumImagePoints =
-            static_cast<u64>(KeyFrame.Points.ImagePoints.size());
+            static_cast<u64>(KeyFrame.Points.ImagePoints.active_size());
 
         fwrite(&NumImagePoints, sizeof(u64), 1, fp);
 
@@ -273,8 +277,7 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap,  const std::string& Sna
         return;
     }
 
-    const u64 NumPoints =
-        static_cast<u64>(GlobalMap.MapPoints.size());
+    const u64 NumPoints = static_cast<u64>(GlobalMap.MapPoints.active_size());
 
     fwrite(&NumPoints, sizeof(u64), 1, fp);
 
@@ -307,7 +310,7 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap,  const std::string& Sna
             const u64 ImagePointID =
                 MapPoint.ImagePointIDs.front();
 
-            if(KeyFrameID < GlobalMap.KeyFrames.size() &&
+            if(GlobalMap.KeyFrames.contains(KeyFrameID) &&
                KeyFrameID < VIZPriv_KeyFrameImages.size())
             {
                 const typeKeyFrame& KeyFrame =
@@ -316,7 +319,7 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap,  const std::string& Sna
                 const cv::Mat& Image =
                     VIZPriv_KeyFrameImages[KeyFrameID];
 
-                if(ImagePointID < KeyFrame.Points.ImagePoints.size() &&
+                if(KeyFrame.Points.ImagePoints.contains(ImagePointID) &&
                    !Image.empty())
                 {
                     const typePantoImagePoint& ImagePoint =
@@ -351,12 +354,21 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap,  const std::string& Sna
         fwrite(&Error, sizeof(fp64), 1, fp);
 
         const u64 TrackLength =
-            static_cast<u64>(MapPoint.KeyFrameIDs.size());
+            static_cast<u64>(MapPoint.KeyFrameIDs.active_size());
+
+        assert(TrackLength ==
+                MapPoint.ImagePointIDs.active_size());
 
         fwrite(&TrackLength, sizeof(u64), 1, fp);
 
-        for(u64 i{}; i < TrackLength; i++)
+        for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
         {
+            if(!MapPoint.KeyFrameIDs.contains(i) ||
+               !MapPoint.ImagePointIDs.contains(i))
+            {
+                continue;
+            }
+
             const i32 ImageID =
                 static_cast<i32>(MapPoint.KeyFrameIDs[i] + 1);
 
@@ -403,7 +415,7 @@ void VIZPriv_PublishSnapshot(const u64& SnapshotID)
             LatestPath);
 }
 
-void VIZPriv_LoadKeyFrameImages(const std::vector<typeKeyFrame>& KeyFrames)
+void VIZPriv_LoadKeyFrameImages(const typePantoVector<typeKeyFrame>& KeyFrames)
 {
     if(VIZPriv_KeyFrameImages.size() < KeyFrames.size())
     {

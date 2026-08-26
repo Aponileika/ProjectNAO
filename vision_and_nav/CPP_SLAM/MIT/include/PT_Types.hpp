@@ -2,6 +2,7 @@
 #define __PT_TYPES_HPP_
 #include <Eigen/Dense>
 #include "Config.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 #include <CArenaAlloc.h>
 
 typedef struct
@@ -20,8 +21,8 @@ typedef struct
 {
     Eigen::Vector4d Point;
     typeDescriptor Descriptor;
-    std::vector<u64> KeyFrameIDs;
-    std::vector<u64> ImagePointIDs;
+    typePantoVector<u64> KeyFrameIDs;
+    typePantoVector<u64> ImagePointIDs;
     u64 ID;
     u64 NumVisible;
     u64 NumFound;
@@ -30,8 +31,8 @@ typedef struct
 
 typedef struct
 {
-    std::vector<typePantoImagePoint> ImagePoints;
-    std::array<std::vector<u64>, PANTO_CELL_SIZE*PANTO_CELL_SIZE> CellIndexingArray;
+    typePantoVector<typePantoImagePoint> ImagePoints;
+    std::array<typePantoVector<u64>, PANTO_CELL_SIZE*PANTO_CELL_SIZE> CellIndexingArray;
 }typePantoKeypointFrame;
 
 

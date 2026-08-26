@@ -32,6 +32,7 @@
 #include "KEY_KeyFrame.hpp"
 #include "PT_Types.hpp"
 #include "PT_PantoImagePoint.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 
 typedef struct
 {

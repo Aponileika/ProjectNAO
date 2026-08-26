@@ -30,15 +30,15 @@ def load_snapshot(root: Path, snapshot_id: int):
 
     print("[VISER] Reading cameras.bin")
     cameras = read_cameras_binary(sparse_path / "cameras.bin")
-    print(f"[VISER] cameras.bin OK: {len(cameras)} cameras")
+    print(f"[VISER] cameras.bin OK: {len(cameras)}")
 
     print("[VISER] Reading images.bin")
     images = read_images_binary(sparse_path / "images.bin")
-    print(f"[VISER] images.bin OK: {len(images)} images")
+    print(f"[VISER] images.bin OK: {len(images)}")
 
     print("[VISER] Reading points3D.bin")
     points3d = read_points3d_binary(sparse_path / "points3D.bin")
-    print(f"[VISER] points3D.bin OK: {len(points3d)} points")
+    print(f"[VISER] points3D.bin OK: {len(points3d)}")
 
     return cameras, images, points3d
 
@@ -197,7 +197,7 @@ def main(root: str):
     gui_point_size = server.gui.add_slider(
         "Point size",
         min=0.001,
-        max=0.1,
+        max=1.0,
         step=0.001,
         initial_value=0.02,
     )
@@ -222,7 +222,6 @@ def main(root: str):
 
         if snapshot_id is not None and snapshot_id != last_snapshot_id:
             try:
-                print(f"[VISER] Loading snapshot {snapshot_id}")
 
                 cameras, images, points3d = load_snapshot(
                     root,
@@ -240,12 +239,6 @@ def main(root: str):
                 )
 
                 last_snapshot_id = snapshot_id
-
-                print(
-                    f"[VISER] Snapshot {snapshot_id}: "
-                    f"{len(images)} cameras, "
-                    f"{len(points3d)} points"
-                )
 
             except Exception as Error:
                 print(

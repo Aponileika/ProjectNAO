@@ -188,10 +188,10 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
     LG_Log(LogSeverity::DBG, "FirstFrameID = %llu\n", FirstFrameID); 
     LG_Log(LogSeverity::DBG, "SecondFrameID= %llu\n", SecondFrameID); 
 
-    std::vector<typePantoMapPoint> InitialMapPoints;
+    typePantoVector<typePantoMapPoint> InitialMapPoints;
     InitialMapPoints.reserve(Reconstruction.MapPoints.size());
 
-    std::vector<typePantoKeypointFrame> ImagePoints;
+    typePantoVector<typePantoKeypointFrame> ImagePoints;
     ImagePoints.reserve(2);
 
     ImagePoints.push_back(INITPriv_GetKeyPointFrame(FirstFrameID));
@@ -201,13 +201,13 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
     {
         const typeInitMapPoint& InitMapPoint = Reconstruction.MapPoints[i];
 
-        std::vector<u64> ImagePointIDs(2, 0);
+        typePantoVector<u64> ImagePointIDs(2, 0);
         ImagePointIDs[0] = InitMapPoint.InitImagePointID.first;
         ImagePointIDs[1] = InitMapPoint.InitImagePointID.second;
 
         typeDescriptor Descriptor = InitData.InitFrames[SecondFrameID].ImagePoints[ImagePointIDs[1]].Descriptor;
 
-        std::vector<u64> KeyFrameIDs(2, 0);
+        typePantoVector<u64> KeyFrameIDs(2, 0);
         KeyFrameIDs[0] = 0;
         KeyFrameIDs[1] = 1;
 
@@ -235,7 +235,7 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
     Eigen::Vector3d Secondt = Reconstruction.t;
     typeCamera SecondCamera = CM_CreateCam(SecondR, Secondt, InitData.InitFrames[SecondFrameID].TimeStamp);
 
-    std::vector<typeKeyFrame> KeyFrames;
+    typePantoVector<typeKeyFrame> KeyFrames;
     KeyFrames.push_back(
         {
             .Points = ImagePoints[0],
@@ -396,7 +396,23 @@ void INITPriv_MatchHistoricalFrames(void)
                         }
                         else
                         {
-                            InitData.FeatureTracks[FeatureTrackID].FeatureTrack.push_back(ImagePointNew.ID);
+                            typeFeatureTrack& FeatureTrack =
+                                InitData.FeatureTracks[FeatureTrackID];
+
+                            assert(FeatureTrack.FeatureTrack.size() ==
+                                    InitData.InitFrames.size());
+
+                            if(FeatureTrack.FeatureTrack[LatestFrame.ID] !=
+                                    PANTO_ID_NOT_SET)
+                            {
+                                continue;
+                            }
+
+                            FeatureTrack.FeatureTrack[LatestFrame.ID] =
+                                ImagePointNew.ID;
+
+                            ImagePointNew.FeatureTrackID =
+                                FeatureTrackID;
                         }
                     }
                 }
@@ -711,4 +727,10 @@ void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points,
     InitFrame.ID = static_cast<u64>(InitFrames.size());
     InitFrame.TimeStamp = TimeStamp;
     InitFrames.push_back(InitFrame);
+
+    for(typeFeatureTrack& FeatureTrack : InitData.FeatureTracks)
+    {
+        FeatureTrack.FeatureTrack.push_back(
+                PANTO_ID_NOT_SET);
+    }
 }

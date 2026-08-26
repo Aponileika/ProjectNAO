@@ -15,7 +15,7 @@
  * it is accepted as a match and its MapPointID is set
  * */
 typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>& Points, 
-        const cv::Mat& Descriptors, const std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose)
+        const cv::Mat& Descriptors, std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose)
 {
     std::size_t NumImagePoints = Points.size();
     assert((static_cast<std::size_t>(Descriptors.rows) == NumImagePoints));
@@ -90,7 +90,7 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
     return ImagePoints;
 }
 
-u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vector<typePantoMapPoint>& MapPoints, const typeCamera& Pose)
+u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<typePantoMapPoint>& MapPoints, const typeCamera& Pose)
 {
     std::size_t NumMapPoints = MapPoints.size();
     u64 NumTrackedMapPoints = 0;
@@ -101,6 +101,10 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
 
     for(std::size_t i{}; i < NumMapPoints; i++)
     {
+        // if(!MapPoints.contains(i))
+        // {
+        //     continue;
+        // }
         Eigen::Vector4d MapPoint = MapPoints[i].Point;
         Eigen::Vector2d CandidateImagePoint = {};
 
@@ -117,6 +121,8 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
         if(PROJ_Project(MapPoint, CandidateImagePoint, Pose))
         {
             NumProjectedMapPoints++;
+
+            MapPoints[i].NumVisible++;
 
             const fp64 u = CandidateImagePoint[0];
             const fp64 v = CandidateImagePoint[1];
@@ -196,6 +202,7 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, const std::vec
                 const typePantoImagePoint& TopCandidate = Top2Candidates[0].first;
                 KeyFrame.ImagePoints[TopCandidate.ID].MapPointID = MapPoints[i].ID;
                 NumTrackedMapPoints++;
+                MapPoints[i].NumVisible++;
             }
         }
     }

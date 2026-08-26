@@ -22,12 +22,12 @@ typeFuzzyKeyFrameInference FuzzyInference =
     .SpatialTrackingThreshold = NAN
 };
 
-typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints)
+typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints)
 {
     typePantoFrame Frame = FR_GetFrame();
     DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
 
-    std::vector<cv::Mat> DescriptorVector;
+    typePantoVector<cv::Mat> DescriptorVector;
 
     DescriptorVector.reserve(Descriptors.Descriptors.rows);
 
@@ -65,8 +65,8 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePa
     auto FeatureIterator1 = FeatureVector1.begin();
     auto FeatureIterator2 = FeatureVector2.begin();
 
-    std::vector<typePantoImagePoint>& AllImagePoints1 = KeyFrame.Points.ImagePoints;
-    std::vector<typePantoImagePoint>& AllImagePoints2 = LastKeyFrame.Points.ImagePoints;
+    typePantoVector<typePantoImagePoint>& AllImagePoints1 = KeyFrame.Points.ImagePoints;
+    typePantoVector<typePantoImagePoint>& AllImagePoints2 = LastKeyFrame.Points.ImagePoints;
 
     u64 NumMatches = 0;
 
@@ -162,7 +162,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, std::vector<typePa
     return KeyFrame;
 }
 
-typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, const std::vector<typePantoMapPoint>& LastFrameMapPoints)
+typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints)
 {
     LG_Log(LogSeverity::DBG, "[KEY_GetKeyFrame] Predicted q = (%f, %f, %f, %f), t = (%f, %f, %f)\n",
         PredictedPose.Parameters.q.w(),
@@ -233,8 +233,8 @@ bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
     return false;
 }
 
-void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& GlobalMapPoints, 
-        const std::vector<typeKeyFrame>& GlobalKeyFrames, const u64& ID, const DBoW3::Vocabulary* Vocabulary)
+void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints, 
+        const typePantoVector<typeKeyFrame>& GlobalKeyFrames, const u64& ID, const DBoW3::Vocabulary* Vocabulary)
 {
     KeyFrame.ID = ID;
     const cv::Mat& Descriptors = CurrentDescriptors.front();
@@ -247,7 +247,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& G
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
 
-        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+    for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
     {
         const u64 MapPointID = ImagePoint.MapPointID;
         if(MapPointID == PANTO_ID_NOT_SET)
@@ -316,16 +316,17 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, std::vector<typePantoMapPoint>& G
     CurrentDescriptors.pop();
 }
 
-void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, std::vector<typePantoMapPoint>& GlobalMapPoints)
+std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, typePantoVector<typePantoMapPoint>& GlobalMapPoints)
 {
+    std::vector<u64> Indexes;
     const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Pose.Pose, KeyFrame2.Pose.Pose);
     const Eigen::Matrix3d F12 = F21.transpose();
 
     Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Pose);
     Eigen::Matrix<fp64, 3, 4> Rt2 = CM_GetRt(KeyFrame2.Pose);
 
-    std::vector<typePantoImagePoint>& AllImagePoints1 = KeyFrame1.Points.ImagePoints;
-    std::vector<typePantoImagePoint>& AllImagePoints2 = KeyFrame2.Points.ImagePoints;
+    typePantoVector<typePantoImagePoint>& AllImagePoints1 = KeyFrame1.Points.ImagePoints;
+    typePantoVector<typePantoImagePoint>& AllImagePoints2 = KeyFrame2.Points.ImagePoints;
 
     const DBoW3::FeatureVector& FeatureVector1 = KeyFrame1.FeatureVector;
     const DBoW3::FeatureVector& FeatureVector2 = KeyFrame2.FeatureVector;
@@ -356,6 +357,10 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
 
             for(const u32& FeatureID1 : FeatureIDs1)
             {
+                if(!AllImagePoints1.contains(static_cast<u64>(FeatureID1)))
+                {
+                    continue;
+                }
                 typePantoImagePoint& ImagePoint1 = AllImagePoints1[FeatureID1];
 
                 u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
@@ -379,6 +384,10 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
 
                 for(const u32& FeatureID2 : FeatureIDs2)
                 {
+                    if(!AllImagePoints2.contains(static_cast<u64>(FeatureID2)))
+                    {
+                        continue;
+                    }
                     typePantoImagePoint& ImagePoint2 = AllImagePoints2[FeatureID2];
 
                     if(ImagePoint2.MapPointID != PANTO_ID_NOT_SET)
@@ -440,13 +449,14 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
 
                     if(PT_IsInfront(MapPoint, Camera1) && PT_IsInfront(MapPoint, Camera2))
                     {
-                        const u64 MapPointID = GlobalMapPoints.size();
                         const typePantoMapPoint NewPoint = PT_CreatePantoMapPoint(MapPoint, ImagePoint1.Descriptor, 
-                                KeyFrameIDs, ImagePointIDs, MapPointID);
-                        GlobalMapPoints.push_back(NewPoint);
+                                KeyFrameIDs, ImagePointIDs, PANTO_ID_NOT_SET);
+                        const u64 Index = GlobalMapPoints.push_back(NewPoint);
+                        GlobalMapPoints[Index].ID = Index;
+                        Indexes.push_back(Index);
 
-                        ImagePoint1.MapPointID = MapPointID;
-                        ImagePoint2.MapPointID = MapPointID;
+                        ImagePoint1.MapPointID = Index;
+                        ImagePoint2.MapPointID = Index;
                     }
                 }
             }
@@ -462,6 +472,7 @@ void KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, st
             FeatureIterator2 = FeatureVector2.lower_bound(FeatureIterator1->first);
         }
     }
+    return Indexes;
 }
 
 void KEY_NonValidKeyFrame(void)
@@ -469,7 +480,7 @@ void KEY_NonValidKeyFrame(void)
     CurrentDescriptors.pop();
 }
 
-fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints)
+fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& LocalMapPoints)
 {
     std::vector<fp64> LocalDepth;
 
@@ -556,6 +567,18 @@ void KEYPriv_SolveBootStrapData(void)
         "[KEYPriv_SolveBootStrapData] MaxRuleThreshold = %f, SpatialTrackingThreshold = %f\n",
         FuzzyInference.MaxRuleThreshold,
         FuzzyInference.SpatialTrackingThreshold);
+
+    FuzzyInference.VelocityParamameters.second = 0.200895;
+    FuzzyInference.VelocityParamameters.first = 0.050224;
+
+    FuzzyInference.TrackingRatioParameters.second = 0.155848;
+    FuzzyInference.TrackingRatioParameters.first = 0.038962;
+
+    FuzzyInference.AccumulatedDistanceParameters.second = 0.258651;
+    FuzzyInference.AccumulatedDistanceParameters.first = 0.012933; 
+    
+    FuzzyInference.MaxRuleThreshold = PANTO_KEYFRAME_FUZZY_MAX_RULE_THRESHOLD;
+    FuzzyInference.SpatialTrackingThreshold = PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD;
 
     BootStrapData.BootStrapDataSolved = true;
 }

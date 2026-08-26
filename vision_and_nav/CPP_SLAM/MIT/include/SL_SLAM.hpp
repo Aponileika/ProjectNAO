@@ -23,6 +23,7 @@
 #include "Config.hpp"
 #include "GRAPH_PantoGraph.hpp"
 #include "INIT_InitializeSLAM.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 
 typedef struct
 {
@@ -40,6 +41,7 @@ typedef struct
     typePreviousFrameData PreviousFrameData;
     fp64 AccumulatedDistance;
     DBoW3::Vocabulary* Vocabulary;
+    typePantoVector<u64> RecentMapPointIndexes;
 }typeSLAM;
 
 struct typeTimingStatistics

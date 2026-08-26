@@ -7,6 +7,7 @@
 #include <opencv2/core/eigen.hpp>
 #include "CArenaAlloc.h"
 #include "Config.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 
 template<typename T>
 void PANTO_EraseUnordered(std::vector<T> vec, u64 idx)

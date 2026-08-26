@@ -3,6 +3,7 @@
 #include "../include/INIT_InitializeSLAM.hpp"
 #include "PT_PantoMapPoints.hpp"
 #include <cmath>
+#include "Config.hpp"
 #include <random>
 
 template <int N>
@@ -244,6 +245,13 @@ public:
             const Eigen::Vector3d& Translation =
                 Translations[HypothesisID];
 
+            const Eigen::Vector3d CameraCenter1 = Eigen::Vector3d::Zero();
+            const Eigen::Vector3d CameraCenter2 =
+                -R.transpose() * Translation;
+
+            std::vector<fp64> CosParallaxes;
+            CosParallaxes.reserve(Points1.size());
+
             Eigen::Matrix<fp64, 3, 4> Rt2;
 
             Rt2.block<3, 3>(0, 0) = R;
@@ -289,6 +297,54 @@ public:
                     continue;
                 }
 
+                const Eigen::Vector3d Projected1 =
+                    K * PointCamera1;
+
+                const Eigen::Vector2d ReprojectedPoint1 =
+                {
+                    Projected1.x() / Projected1.z(),
+                    Projected1.y() / Projected1.z()
+                };
+
+                const Eigen::Vector3d Projected2 =
+                    K * PointCamera2;
+
+                const Eigen::Vector2d ReprojectedPoint2 =
+                {
+                    Projected2.x() / Projected2.z(),
+                    Projected2.y() / Projected2.z()
+                };
+
+                const fp64 ReprojectionError1 =
+                    (ReprojectedPoint1 - Points1[i]).squaredNorm();
+
+                const fp64 ReprojectionError2 =
+                    (ReprojectedPoint2 - Points2[i]).squaredNorm();
+
+                if(ReprojectionError1 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED ||
+                   ReprojectionError2 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED)
+                {
+                    continue;
+                }
+
+                const Eigen::Vector3d Ray1 =
+                    PointCamera1;
+
+                const Eigen::Vector3d Ray2 =
+                    PointCamera1 - CameraCenter2;
+
+                const fp64 CosParallax =
+                    Ray1.dot(Ray2) /
+                    (Ray1.norm() * Ray2.norm());
+
+                if(!std::isfinite(CosParallax))
+                {
+                    continue;
+                }
+
+                CosParallaxes.push_back(
+                    std::clamp(CosParallax, -1.0, 1.0));
+
                 MapPoints.push_back(
                 {
                     .Point4D = Point4D,
@@ -296,6 +352,30 @@ public:
                 });
 
                 ++NumPointsInFront;
+            }
+
+            if(CosParallaxes.empty())
+            {
+                continue;
+            }
+
+            std::sort(
+                    CosParallaxes.begin(),
+                    CosParallaxes.end());
+
+            const std::size_t ParallaxIndex =
+                std::min<std::size_t>(
+                        50,
+                        CosParallaxes.size() - 1);
+
+            const fp64 Parallax =
+                std::acos(
+                        CosParallaxes[ParallaxIndex]) *
+                180.0 / M_PI;
+
+            if(Parallax < PANTO_INIT_MIN_PARALLAX_DEGREES)
+            {
+                continue;
             }
 
             if(NumPointsInFront >
@@ -710,6 +790,13 @@ public:
             const Eigen::Vector3d& Translation =
                 Translations[HypothesisID];
 
+            const Eigen::Vector3d CameraCenter1 = Eigen::Vector3d::Zero();
+            const Eigen::Vector3d CameraCenter2 =
+                -R.transpose() * Translation;
+
+            std::vector<fp64> CosParallaxes;
+            CosParallaxes.reserve(Points1.size());
+
             Eigen::Matrix<fp64, 3, 4> Rt2;
 
             Rt2.block<3, 3>(0, 0) = R;
@@ -755,13 +842,85 @@ public:
                     continue;
                 }
 
-                MapPoints.push_back(
+                const Eigen::Vector3d Projected1 =
+                    K * PointCamera1;
+
+                const Eigen::Vector2d ReprojectedPoint1 =
                 {
-                    .Point4D = Point4D,
-                    .InitImagePointID = ImagePointIDs[i]
-                });
+                    Projected1.x() / Projected1.z(),
+                    Projected1.y() / Projected1.z()
+                };
+
+                const Eigen::Vector3d Projected2 =
+                    K * PointCamera2;
+
+                const Eigen::Vector2d ReprojectedPoint2 =
+                {
+                    Projected2.x() / Projected2.z(),
+                    Projected2.y() / Projected2.z()
+                };
+
+                const fp64 ReprojectionError1 =
+                    (ReprojectedPoint1 - Points1[i]).squaredNorm();
+
+                const fp64 ReprojectionError2 =
+                    (ReprojectedPoint2 - Points2[i]).squaredNorm();
+
+                if(ReprojectionError1 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED ||
+                   ReprojectionError2 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED)
+                {
+                    continue;
+
+                }
+                const Eigen::Vector3d Ray1 =
+                    PointCamera1;
+
+                const Eigen::Vector3d Ray2 =
+                    PointCamera1 - CameraCenter2;
+
+                const fp64 CosParallax =
+                    Ray1.dot(Ray2) /
+                    (Ray1.norm() * Ray2.norm());
+
+                if(!std::isfinite(CosParallax))
+                {
+                    continue;
+                }
+
+                CosParallaxes.push_back(
+                        std::clamp(CosParallax, -1.0, 1.0));
+
+                MapPoints.push_back(
+                        {
+                        .Point4D = Point4D,
+                        .InitImagePointID = ImagePointIDs[i]
+                        });
 
                 ++NumPointsInFront;
+
+            }
+            if(CosParallaxes.empty())
+            {
+                continue;
+            }
+
+            std::sort(
+                    CosParallaxes.begin(),
+                    CosParallaxes.end());
+
+            const std::size_t ParallaxIndex =
+                std::min<std::size_t>(
+                        50,
+                        CosParallaxes.size() - 1);
+
+            const fp64 Parallax =
+                std::acos(
+                        CosParallaxes[ParallaxIndex]) *
+                180.0 / M_PI;
+
+            if(Parallax < PANTO_INIT_MIN_PARALLAX_DEGREES)
+            {
+                continue;
             }
 
             if(NumPointsInFront >

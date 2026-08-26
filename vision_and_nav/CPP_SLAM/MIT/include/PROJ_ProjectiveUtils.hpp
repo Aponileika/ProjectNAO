@@ -8,6 +8,7 @@
 #include "CArenaAlloc.h"
 #include "Config.hpp"
 #include "CM_Camera.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 
 //I love function overloading
 //cv::Mat only for 4->3, i hate general cv::Mat!

@@ -14,6 +14,7 @@
 #include "CM_Camera.hpp"
 #include "PROJ_ProjectiveUtils.hpp"
 #include "Config.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 
 void VIZ_InitVisualization(void);
 void VIZ_DestroyVisualization(void);

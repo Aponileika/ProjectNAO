@@ -1,11 +1,11 @@
 #include "../include/GRAPH_PantoGraph.hpp"
 #include <cstring>
 
-void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& GlobalMapPoints,
+void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
         const u64 NumKeyFrames)
 {
     const typePantoKeypointFrame& KeyPointFrame = KeyFrame.Points;
-    std::vector<u64> CovisibilityCount(NumKeyFrames, 0);
+    typePantoVector<u64> CovisibilityCount(NumKeyFrames, 0);
 
     LG_Log(LogSeverity::DBG, "[GRAPH_AddKeyFrame] Adding KeyFrame %llu to CovisibilityGraph\n",KeyFrame.ID);
 
@@ -62,22 +62,21 @@ std::vector<typeCovisibility> GRAPH_GetAllCovisibleFrames(const typeCovisibility
 std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID, const u64 N)
 {
     const std::vector<typeCovisibility>& Requested = CovisibilityGraph[KeyFrameID];
-    std::vector<typeCovisibility> TopN(N);
+    typePantoVector<typeCovisibility> TopN(N);
     std::memcpy(TopN.data(), Requested.data(), N);
     return TopN;
 }
 
 
-void GRAPH_UpdateCovisibility(typeCovisibilityGraph& CovisibilityGraph, const std::vector<typePantoMapPoint>& GlobalMapPoints, const u64 NumNewPoints,
-        const u64 NewKeyFrameID)
+void GRAPH_UpdateCovisibility(typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<typePantoMapPoint>& GlobalMapPoints, 
+        const u64 NewKeyFrameID, std::vector<u64> NewPointIDs)
 {
     std::vector<u64> CovisibilityCount(CovisibilityGraph.size(), 0);
     LG_Log(LogSeverity::DBG, "[GRAPH_UpdateCovisibility] Covisibility grah size = %zu\n", CovisibilityGraph.size()); 
     
-    for(auto GlobalMapIterator = GlobalMapPoints.end() - NumNewPoints; GlobalMapIterator != GlobalMapPoints.end();
-            ++GlobalMapIterator)
+    for(const u64 ID : NewPointIDs)
     {
-        for(const u64 KeyFrameID : GlobalMapIterator->KeyFrameIDs)
+        for(const u64 KeyFrameID : GlobalMapPoints[ID].KeyFrameIDs)
         {
             if(KeyFrameID == NewKeyFrameID)
             {

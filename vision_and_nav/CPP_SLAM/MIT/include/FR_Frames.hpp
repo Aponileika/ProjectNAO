@@ -6,6 +6,7 @@
 #include "LG_Logging.hpp"
 #include "CArenaAlloc.h"
 #include "Config.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 
 typedef struct
 {
