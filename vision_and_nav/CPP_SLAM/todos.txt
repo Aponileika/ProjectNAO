@@ -61,14 +61,17 @@ What to do next:
 
     - train vocab with fixed number of features, with spatial distribution enforced. Bags of Binary Words for Fast Place Recognition in SLAM?
 
-    - Check AKAZE opencv implementation, is there any obvious improvement? Cv::mat -> Eigen for easier SIMD optimisation? Keep cv mat for dbow though
+    - Check AKAZE opencv implementation, is there any obvious improvement? Cv::mat -> Eigen for easier SIMD optimisation? Keep cv mat for dbow though,
+      Note that current opencv implementation is basically just a wrapper for the originial AKAZE implementation.
 
     - Add loop closure using DBoW3 bag of words vectors with physical constraint.
 
     - Add learned parameters for fuzzy keyframe insertion
      J(k) = TrackingError + a * NumInsertedKF + b * TrackingLosses
      TrackingError can be SO(3) distance if GT available (usually is), think about NumInsertedKF and TrackingLosses are calculated
-     (they all need to be normalized to 0-1)
+     (they all need to be normalized to 0-1), think about scale ambiguity when calculating errors, since for different scenes scale will be different,
+     use metric scale by just correcting the first two frames to metric scale based on ground truth, this should not affect optimization since it happens
+     after the init so wont make a difference.
 
     - Implement threading, use same structure as orb, tracking <-> local mapping <-> global mapping threads. std::jthread / thread? 
       How to handle atomicity? I assume as soon as keyframe is inserted -> abort global BA.
