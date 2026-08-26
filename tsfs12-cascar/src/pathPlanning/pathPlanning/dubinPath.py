@@ -100,9 +100,11 @@ def dubinsPath(startPos, startAngle, endPos, endAngle, getDistance=True, debug=F
 
     paths = [LSL, RSR, LSR, RSL]
     validPaths = []
+    pathLengths = []
     for path in paths:
         if path:
             validPaths.append(path)
+            pathLengths.append(path['length'])
 
     for i in range(len(validPaths)):
         validPaths[i] = createPath(validPaths[i], R, spacing, getDistance)
@@ -146,7 +148,7 @@ def dubinsPath(startPos, startAngle, endPos, endAngle, getDistance=True, debug=F
     if not dubinsPath:
         return None
 
-    return validPaths
+    return validPaths, pathLengths
 
 
 def createPath(path, R, spacing, getDistance=True):

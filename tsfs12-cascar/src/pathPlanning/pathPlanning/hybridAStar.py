@@ -124,8 +124,8 @@ class HybridAStar():
 
 
     def heuristic(self, startNode, goalNode):
-        #gx, gy  = self.worldToGrid(startNode.x, goalNode.y)
-        #return self.distanceGrid[gy, gx]**2
+        # gx, gy  = self.worldToGrid(startNode.x, goalNode.y)
+        # return self.distanceGrid[gy, gx]**2
         return (startNode.y - goalNode.y)**2 + (startNode.x - goalNode.x)**2
 
 
@@ -137,6 +137,7 @@ class HybridAStar():
             path.append((node.x, node.y, node.theta))
             node = node.parent
 
+        return path
         return path[::-1]
 
 
@@ -145,10 +146,12 @@ class HybridAStar():
         y = node.y
         theta = node.theta 
 
+        dir = -1
+
         result = (x, y, theta)
         travelled = 0
-        while travelled < self.propogationDistance:
-            ds = min(self.propogationDistance-travelled, self.propogationInterval)
+        while abs(travelled) < self.propogationDistance:
+            ds = dir * min(self.propogationDistance-travelled, dir * self.propogationInterval)
             x += ds * cos(theta)
             y += ds * sin(theta)
 
@@ -177,11 +180,29 @@ class HybridAStar():
         return False
 
 
-    def addDubinPaths(self, path, goalNode):
-        # to do:
-        # * Add a binary search instead of linear
+    def getShortestDubin(self, paths, pathLengths, lowerLimit):
+        colliding = []
+        for dubin in paths:
+            colliding.append(self.isColliding(dubin))
 
-        path[-1] = (goalNode.x, goalNode.y, goalNode.theta)
+        shortestPath = None
+        shortestLength = lowerLimit * self.propogationDistance
+        for dubin, pathLength, collision in zip(paths, pathLengths, colliding):
+            if not collision and pathLength < shortestLength:
+                shortestLength = pathLength
+                shortestPath = dubin
+
+        return shortestPath
+
+
+    def addDubinPaths(self, path, goalNode):
+        """
+        Function that looks for shortcuts in the form of dubin paths.
+        """
+
+        # Add the start manually, since the search might be off
+        # Won't make it perfect, but might make it better if a dubin path is found
+        path[0] = (goalNode.x, goalNode.y, self.wrap_angle(goalNode.theta+np.pi))
 
         lower = 0
         upper = len(path) - 1
@@ -200,18 +221,9 @@ class HybridAStar():
             staticPoint = path[upper]
             for i in range(lower, upper - 1):
                 dynamicPoint = path[i]
-                dubins = dubinPath.dubinsPath(np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], 
+                dubins, dubinLengths = dubinPath.dubinsPath(np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], 
                                              np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], getDistance=False)
-                colliding = []
-                for dubin in dubins:
-                    colliding.append(self.isColliding(dubin))
-
-                shortestPath = None
-                shortestLength = upper - i
-                for dubin, collision in zip(dubins, colliding):
-                    if not collision and len(dubin) <= shortestLength:
-                        shortestLength = len(dubin)
-                        shortestPath = dubin
+                shortestPath = self.getShortestDubin(dubins, dubinLengths, upper - i)
 
                 if shortestPath != None:
                     upperDubin = shortestPath
@@ -223,18 +235,9 @@ class HybridAStar():
             staticPoint = path[lower]
             for i in range(upper, lower + 1, -1):
                 dynamicPoint = path[i]
-                dubins = dubinPath.dubinsPath(np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], 
+                dubins, dubinLengths = dubinPath.dubinsPath(np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], 
                                              np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], getDistance=False)
-                colliding = []
-                for dubin in dubins:
-                    colliding.append(self.isColliding(dubin))
-
-                shortestPath = None
-                shortestLength = i - lower
-                for dubin, collision in zip(dubins, colliding):
-                    if not collision and len(dubin) <= shortestLength:
-                        shortestLength = len(dubin)
-                        shortestPath = dubin
+                shortestPath = self.getShortestDubin(dubins, dubinLengths, i - lower)
 
                 if shortestPath != None:
                     lowerDubin = shortestPath
@@ -272,23 +275,34 @@ class HybridAStar():
         startNode = Node(start[0] - minX, start[1] - minY, self.wrap_angle(start[2]))
         goalNode = Node(goal[0] - minX, goal[1] - minY, self.wrap_angle(goal[2]))
 
+        startNode, goalNode = goalNode, startNode
+        startNode.theta = self.wrap_angle(startNode.theta + np.pi)
+        goalNode.theta = self.wrap_angle(goalNode.theta + np.pi)
+
         self.mapGrid = self.inflate_map(map)
-        self.width, self.height = map.shape
+        self.height, self.width = map.shape
 
         if self.isColliding([(startNode.x, startNode.y)]) or self.isColliding([(goalNode.x, goalNode.y)]):
             print("Start or Goal is inside object")
             return None
 
-        #self.distanceGrid = np.copy(self.mapGrid)
-        #self.distanceGrid = self.createDistanceGrid(goalNode)
-        #print("Distance map done")
+        # self.distanceGrid = np.copy(self.mapGrid)
+        # self.distanceGrid = self.createDistanceGrid(goalNode)
+        # print("Distance map done")
 
         startNode.h = self.heuristic(startNode, goalNode)
         openSet = []
         counter = 0
         heapq.heappush(openSet, (startNode.f, counter, startNode))
 
-        best_gs = {self.stateKey(startNode.x, startNode.y, startNode.theta): startNode.g}
+
+        nx = self.width
+        ny = self.height
+        ntheta = int(round(2*np.pi / self.theta_resolution))
+        best_gs = np.full((nx, ny, ntheta), np.inf)
+
+        xi, yi, ti = self.stateKey(startNode.x, startNode.y, startNode.theta)
+        best_gs[xi, yi, ti] = startNode.g
 
         iterations = 0
         maxIterations = 1e6
@@ -305,10 +319,13 @@ class HybridAStar():
                 continue
 
             if self.isFinished(current, goalNode):
+                print("Path found, searching for shortcuts")
                 path = self.reconstruct_path(current)
-                t0 = time.time()
+                for i in range(len(path)):
+                    point = path[i]
+                    path[i] = (point[0], point[1], self.wrap_angle(point[2] + np.pi)) #Since the search is backwards, add turn every point around.
+
                 path = self.addDubinPaths(path, goalNode)
-                print(time.time()-t0)
                 return path
 
             for dTheta, steeringAngle in zip(self.dThetas, self.steeringAngles):
@@ -317,16 +334,12 @@ class HybridAStar():
                     continue
 
                 newX, newY, newTheta = newPoint
+                xi, yi, ti = self.stateKey(newX, newY, newTheta)
 
-                key = self.stateKey(newX, newY, newTheta)
                 newg = current.g + self.propogationDistance**2
-                # newg = (current.g + self.propogationDistance + 
-                #         0.05*((abs(steeringAngle)+1)**2 - 1) + 
-                #         0.1*((abs(steeringAngle-current.steering)+1)**2 - 1))
-                # newg = (current.g + self.propogationDistance + 0.05*abs(steeringAngle) + 0.1*abs(steeringAngle-current.steering))
-                if key in best_gs and newg >= best_gs[key]:
+                if newg >= best_gs[xi, yi, ti]:
                     continue
-                best_gs[key] = newg
+                best_gs[xi, yi, ti] = newg
 
                 newNode =  Node(newX, newY, newTheta, steeringAngle, parent=current, g=newg)
                 newNode.h = self.heuristic(newNode, goalNode)
@@ -336,7 +349,7 @@ class HybridAStar():
                 )
 
                 counter += 1
-
+                
 
 if __name__ == "__main__":
     import random
@@ -389,11 +402,8 @@ if __name__ == "__main__":
         start = (random.uniform(-4, -1), random.uniform(-4, 4), random.uniform(-np.pi, np.pi))
         goal = (random.uniform(1, 4), random.uniform(-4, 4), random.uniform(-np.pi, np.pi))
 
-        start =  (-2.3626710352909526, 3.8542462746579744, 1.6661474695408183)
-        goal = (1.0984182966011757, -2.2933858956775968, -0.37632596566964605)
-
-        #start = (-3, 0, 0)
-        #goal = (3.5, 0, np.pi)
+        start = (-3, 0, 0)
+        goal = (3, 0, np.pi)
 
         print("Search started")
         t0 = time.time()
@@ -401,6 +411,9 @@ if __name__ == "__main__":
         print("Search finished.")
 
         if path is not None:
+            for point in path:
+                pass
+                #print((float(point[0]), float(point[1]), 180/np.pi * float(point[2])))
             print(f"    Time:  {time.time() - t0}")
             print(f"    Start: {start}")
             print(f"    Goal:  {goal}")
