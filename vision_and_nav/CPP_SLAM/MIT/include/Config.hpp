@@ -32,7 +32,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 // #define PANTO_DBG
 
 #define CERES_MAX_ITER 200
-#define CERES_NUM_THREADS 8
+#define CERES_NUM_THREADS 4
 #define CERES_HUBER_THRESHOLD 2.0f
 
 #define OPENCV_PROBECORRECT 0.99f
@@ -58,7 +58,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define PANTO_BASELINE_THRESHOLD 0.01f
 #define PANTO_BASELINE_LARGE_ENOUGH_TRIANGULATION(BaseLine, MedianDepth) ((BaseLine / MedianDepth) > PANTO_BASELINE_THRESHOLD)
 #define PANTO_FEATURE_TRACK_NOT_OBSERVED -1
-#define PANTO_INIT_MIN_NUM_FRAMES 20
+#define PANTO_INIT_MIN_NUM_FRAMES 40
 constexpr const char* PANTO_COLMAP_PATH = "./colmap";
 constexpr const char* PANTO_COLMAP_PYTHON_SCRIPT_PATH = "./colmap/vis_colmap.py";
 constexpr const char* PANTO_PATH_TO_PYTHON_INTERPRETER = "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/.venv/bin/python";
@@ -175,7 +175,7 @@ inline constexpr const char* PANTO_VocabFilePath =
 #define PANTO_FUNDAMENTAL_MIN_POINTS 8
 #define PANTO_HOMOGRAPHY_MIN_POINTS 4
 #define PANTO_INIT_MIN_STATIONARY_POINTS 50
-#define PANTO_NUM_THREADS_MAX 6
+#define PANTO_NUM_THREADS_MAX 8
 
 /*                      
  ******************************************************************                                                  

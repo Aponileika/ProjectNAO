@@ -165,10 +165,13 @@ void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const 
 
     assert(NumWritten == NumCameras);
 
+    fclose(fp);
+
     LG_Log(LogSeverity::DBG,
             "[VIZPriv_WriteCameras] Header = %llu, Written = %llu\n",
             static_cast<unsigned long long>(NumCameras),
             static_cast<unsigned long long>(NumWritten));
+
 }
 
 void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)

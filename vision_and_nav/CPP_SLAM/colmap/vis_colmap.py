@@ -107,6 +107,7 @@ def update_visualization(
     images,
     points3d,
     gui_point_size,
+    gui_frustum_scale,
     handles,
 ):
     images_path = root / "images"
@@ -114,6 +115,7 @@ def update_visualization(
     server.scene.reset()
 
     handles["point_cloud"] = None
+    handles["camera_frustums"] = []
 
     if len(points3d) > 0:
         points = np.array(
@@ -151,8 +153,8 @@ def update_visualization(
             f"/colmap/frame_{img_id}",
             wxyz=T_world_camera.rotation().wxyz,
             position=T_world_camera.translation(),
-            axes_length=0.1,
-            axes_radius=0.005,
+            axes_length=gui_frustum_scale.value * 0.5,
+            axes_radius=gui_frustum_scale.value * 0.025,
         )
 
         image_file = images_path / img.name
@@ -168,13 +170,16 @@ def update_visualization(
             H = cam.height
             W = cam.width
 
-            server.scene.add_camera_frustum(
+            frustum = server.scene.add_camera_frustum(
                 f"/colmap/frame_{img_id}/frustum",
                 fov=2 * np.arctan2(H / 2.0, fy),
                 aspect=W / H,
-                scale=0.15,
+                scale=gui_frustum_scale.value,
                 image=image,
             )
+
+            handles["camera_frustums"].append(frustum)
+
         else:
             print(
                 f"[VISER] Skipping frustum for image {img_id}: "
@@ -194,16 +199,28 @@ def main(root: str):
 
     server = viser.ViserServer()
 
+    initial_point_size = 0.02
+    initial_frustum_scale = initial_point_size * 10.0
+
     gui_point_size = server.gui.add_slider(
         "Point size",
         min=0.001,
         max=1.0,
         step=0.001,
-        initial_value=0.02,
+        initial_value=initial_point_size,
+    )
+
+    gui_frustum_scale = server.gui.add_slider(
+        "Frustum scale",
+        min=0.01,
+        max=5.0,
+        step=0.01,
+        initial_value=initial_frustum_scale,
     )
 
     handles = {
         "point_cloud": None,
+        "camera_frustums": [],
         "camera_initialized": False,
     }
 
@@ -211,6 +228,11 @@ def main(root: str):
     def _(_):
         if handles["point_cloud"] is not None:
             handles["point_cloud"].point_size = gui_point_size.value
+
+    @gui_frustum_scale.on_update
+    def _(_):
+        for frustum in handles["camera_frustums"]:
+            frustum.scale = gui_frustum_scale.value
 
     last_snapshot_id = None
 
@@ -222,7 +244,6 @@ def main(root: str):
 
         if snapshot_id is not None and snapshot_id != last_snapshot_id:
             try:
-
                 cameras, images, points3d = load_snapshot(
                     root,
                     snapshot_id,
@@ -235,6 +256,7 @@ def main(root: str):
                     images,
                     points3d,
                     gui_point_size,
+                    gui_frustum_scale,
                     handles,
                 )
 
