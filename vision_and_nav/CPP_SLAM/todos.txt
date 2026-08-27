@@ -48,14 +48,14 @@ What to do next:
 
     - (DONE) Make code runnable for a full sequence so without inuput arguments default should be run until all frames processed.
 
-    - Separate tracking local map and local mapping local map (local mapping map == map created after frame is accepted as a keyframe),
+    - (DONE) Separate tracking local map and local mapping local map (local mapping map == map created after frame is accepted as a keyframe),
       make use of the covisibility graph in local map creation.
 
     - Add KeyFrame culling.
 
-    - Add visualization of covisbility graph.
-
     - Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc.
+
+    - Add visualization of covisbility graph.
 
     - Clean up the code a bit, right now it is a bit ugly. 
 

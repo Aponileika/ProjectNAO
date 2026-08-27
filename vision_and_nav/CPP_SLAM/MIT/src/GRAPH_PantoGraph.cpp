@@ -1,161 +1,164 @@
 #include "../include/GRAPH_PantoGraph.hpp"
+#include "GRAPHPriv_PantoGraph.hpp"
 #include <cstring>
 
 void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
         const u64 NumKeyFrames)
 {
-    const typePantoKeypointFrame& KeyPointFrame = KeyFrame.Points;
-    typePantoVector<u64> CovisibilityCount(NumKeyFrames, 0);
-
-    LG_Log(LogSeverity::DBG, "[GRAPH_AddKeyFrame] Adding KeyFrame %llu to CovisibilityGraph\n",KeyFrame.ID);
-
-    for(const typePantoImagePoint& ImagePoint : KeyPointFrame.ImagePoints)
+    while(CovisibilityGraph.size() <= KeyFrame.ID)
     {
-        const u64 MapPointID = ImagePoint.MapPointID;
-        if(MapPointID != PANTO_ID_NOT_SET)
-        {
-            for(const u64& KeyFrameID : GlobalMapPoints[MapPointID].KeyFrameIDs)
-            {
-                if(KeyFrameID == KeyFrame.ID)
-                {
-                    continue;
-                }
+        CovisibilityGraph.push_back({});
+    }
 
-                CovisibilityCount[KeyFrameID]++;
+    assert(CovisibilityGraph.contains(KeyFrame.ID));
+
+    std::unordered_map<u64, u64>& Connections = CovisibilityGraph[KeyFrame.ID];
+
+    Connections.clear();
+
+    for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+    {
+        const u64 MapPointID =
+            ImagePoint.MapPointID;
+
+        if(MapPointID == PANTO_ID_NOT_SET)
+        {
+            continue;
+        }
+
+        const typePantoMapPoint& MapPoint = GlobalMapPoints[MapPointID];
+
+        for(const u64 OtherKeyFrameID : MapPoint.KeyFrameIDs)
+        {
+            if(OtherKeyFrameID == KeyFrame.ID)
+            {
+                continue;
             }
+
+            if(!CovisibilityGraph.contains(OtherKeyFrameID))
+            {
+                continue;
+            }
+
+            ++Connections[OtherKeyFrameID];
         }
     }
 
+    for(const auto& [OtherKeyFrameID, Count] :
+        Connections)
+    {
+        CovisibilityGraph[OtherKeyFrameID][KeyFrame.ID] =
+            Count;
+    }
+}
+
+typeCovisibility GRAPH_GetMostCovisibleFrame( const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID)
+{
+    typeCovisibility MostCovisible
+    {
+        .KeyFrameID = PANTO_ID_NOT_SET,
+        .Covisibility = 0
+    };
+
+    for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph[KeyFrameID])
+    {
+        if(Count > MostCovisible.Covisibility)
+        {
+            MostCovisible =
+            {
+                .KeyFrameID = OtherKeyFrameID,
+                .Covisibility = Count
+            };
+        }
+    }
+
+    return MostCovisible;
+}
+
+std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames( const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID, const u64 N)
+{
     std::vector<typeCovisibility> Covisibility;
 
-    for(u64 KeyFrameID{}; KeyFrameID < KeyFrame.ID; KeyFrameID++)
+    Covisibility.reserve( CovisibilityGraph[KeyFrameID].size());
+
+    for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph[KeyFrameID])
     {
-        u64 Count = CovisibilityCount[KeyFrameID];
+        Covisibility.push_back(
+        {
+            .KeyFrameID = OtherKeyFrameID,
+            .Covisibility = Count
+        });
+    }
+
+    std::sort( Covisibility.begin(), Covisibility.end(),
+            [](const typeCovisibility& A,
+               const typeCovisibility& B)
+            {
+                return A.Covisibility >
+                    B.Covisibility;
+            });
+
+    if(Covisibility.size() > N)
+    {
+        Covisibility.resize(N);
+    }
+
+    return Covisibility;
+}
+
+
+void GRAPH_UpdateCovisibility( typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<typePantoMapPoint>& GlobalMapPoints, const u64 NewKeyFrameID,
+        const std::vector<u64>& NewPointIDs)
+{
+    std::vector<u64> CovisibilityCount( CovisibilityGraph.size(), 0);
+
+    LG_Log( LogSeverity::DBG,
+            "[GRAPH_UpdateCovisibility] Covisibility graph size = %zu\n",
+            CovisibilityGraph.size());
+
+    for(const u64 MapPointID : NewPointIDs)
+    {
+        const typePantoMapPoint& MapPoint = GlobalMapPoints[MapPointID];
+
+        for(const u64 KeyFrameID : MapPoint.KeyFrameIDs)
+        {
+            if(KeyFrameID == NewKeyFrameID)
+            {
+                continue;
+            }
+
+            assert(CovisibilityGraph.contains(KeyFrameID));
+
+            ++CovisibilityCount[KeyFrameID];
+        }
+    }
+
+    for(std::size_t KeyFrameID{}; KeyFrameID < CovisibilityCount.size(); KeyFrameID++)
+    {
+        const u64 Count = CovisibilityCount[KeyFrameID];
 
         if(Count == 0)
         {
             continue;
         }
 
-        Covisibility.push_back(
-        {
-            .KeyFrameID = KeyFrameID,
-            .Covisibility = Count
-        });
-    }
-
-    std::sort(Covisibility.begin(), Covisibility.end(), 
-            [](const typeCovisibility& A, const typeCovisibility& B)
-            {
-                return A.Covisibility > B.Covisibility;
-            }
-    );
-
-    CovisibilityGraph.push_back(Covisibility);
-}
-
-std::vector<typeCovisibility> GRAPH_GetAllCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID)
-{
-    return CovisibilityGraph[KeyFrameID];
-}
-
-
-typeCovisibility GRAPH_GetMostCovisibleFrame(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID)
-{
-    return CovisibilityGraph[KeyFrameID][0];
-}
-
-std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID, const u64 N)
-{
-    const std::vector<typeCovisibility>& Requested = CovisibilityGraph[KeyFrameID];
-    std::vector<typeCovisibility> TopN(N);
-    if(Requested.size() < N)
-    {
-        LG_Log(LogSeverity::DBG, "[GRAPH_GetTopNCovisibleFrames] Requested %llu covisible KF but only had %zu", Requested.size()); 
-        std::memcpy(TopN.data(), Requested.data(), Requested.size());
-        return TopN;
-    }
-    std::memcpy(TopN.data(), Requested.data(), N);
-    return TopN;
-}
-
-
-void GRAPH_UpdateCovisibility(typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<typePantoMapPoint>& GlobalMapPoints, 
-        const u64 NewKeyFrameID, std::vector<u64> NewPointIDs)
-{
-    std::vector<u64> CovisibilityCount(CovisibilityGraph.size(), 0);
-    LG_Log(LogSeverity::DBG, "[GRAPH_UpdateCovisibility] Covisibility grah size = %zu\n", CovisibilityGraph.size()); 
-    
-    for(const u64 ID : NewPointIDs)
-    {
-        for(const u64 KeyFrameID : GlobalMapPoints[ID].KeyFrameIDs)
-        {
-            if(KeyFrameID == NewKeyFrameID)
-            {
-                continue;
-            }
-            ++CovisibilityCount[KeyFrameID];
-        }
-    }
-
-    for(std::size_t i{}; i < CovisibilityGraph.size(); i++)
-    {
-        if(CovisibilityCount[i] == 0)
+        if(!CovisibilityGraph.contains(KeyFrameID))
         {
             continue;
         }
 
-        const u64 Count = CovisibilityCount[i];
-
-        bool WasCovisible = false;
-        for(typeCovisibility& Covisibility : CovisibilityGraph[NewKeyFrameID])
-        {
-            if(Covisibility.KeyFrameID == i)
-            {
-                Covisibility.Covisibility += Count;
-                WasCovisible = true;
-                break;
-            }
-        }
-
-        if(!WasCovisible)
-        {
-            CovisibilityGraph[NewKeyFrameID].push_back(
-                {
-                    .KeyFrameID = static_cast<u64>(i),
-                    .Covisibility = Count
-                });
-        }
-
-        WasCovisible = false;
-        for(typeCovisibility& Covisibility : CovisibilityGraph[i])
-        {
-            if(Covisibility.KeyFrameID == NewKeyFrameID)
-            {
-                Covisibility.Covisibility += Count;
-                WasCovisible = true;
-                break;
-            }
-        }
-
-        if(!WasCovisible)
-        {
-            CovisibilityGraph[i].push_back(
-                {
-                    .KeyFrameID = NewKeyFrameID,
-                    .Covisibility = Count
-                });
-        }
-
-        std::sort(CovisibilityGraph[i].begin(), CovisibilityGraph[i].end(), [](const typeCovisibility& A, const typeCovisibility& B)
-                {
-                    return A.Covisibility > B.Covisibility;
-                }
-                );
+        CovisibilityGraph[NewKeyFrameID][KeyFrameID] += Count;
+        CovisibilityGraph[KeyFrameID][NewKeyFrameID] += Count;
     }
-    std::sort(CovisibilityGraph[NewKeyFrameID].begin(), CovisibilityGraph[NewKeyFrameID].end(), [](const typeCovisibility& A, const typeCovisibility& B)
-            {
-                return A.Covisibility > B.Covisibility;
-            }
-            );
 }
+
+void GRAPH_CullKeyFrame(typeCovisibilityGraph& CovisibilityGraph, u64 KeyFrameID)
+{
+    for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph[KeyFrameID])
+    {
+        CovisibilityGraph[OtherKeyFrameID].erase( KeyFrameID);
+    }
+
+    CovisibilityGraph.remove(KeyFrameID);
+}
+

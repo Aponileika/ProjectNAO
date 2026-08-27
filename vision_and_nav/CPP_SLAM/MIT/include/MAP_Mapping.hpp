@@ -39,9 +39,9 @@ void MAP_RemovePreliminaryKeyFrame(typeGlobalMap& Map);
 typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame);
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph);
 typePantoVector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Map, const typeKeyFrame& LastKeyFrame);
-typeLocalMapInfo MAP_MatchMapPointLocalMap(typeLocalMap& LocalMap, typeKeyFrame& NewKeyFrame);
+typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMapTracking& LocalMap, typeKeyFrame& NewKeyFrame);
 
-void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap);
+void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const typeLocalMap& LocalMap);
 void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGlobalMap& GlobalMap);
 void MAP_CullObservationEdges(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap);
 

@@ -60,7 +60,9 @@ int main(int argc, char* argv[])
     LG_Log(LogSeverity::DBG, "[main] OpenCV is using %lld threads \n", cv::getNumThreads());
     CM_SetIntrinsics();
     LG_Log(LogSeverity::DBG, "Initializing visualization\n");
+#if !defined(DEBUG)
     VIZ_InitVisualization();
+#endif
     LG_Log(LogSeverity::DBG, "Starting SLAMLoop\n");
     SL_PantoSLAM(num_loops);
     return 0;

@@ -29,7 +29,7 @@ BASE_CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -std=c++20 \
 	-I$(OPENCV)/include/opencv4
 
 ifeq ($(DEBUG),1)
-	CXXFLAGS := $(BASE_CXXFLAGS) -O0 -g -fsanitize=address -fno-omit-frame-pointer
+	CXXFLAGS := $(BASE_CXXFLAGS) -O0 -g -fsanitize=address -fno-omit-frame-pointer -DDEBUG
 	SANITIZER_LDFLAGS := -fsanitize=address
 else
 	CXXFLAGS := $(BASE_CXXFLAGS) -O2

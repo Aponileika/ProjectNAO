@@ -1,0 +1,6 @@
+#ifndef GRAPHPRIV_PANTOGRAPH_HPP_
+#define GRAPHPRIV_PANTOGRAPH_HPP_
+#include "GRAPH_PantoGraph.hpp"
+
+
+#endif // GRAPHPRIV_PANTOGRAPH_HPP_
