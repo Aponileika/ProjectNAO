@@ -53,6 +53,8 @@ What to do next:
 
     - (DONE) Add KeyFrame culling.
 
+    - Culling of points, currently get alot of bad 3d points.
+
     - Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc,
       right now it is too hard to navigate the logs in any reasonable way.
 
