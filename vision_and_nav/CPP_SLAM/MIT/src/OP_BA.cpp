@@ -12,10 +12,10 @@ static const struct typeOPCameraIntrinsics OPCameraIntrinsics(CM_GetIntrinsics()
 
 void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem);
 void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem);
-void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem);
+void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, typeKeyFrame* NewKeyFrame);
 void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const typeLocalMap& LocalMap);
 
-void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const typeLocalMap& LocalMap)
+void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame)
 {
     ceres::Problem Problem;
     ceres::Solver::Options options;
@@ -35,7 +35,7 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
             options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
             break;
         case typeTracking:
-            __OP_BuildProblemTracking(Map, Problem);
+            __OP_BuildProblemTracking(Map, Problem, NewKeyFrame);
             options.linear_solver_type = ceres::DENSE_QR;
             break;
         case typeLocal:
@@ -48,7 +48,7 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
     ceres::Solve(options, &Problem, &summary);
     if(Target == typeTracking)
     {
-        CM_SetRtfromParam(&(Map.KeyFrames.back().Pose));
+        CM_SetRtfromParam(&(NewKeyFrame->Pose));
     }
     else if(Target == typeLocal)
     {
@@ -190,7 +190,7 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
     }
 }
 
-void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem)
+void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, typeKeyFrame* NewKeyFrame)
 {
     /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
      *Optimizing on manifolds seemingly has many benefits, one of them is that
@@ -202,8 +202,8 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem)
     //We need to add the camera parameters first so we can
     //Set the first camera constant
 
-    typeKeyFrame& KeyFrame = Map.KeyFrames.back();
-    typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+    typeKeyFrame* KeyFrame = NewKeyFrame;
+    typePoseParameters& Parameters = KeyFrame->Pose.Parameters;
 
     Problem.AddParameterBlock(Parameters.q.coeffs().data(), 4);
     Problem.SetManifold(Parameters.q.coeffs().data(),
@@ -213,7 +213,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem)
 
     u64 NumAssociatedMapPoints = 0;
 
-    for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+    for(const typePantoImagePoint& ImagePoint : KeyFrame->Points.ImagePoints)
     {
         if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
         {
@@ -223,7 +223,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem)
 
     LG_Log( LogSeverity::DBG, "[__OP_BuildProblemTracking] KeyFrame has %llu associated map points\n", static_cast<unsigned long long>(NumAssociatedMapPoints));
 
-    for (typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+    for (typePantoImagePoint& ImagePoint : KeyFrame->Points.ImagePoints)
     {
         const u64 MapPointID = ImagePoint.MapPointID;
 
@@ -280,11 +280,9 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
 
     if(LocalMap.FixedKeyFrameIDs.empty())
     {
-        const u64 KeyFrameID =
-            LocalMap.KeyFrameIDs.front();
+        const u64 KeyFrameID = LocalMap.KeyFrameIDs.front();
 
-        typePoseParameters& Parameters =
-            Map.KeyFrames[KeyFrameID].Pose.Parameters;
+        typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
 
         Problem.SetParameterBlockConstant(
                 Parameters.q.coeffs().data());
@@ -315,7 +313,7 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
 
         Problem.AddParameterBlock(MapPoint.Point.data(), 4);
         Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
-        LocalMapPoints.insert(MapPoint.ID);
+        LocalMapPoints.insert(LocalMapPointID);
     }
 
     for(const u64& KeyFrameID : LocalMap.KeyFrameIDs) 

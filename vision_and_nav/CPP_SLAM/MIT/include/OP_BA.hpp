@@ -91,6 +91,6 @@ struct OP_ReprojectionError
     const struct typeOPCameraIntrinsics* Intrinsics_;
 };
 
-void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const typeLocalMap& LocalMap);
+void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame);
 
 #endif //__OP_BA_HPP_

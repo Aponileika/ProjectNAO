@@ -3,14 +3,14 @@
 #include <cstring>
 
 void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
-        const u64 NumKeyFrames)
+        const u64 ID)
 {
-    while(CovisibilityGraph.size() <= KeyFrame.ID)
-    {
-        CovisibilityGraph.push_back({});
-    }
+    assert(KeyFrame.ID == ID);
 
-    assert(CovisibilityGraph.contains(KeyFrame.ID));
+    const u64 GraphID =
+        CovisibilityGraph.push_back({});
+
+    assert(GraphID == ID);
 
     std::unordered_map<u64, u64>& Connections = CovisibilityGraph[KeyFrame.ID];
 
@@ -156,7 +156,7 @@ void GRAPH_CullKeyFrame(typeCovisibilityGraph& CovisibilityGraph, u64 KeyFrameID
 {
     for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph[KeyFrameID])
     {
-        CovisibilityGraph[OtherKeyFrameID].erase( KeyFrameID);
+        CovisibilityGraph[OtherKeyFrameID].erase(KeyFrameID);
     }
 
     CovisibilityGraph.remove(KeyFrameID);

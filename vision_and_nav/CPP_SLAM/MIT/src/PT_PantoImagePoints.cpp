@@ -192,9 +192,6 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
             if(Top2Candidates[1].second == PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1) continue;
 
             NumWithTwoCandidates++;
-            LG_Log( LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] MP %zu best = %u, second = %u, ratio = %f\n",
-                    i, Top2Candidates[0].second, Top2Candidates[1].second,
-                    static_cast<fp64>(Top2Candidates[0].second) / static_cast<fp64>(Top2Candidates[1].second));
 
             if((static_cast<fp64>(Top2Candidates[0].second) < PANTO_MATCHRATIO * static_cast<fp64>(Top2Candidates[1].second))
                     && (Top2Candidates[0].second < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD))

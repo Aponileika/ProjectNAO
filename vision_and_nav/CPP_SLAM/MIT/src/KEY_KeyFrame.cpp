@@ -99,8 +99,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
                     {
                         continue;
                     }
-                    const typePantoMapPoint& MapPoint =
-                    GlobalMapPoints[ImagePoint2.MapPointID];
+                    const typePantoMapPoint& MapPoint = GlobalMapPoints[ImagePoint2.MapPointID];
 
                     Eigen::Vector2d ProjectedPoint{};
 
@@ -247,9 +246,10 @@ bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
 }
 
 void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints, 
-        const typePantoVector<typeKeyFrame>& GlobalKeyFrames, const u64& ID, const DBoW3::Vocabulary* Vocabulary)
+        const typePantoVector<typeKeyFrame>& GlobalKeyFrames, const DBoW3::Vocabulary* Vocabulary)
 {
-    KeyFrame.ID = ID;
+    const u64 ID = KeyFrame.ID;
+    LG_Log(LogSeverity::DBG, "[KEY_SetAsKeyFrame] ID = %llu\n", ID);
     const cv::Mat& Descriptors = CurrentDescriptors.front();
     std::vector<cv::Mat> DescriptorVector;
     DescriptorVector.reserve(Descriptors.rows);
@@ -279,10 +279,13 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
 
         for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
         {
-            const u64 ImagePointID = MapPoint.ImagePointIDs[i];
-            const u64 KeyFrameID   = MapPoint.KeyFrameIDs[i];
+            if(MapPoint.ImagePointIDs.contains(i) && MapPoint.KeyFrameIDs.contains(i))
+            {
+                const u64 ImagePointID = MapPoint.ImagePointIDs[i];
+                const u64 KeyFrameID   = MapPoint.KeyFrameIDs[i];
 
-            Descriptors.push_back(GlobalKeyFrames[KeyFrameID]. Points.ImagePoints[ImagePointID]. Descriptor);
+                Descriptors.push_back(GlobalKeyFrames[KeyFrameID]. Points.ImagePoints[ImagePointID]. Descriptor);
+            }
         }
 
         if(Descriptors.size() == 1)

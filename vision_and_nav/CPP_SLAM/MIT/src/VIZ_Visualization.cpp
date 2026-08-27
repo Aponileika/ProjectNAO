@@ -40,7 +40,6 @@ void VIZ_InitVisualization(void)
 
     const pid_t PID = fork();
 
-
     if(PID < 0)
     {
         LG_Log(LogSeverity::ERROR, "[VIZ_StartViewer] Failed to fork viewer process\n");
@@ -103,9 +102,9 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap)
     VIZPriv_WritePoints(GlobalMap, SnapshotPath);
 
     LG_Log(LogSeverity::DBG,
-        "[VIZ_WriteColmap] Publishing snapshot %llu from path %s\n",
-        static_cast<unsigned long long>(SnapshotID),
-        SnapshotPath.c_str());
+            "[VIZ_WriteColmap] Publishing snapshot %llu from path %s\n",
+            static_cast<unsigned long long>(SnapshotID),
+            SnapshotPath.c_str());
 
     VIZPriv_PublishSnapshot(SnapshotID);
 
@@ -114,37 +113,50 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap)
 
 void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
 {
-    const std::string CameraPath = SnapshotPath + "/cameras.bin";
+    const std::string CameraPath =
+        SnapshotPath + "/cameras.bin";
 
-    FILE* fp = fopen(CameraPath.c_str(), "wb");
+    FILE* fp =
+        fopen(CameraPath.c_str(), "wb");
 
     if(fp == nullptr)
     {
         LG_Log(LogSeverity::DBG,
                 "[VIZPriv_WriteCameras] Failed to open %s\n",
                 CameraPath.c_str());
+
         return;
     }
 
-    const u64 NumCameras = static_cast<u64>(KeyFrames.active_size());
+    const u64 NumCameras =
+        static_cast<u64>(KeyFrames.active_size());
 
-    fwrite(&NumCameras, sizeof(u64), 1, fp);
+    fwrite(
+            &NumCameras,
+            sizeof(u64),
+            1,
+            fp);
 
     u64 NumWritten = 0;
 
     for(const typeKeyFrame& KeyFrame : KeyFrames)
     {
-        const i32 CameraID = static_cast<i32>(KeyFrame.ID + 1);
+        const i32 CameraID =
+            static_cast<i32>(KeyFrame.ID + 1);
 
-        const i32 ModelID = PANTO_CAMERA_MODEL_ID;
+        const i32 ModelID =
+            PANTO_CAMERA_MODEL_ID;
 
         const typeCameraIntrinsics* Intrinsics =
             KeyFrame.Pose.Intrinsics;
 
         assert(Intrinsics != nullptr);
 
-        const u64 Width = PANTO_IMAGE_WIDTH;
-        const u64 Height = PANTO_IMAGE_HEIGHT;
+        const u64 Width =
+            PANTO_IMAGE_WIDTH;
+
+        const u64 Height =
+            PANTO_IMAGE_HEIGHT;
 
         const fp64 Parameters[4] =
         {
@@ -171,40 +183,59 @@ void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const 
             "[VIZPriv_WriteCameras] Header = %llu, Written = %llu\n",
             static_cast<unsigned long long>(NumCameras),
             static_cast<unsigned long long>(NumWritten));
-
 }
 
 void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
 {
-    const std::string ImagePath = SnapshotPath + "/images.bin";
+    const std::string ImagePath =
+        SnapshotPath + "/images.bin";
+
     static_assert(sizeof(u64) == 8);
     static_assert(sizeof(fp64) == 8);
 
-    FILE* fp = fopen(ImagePath.c_str(), "wb");
+    FILE* fp =
+        fopen(ImagePath.c_str(), "wb");
 
     if(fp == nullptr)
     {
         LG_Log(LogSeverity::DBG,
                 "[VIZPriv_WriteImages] Failed to open %s\n",
                 ImagePath.c_str());
+
         return;
     }
 
-    const u64 NumImages = static_cast<u64>(KeyFrames.active_size());
+    const u64 NumImages =
+        static_cast<u64>(KeyFrames.active_size());
 
-    fwrite(&NumImages, sizeof(u64), 1, fp);
+    fwrite(
+            &NumImages,
+            sizeof(u64),
+            1,
+            fp);
 
     for(const typeKeyFrame& KeyFrame : KeyFrames)
     {
-        const i32 ImageID = static_cast<i32>(KeyFrame.ID + 1);
-        const i32 CameraID = static_cast<i32>(KeyFrame.ID + 1);
+        const i32 ImageID =
+            static_cast<i32>(KeyFrame.ID + 1);
 
-        fwrite(&ImageID, sizeof(i32), 1, fp);
+        const i32 CameraID =
+            static_cast<i32>(KeyFrame.ID + 1);
 
-        const Eigen::Matrix3d& Rcw = KeyFrame.Pose.Pose.R;
-        const Eigen::Vector3d& tcw = KeyFrame.Pose.Pose.t;
+        fwrite(
+                &ImageID,
+                sizeof(i32),
+                1,
+                fp);
+
+        const Eigen::Matrix3d& Rcw =
+            KeyFrame.Pose.Pose.R;
+
+        const Eigen::Vector3d& tcw =
+            KeyFrame.Pose.Pose.t;
 
         Eigen::Quaterniond Quaternion(Rcw);
+
         Quaternion.normalize();
 
         const fp64 COLMAPQuaternion[4] =
@@ -215,29 +246,56 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
             Quaternion.z()
         };
 
-        fwrite(COLMAPQuaternion, sizeof(fp64), 4, fp);
-        fwrite(tcw.data(), sizeof(fp64), 3, fp);
+        fwrite(
+                COLMAPQuaternion,
+                sizeof(fp64),
+                4,
+                fp);
 
-        fwrite(&CameraID, sizeof(i32), 1, fp);
+        fwrite(
+                tcw.data(),
+                sizeof(fp64),
+                3,
+                fp);
 
-        const std::filesystem::path ImagePath(KeyFrame.ImagePath);
-        const std::string ImageName = ImagePath.filename().string();
+        fwrite(
+                &CameraID,
+                sizeof(i32),
+                1,
+                fp);
 
-        fwrite(ImageName.c_str(), sizeof(char), ImageName.size() + 1, fp);
+        const std::filesystem::path CurrentImagePath(
+                KeyFrame.ImagePath);
+
+        const std::string ImageName =
+            CurrentImagePath.filename().string();
+
+        fwrite(
+                ImageName.c_str(),
+                sizeof(char),
+                ImageName.size() + 1,
+                fp);
 
         const u64 NumImagePoints =
-            static_cast<u64>(KeyFrame.Points.ImagePoints.active_size());
+            static_cast<u64>(
+                    KeyFrame.Points.ImagePoints.active_size());
 
-        fwrite(&NumImagePoints, sizeof(u64), 1, fp);
+        fwrite(
+                &NumImagePoints,
+                sizeof(u64),
+                1,
+                fp);
 
-        LG_Log(LogSeverity::DBG,
-        "[VIZPriv_WriteImages] ImageID = %d, CameraID = %d, Name = '%s', NumPoints2D = %llu\n",
-        ImageID,
-        CameraID,
-        ImageName.c_str(),
-        static_cast<unsigned long long>(NumImagePoints));
+        LG_Log(
+                LogSeverity::DBG,
+                "[VIZPriv_WriteImages] ImageID = %d, CameraID = %d, Name = '%s', NumPoints2D = %llu\n",
+                ImageID,
+                CameraID,
+                ImageName.c_str(),
+                static_cast<unsigned long long>(NumImagePoints));
 
-        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        for(const typePantoImagePoint& ImagePoint :
+            KeyFrame.Points.ImagePoints)
         {
             const fp64 Point2D[2] =
             {
@@ -245,55 +303,86 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
                 ImagePoint.Point.y()
             };
 
-            fwrite(Point2D, sizeof(fp64), 2, fp);
+            fwrite(
+                    Point2D,
+                    sizeof(fp64),
+                    2,
+                    fp);
 
             i64 Point3DID = -1;
 
             if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
             {
-                Point3DID = static_cast<i64>(ImagePoint.MapPointID + 1);
+                Point3DID =
+                    static_cast<i64>(
+                            ImagePoint.MapPointID + 1);
             }
 
-            fwrite(&Point3DID, sizeof(i64), 1, fp);
+            fwrite(
+                    &Point3DID,
+                    sizeof(i64),
+                    1,
+                    fp);
         }
     }
 
     fclose(fp);
 
-    LG_Log(LogSeverity::DBG,
+    LG_Log(
+            LogSeverity::DBG,
             "[VIZPriv_WriteImages] Wrote %llu images to %s\n",
             static_cast<unsigned long long>(NumImages),
             ImagePath.c_str());
 }
 
-void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap,  const std::string& SnapshotPath)
+void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& SnapshotPath)
 {
-    const std::string PointPath = SnapshotPath + "/points3D.bin";
+    const std::string PointPath =
+        SnapshotPath + "/points3D.bin";
 
-    FILE* fp = fopen(PointPath.c_str(), "wb");
+    FILE* fp =
+        fopen(PointPath.c_str(), "wb");
 
     if(fp == nullptr)
     {
-        LG_Log(LogSeverity::DBG,
+        LG_Log(
+                LogSeverity::DBG,
                 "[VIZPriv_WritePoints] Failed to open %s\n",
                 PointPath.c_str());
+
         return;
     }
 
-    const u64 NumPoints = static_cast<u64>(GlobalMap.MapPoints.active_size());
+    const u64 NumPoints =
+        static_cast<u64>(
+                GlobalMap.MapPoints.active_size());
 
-    fwrite(&NumPoints, sizeof(u64), 1, fp);
+    fwrite(
+            &NumPoints,
+            sizeof(u64),
+            1,
+            fp);
 
-    for(const typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
+    for(const typePantoMapPoint& MapPoint :
+        GlobalMap.MapPoints)
     {
-        const u64 Point3DID = MapPoint.ID + 1;
+        const u64 Point3DID =
+            MapPoint.ID + 1;
 
-        fwrite(&Point3DID, sizeof(u64), 1, fp);
+        fwrite(
+                &Point3DID,
+                sizeof(u64),
+                1,
+                fp);
 
         const Eigen::Vector3d Point =
             PROJ_Homog2Cart(MapPoint.Point);
 
-        fwrite(Point.data(), sizeof(fp64), 3, fp);
+        fwrite(
+                Point.data(),
+                sizeof(fp64),
+                3,
+                fp);
 
         u8 RGB[3] =
         {
@@ -302,67 +391,142 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap,  const std::string& Sna
             255
         };
 
-        assert(MapPoint.KeyFrameIDs.size() ==
+        assert(
+                MapPoint.KeyFrameIDs.size() ==
                 MapPoint.ImagePointIDs.size());
 
-        if(!MapPoint.KeyFrameIDs.empty())
+        for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
         {
-            const u64 KeyFrameID =
-                MapPoint.KeyFrameIDs.front();
-
-            const u64 ImagePointID =
-                MapPoint.ImagePointIDs.front();
-
-            if(GlobalMap.KeyFrames.contains(KeyFrameID) &&
-               KeyFrameID < VIZPriv_KeyFrameImages.size())
-            {
-                const typeKeyFrame& KeyFrame =
-                    GlobalMap.KeyFrames[KeyFrameID];
-
-                const cv::Mat& Image =
-                    VIZPriv_KeyFrameImages[KeyFrameID];
-
-                if(KeyFrame.Points.ImagePoints.contains(ImagePointID) &&
-                   !Image.empty())
-                {
-                    const typePantoImagePoint& ImagePoint =
-                        KeyFrame.Points.ImagePoints[ImagePointID];
-
-                    const i32 X =
-                        static_cast<i32>(std::round(ImagePoint.Point.x()));
-
-                    const i32 Y =
-                        static_cast<i32>(std::round(ImagePoint.Point.y()));
-
-                    if(X >= 0 &&
-                       Y >= 0 &&
-                       X < Image.cols &&
-                       Y < Image.rows)
-                    {
-                        const cv::Vec3b BGR =
-                            Image.at<cv::Vec3b>(Y, X);
-
-                        RGB[0] = BGR[2];
-                        RGB[1] = BGR[1];
-                        RGB[2] = BGR[0];
-                    }
-                }
-            }
+            assert(
+                    MapPoint.KeyFrameIDs.contains(i) ==
+                    MapPoint.ImagePointIDs.contains(i));
         }
 
-        fwrite(RGB, sizeof(u8), 3, fp);
+        for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
+        {
+            if(!MapPoint.KeyFrameIDs.contains(i))
+            {
+                continue;
+            }
 
-        const fp64 Error = 0.0;
+            const u64 KeyFrameID =
+                MapPoint.KeyFrameIDs[i];
 
-        fwrite(&Error, sizeof(fp64), 1, fp);
+            const u64 ImagePointID =
+                MapPoint.ImagePointIDs[i];
 
-        const u64 TrackLength =
-            static_cast<u64>(MapPoint.KeyFrameIDs.active_size());
+            if(!GlobalMap.KeyFrames.contains(KeyFrameID))
+            {
+                continue;
+            }
 
-        assert(TrackLength ==
-                MapPoint.ImagePointIDs.active_size());
+            if(KeyFrameID >= VIZPriv_KeyFrameImages.size())
+            {
+                continue;
+            }
 
-        fwrite(&TrackLength, sizeof(u64), 1, fp);
+            const typeKeyFrame& KeyFrame =
+                GlobalMap.KeyFrames[KeyFrameID];
+
+            if(!KeyFrame.Points.ImagePoints.contains(ImagePointID))
+            {
+                continue;
+            }
+
+            const cv::Mat& Image =
+                VIZPriv_KeyFrameImages[KeyFrameID];
+
+            if(Image.empty())
+            {
+                continue;
+            }
+
+            const typePantoImagePoint& ImagePoint =
+                KeyFrame.Points.ImagePoints[ImagePointID];
+
+            const i32 X =
+                static_cast<i32>(
+                        std::round(
+                                ImagePoint.Point.x()));
+
+            const i32 Y =
+                static_cast<i32>(
+                        std::round(
+                                ImagePoint.Point.y()));
+
+            if(X < 0 ||
+               Y < 0 ||
+               X >= Image.cols ||
+               Y >= Image.rows)
+            {
+                continue;
+            }
+
+            const cv::Vec3b BGR =
+                Image.at<cv::Vec3b>(Y, X);
+
+            RGB[0] = BGR[2];
+            RGB[1] = BGR[1];
+            RGB[2] = BGR[0];
+
+            break;
+        }
+
+        fwrite(
+                RGB,
+                sizeof(u8),
+                3,
+                fp);
+
+        const fp64 Error =
+            0.0;
+
+        fwrite(
+                &Error,
+                sizeof(fp64),
+                1,
+                fp);
+
+        u64 TrackLength = 0;
+
+        for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
+        {
+            assert(
+                    MapPoint.KeyFrameIDs.contains(i) ==
+                    MapPoint.ImagePointIDs.contains(i));
+
+            if(!MapPoint.KeyFrameIDs.contains(i))
+            {
+                continue;
+            }
+
+            const u64 KeyFrameID =
+                MapPoint.KeyFrameIDs[i];
+
+            const u64 ImagePointID =
+                MapPoint.ImagePointIDs[i];
+
+            if(!GlobalMap.KeyFrames.contains(KeyFrameID))
+            {
+                continue;
+            }
+
+            const typeKeyFrame& KeyFrame =
+                GlobalMap.KeyFrames[KeyFrameID];
+
+            if(!KeyFrame.Points.ImagePoints.contains(ImagePointID))
+            {
+                continue;
+            }
+
+            TrackLength++;
+        }
+
+        fwrite(
+                &TrackLength,
+                sizeof(u64),
+                1,
+                fp);
 
         for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
         {
@@ -372,20 +536,51 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap,  const std::string& Sna
                 continue;
             }
 
+            const u64 KeyFrameID =
+                MapPoint.KeyFrameIDs[i];
+
+            const u64 ImagePointID =
+                MapPoint.ImagePointIDs[i];
+
+            if(!GlobalMap.KeyFrames.contains(KeyFrameID))
+            {
+                continue;
+            }
+
+            const typeKeyFrame& KeyFrame =
+                GlobalMap.KeyFrames[KeyFrameID];
+
+            if(!KeyFrame.Points.ImagePoints.contains(ImagePointID))
+            {
+                continue;
+            }
+
             const i32 ImageID =
-                static_cast<i32>(MapPoint.KeyFrameIDs[i] + 1);
+                static_cast<i32>(
+                        KeyFrameID + 1);
 
             const i32 Point2DIdx =
-                static_cast<i32>(MapPoint.ImagePointIDs[i]);
+                static_cast<i32>(
+                        ImagePointID);
 
-            fwrite(&ImageID, sizeof(i32), 1, fp);
-            fwrite(&Point2DIdx, sizeof(i32), 1, fp);
+            fwrite(
+                    &ImageID,
+                    sizeof(i32),
+                    1,
+                    fp);
+
+            fwrite(
+                    &Point2DIdx,
+                    sizeof(i32),
+                    1,
+                    fp);
         }
     }
 
     fclose(fp);
 
-    LG_Log(LogSeverity::DBG,
+    LG_Log(
+            LogSeverity::DBG,
             "[VIZPriv_WritePoints] Wrote %llu points to %s\n",
             static_cast<unsigned long long>(NumPoints),
             PointPath.c_str());
@@ -399,16 +594,21 @@ void VIZPriv_PublishSnapshot(const u64& SnapshotID)
     const std::string LatestPath =
         std::string(PANTO_COLMAP_PATH) + "/sparse/latest.txt";
 
-    FILE* fp = fopen(TemporaryPath.c_str(), "w");
+    FILE* fp =
+        fopen(TemporaryPath.c_str(), "w");
 
     if(fp == nullptr)
     {
-        LG_Log(LogSeverity::DBG,
+        LG_Log(
+                LogSeverity::DBG,
                 "[VIZPriv_PublishSnapshot] Failed to open temporary latest file\n");
+
         return;
     }
 
-    fprintf(fp, "%llu\n",
+    fprintf(
+            fp,
+            "%llu\n",
             static_cast<unsigned long long>(SnapshotID));
 
     fclose(fp);
@@ -420,26 +620,37 @@ void VIZPriv_PublishSnapshot(const u64& SnapshotID)
 
 void VIZPriv_LoadKeyFrameImages(const typePantoVector<typeKeyFrame>& KeyFrames)
 {
-    if(VIZPriv_KeyFrameImages.size() < KeyFrames.size())
+    if(VIZPriv_KeyFrameImages.size() <
+       KeyFrames.size())
     {
-        VIZPriv_KeyFrameImages.resize(KeyFrames.size());
+        VIZPriv_KeyFrameImages.resize(
+                KeyFrames.size());
     }
 
-    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    for(const typeKeyFrame& KeyFrame :
+        KeyFrames)
     {
-        assert(KeyFrame.ID < VIZPriv_KeyFrameImages.size());
+        assert(
+                KeyFrame.ID <
+                VIZPriv_KeyFrameImages.size());
 
-        if(!VIZPriv_KeyFrameImages[KeyFrame.ID].empty())
+        if(!VIZPriv_KeyFrameImages[
+                KeyFrame.ID].empty())
         {
             continue;
         }
 
-        VIZPriv_KeyFrameImages[KeyFrame.ID] =
-            cv::imread(KeyFrame.ImagePath, cv::IMREAD_COLOR);
+        VIZPriv_KeyFrameImages[
+                KeyFrame.ID] =
+            cv::imread(
+                    KeyFrame.ImagePath,
+                    cv::IMREAD_COLOR);
 
-        if(VIZPriv_KeyFrameImages[KeyFrame.ID].empty())
+        if(VIZPriv_KeyFrameImages[
+                KeyFrame.ID].empty())
         {
-            LG_Log(LogSeverity::DBG,
+            LG_Log(
+                    LogSeverity::DBG,
                     "[VIZPriv_LoadKeyFrameImages] Failed to read %s\n",
                     KeyFrame.ImagePath.c_str());
         }

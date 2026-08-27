@@ -35,9 +35,11 @@ typedef struct
 typedef struct 
 {
     typeGlobalMap GlobalMap;
-    typeLocalMapTracking LocalMapTracking;
     typeLocalMap LocalMap;
     typeCovisibilityGraph CovisibilityGraph;
+
+    typeLocalMapTracking LocalMapTracking;
+    u64 CurrentFrameID;
 
     typeCamera NextFramePosePrediction;
     typePreviousFrameData PreviousFrameData;

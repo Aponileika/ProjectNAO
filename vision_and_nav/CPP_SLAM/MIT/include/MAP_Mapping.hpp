@@ -33,9 +33,7 @@ typedef struct
     fp64 MedianDepth;
 }typeLocalMapInfo;
 
-void MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame);
-void MAP_InsertPreliminaryKeyFrame(typeGlobalMap& Map, typeKeyFrame& KeyFrame);
-void MAP_RemovePreliminaryKeyFrame(typeGlobalMap& Map);
+u64 MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame);
 typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame);
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph);
 typePantoVector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Map, const typeKeyFrame& LastKeyFrame);
@@ -50,5 +48,7 @@ void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap);
 void MAP_LogKeyFrameProjectionError(const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints);
 void MAP_LogGlobalMapProjectionErrors(const typeGlobalMap& GlobalMap);
 void MAP_RetriangulateLOST(typeGlobalMap& GlobalMap);
+
+void MAP_AssertGraphEqual(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph);
 
 #endif // __MAP_MAPPING_HPP_

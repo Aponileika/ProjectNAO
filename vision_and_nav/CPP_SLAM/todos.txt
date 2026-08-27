@@ -51,13 +51,14 @@ What to do next:
     - (DONE) Separate tracking local map and local mapping local map (local mapping map == map created after frame is accepted as a keyframe),
       make use of the covisibility graph in local map creation.
 
-    - Add KeyFrame culling.
+    - (DONE) Add KeyFrame culling.
 
-    - Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc.
-
-    - Add visualization of covisbility graph.
+    - Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc,
+      right now it is too hard to navigate the logs in any reasonable way.
 
     - Clean up the code a bit, right now it is a bit ugly. 
+
+    - Add visualization of covisbility graph.
 
     - train vocab with fixed number of features, with spatial distribution enforced. Bags of Binary Words for Fast Place Recognition in SLAM?
 
