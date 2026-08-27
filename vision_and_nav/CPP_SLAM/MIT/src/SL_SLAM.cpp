@@ -106,6 +106,12 @@ void SL_PantoSLAM(i32 num_loops)
 
         typeKeyFrame CurrentKeyFrame = KEY_GetKeyFrame(PantoSLAM.NextFramePosePrediction, PantoSLAM.PreviousFrameData.PreviousFrameMapPoints);
 
+        if(CurrentKeyFrame.Pose.TimeStamp < 0.0f)
+        {
+            // Invalid timestamp means failure to read image
+            break;
+        }
+
         const PantoClock::time_point FrameEndTime = PantoClock::now();
 
         const fp64 FrameTime =
@@ -118,6 +124,7 @@ void SL_PantoSLAM(i32 num_loops)
                 FrameTime);
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Inserting preliminary keyframe\n");
+
         MAP_InsertPreliminaryKeyFrame(PantoSLAM.GlobalMap, CurrentKeyFrame);
         
         const PantoClock::time_point FirstTrackingStartTime = PantoClock::now();
@@ -139,9 +146,9 @@ void SL_PantoSLAM(i32 num_loops)
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Creating local map\n");
 
-        PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
+        PantoSLAM.LocalMapTracking = MAP_CreateLocalMap(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
 
-        LG_Log(LogSeverity::DBG, "[SLAMLoop] Local Map size = %zu\n",PantoSLAM.LocalMap.KeyFrames.size()); 
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Local Map size = %zu\n",PantoSLAM.LocalMap.KeyFrameIDs.size()); 
 
         const PantoClock::time_point LocalMapCreationEndTime = PantoClock::now();
 
@@ -174,7 +181,9 @@ void SL_PantoSLAM(i32 num_loops)
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Running second tracking optimization\n");
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error before tracking\n");
+
         MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
+
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, nullptr);
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error after tracking\n");
         MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
@@ -226,7 +235,9 @@ void SL_PantoSLAM(i32 num_loops)
 
             const PantoClock::time_point MapPointCreationStartTime = PantoClock::now();
 
-            std::vector<u64> NewPointIndexes = MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.LocalMap, PantoSLAM.GlobalMap.KeyFrames.back());
+            std::vector<u64> NewPointIndexes = MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.CovisibilityGraph);
+
+            PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
 
             for(const u64& MapPointID : NewPointIndexes)
             {

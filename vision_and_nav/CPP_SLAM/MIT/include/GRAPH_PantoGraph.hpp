@@ -5,7 +5,6 @@
 #include "KEY_KeyFrame.hpp"
 #include <map>
 #include <algorithm>
-#include "MAP_Mapping.hpp"
 #include "PT_Types.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 
@@ -19,6 +18,7 @@ typedef std::vector<std::vector<typeCovisibility>> typeCovisibilityGraph;
 
 void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
         const u64 NumKeyFrames);
+typeCovisibility GRAPH_GetMostCovisibleFrame(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID);
 std::vector<typeCovisibility> GRAPH_GetAllCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID);
 std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID, const u64 N);
 void GRAPH_UpdateCovisibility(typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<typePantoMapPoint>& GlobalMapPoints, 

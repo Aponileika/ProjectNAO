@@ -174,6 +174,19 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
         PredictedPose.Parameters.t[2]);
 
     typePantoFrame Frame = FR_GetFrame();
+    if(Frame.TimeStamp < 0.0f)
+    {
+        PredictedPose.TimeStamp = -1.0f;
+        return
+        {
+            .Points = typePantoKeypointFrame{},
+            .BowVector = {},
+            .FeatureVector = {},
+            .Pose = PredictedPose,
+            .ID = PANTO_ID_NOT_SET,
+            .ImagePath = "" 
+        };
+    }
     PredictedPose.TimeStamp = Frame.TimeStamp;
     DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
     CurrentDescriptors.push(Descriptors.Descriptors);
@@ -480,7 +493,7 @@ void KEY_NonValidKeyFrame(void)
     CurrentDescriptors.pop();
 }
 
-fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& LocalMapPoints)
+fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints)
 {
     std::vector<fp64> LocalDepth;
 

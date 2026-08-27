@@ -48,7 +48,7 @@ int main(int argc, char* argv[])
 {
     setbuf(stdout, NULL);
     printf("Entered main\n");
-    i32 num_loops = 10000;
+    i32 num_loops = 100000;
     if(argc >= 2)
     {
         num_loops = std::stoi(argv[1]);

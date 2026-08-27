@@ -48,6 +48,6 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
         const typePantoVector<typeKeyFrame>& GlobalKeyFrames, const u64& ID, const DBoW3::Vocabulary* Vocabulary);
 std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, typePantoVector<typePantoMapPoint>& GlobalMapPoints);
 void KEY_NonValidKeyFrame(void);
-fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& LocalMapPoints);
+fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints);
 
 #endif //__KEY_KEYFRAME_HPP_

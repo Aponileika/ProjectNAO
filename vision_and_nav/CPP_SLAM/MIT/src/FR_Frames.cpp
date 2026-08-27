@@ -112,7 +112,12 @@ typePantoFrame __FR_GetFrameDataSet()
     if(Frame.empty())
     {
         LG_Log(LogSeverity::DBG, "[__FR_GetFrameDataSet] cv::imread returned empty frame\n");
-        return {};
+        return 
+        {
+            .Frame = cv::Mat{},
+            .TimeStamp = -1.0f,
+            .Path = "" 
+        };
     }
 
     std::string WritePath= "./colmap/images/frame" + std::to_string(reader.frame_idx) + ".png";

@@ -59,10 +59,22 @@ std::vector<typeCovisibility> GRAPH_GetAllCovisibleFrames(const typeCovisibility
     return CovisibilityGraph[KeyFrameID];
 }
 
+
+typeCovisibility GRAPH_GetMostCovisibleFrame(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID)
+{
+    return CovisibilityGraph[KeyFrameID][0];
+}
+
 std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID, const u64 N)
 {
     const std::vector<typeCovisibility>& Requested = CovisibilityGraph[KeyFrameID];
-    typePantoVector<typeCovisibility> TopN(N);
+    std::vector<typeCovisibility> TopN(N);
+    if(Requested.size() < N)
+    {
+        LG_Log(LogSeverity::DBG, "[GRAPH_GetTopNCovisibleFrames] Requested %llu covisible KF but only had %zu", Requested.size()); 
+        std::memcpy(TopN.data(), Requested.data(), Requested.size());
+        return TopN;
+    }
     std::memcpy(TopN.data(), Requested.data(), N);
     return TopN;
 }

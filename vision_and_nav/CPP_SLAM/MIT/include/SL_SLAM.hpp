@@ -35,10 +35,13 @@ typedef struct
 typedef struct 
 {
     typeGlobalMap GlobalMap;
+    typeLocalMapTracking LocalMapTracking;
     typeLocalMap LocalMap;
     typeCovisibilityGraph CovisibilityGraph;
+
     typeCamera NextFramePosePrediction;
     typePreviousFrameData PreviousFrameData;
+
     fp64 AccumulatedDistance;
     DBoW3::Vocabulary* Vocabulary;
     typePantoVector<u64> RecentMapPointIndexes;
