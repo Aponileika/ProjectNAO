@@ -16,8 +16,12 @@
 
 struct Logger
 {
-    std::string path;
-    FILE* fp;
+    std::string DebugPath;
+    std::string DataPath;
+    std::string ErrorPath;
+    FILE* Debugfp;
+    FILE* Datafp;
+    FILE* Errorfp;
 };
 
 enum class LogSeverity : u8

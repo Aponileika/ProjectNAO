@@ -126,7 +126,8 @@ constexpr auto panto_dataset_path = DATASET_PATH_TUM_FREIBURG1_XYZ;
 constexpr auto panto_sequence_path = SEQUENCE_PATH_TUM_FREIBURG1_XYZ_RGB_ORDERED;
 const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
 
-#define PANTO_LOGPATH "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/logs/log.txt"
+#define PANTO_LOGPATH "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/logs/Latest"
+#define PANTO_LOGPATH_HISTORICAL "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/logs/Historical"
 
 #define CV_NFEATURES 2000
 #define PANTO_MATCHRATIO 0.8f

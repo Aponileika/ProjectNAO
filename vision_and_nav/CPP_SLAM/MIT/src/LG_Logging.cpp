@@ -3,12 +3,28 @@
 
 struct Logger glogger;
 bool gloggerisinit = false;
+void LGPriv_Log(FILE* fp, const char*fmt, ...);
 
-static std::string LG_MakeTimestampedLogPath(const std::string& basePath)
+static std::string LG_MakeTimestampedLogPath(const std::string& basePath, const std::string& Type)
 {
     namespace fs = std::filesystem;
 
     fs::path path(basePath);
+    fs::path HistoricalPath = path.parent_path() / "Historical";
+
+    if(fs::exists(path) && fs::is_directory(path))
+    {
+        fs::create_directories(HistoricalPath);
+
+        for(const fs::directory_entry& entry : fs::directory_iterator(path))
+        {
+            const fs::path destination = HistoricalPath / entry.path().filename();
+
+            fs::rename(entry.path(), destination);
+        }
+    }
+
+    path = path / fs::path(Type + "PantoLOG");
 
     auto now = std::chrono::system_clock::now();
     std::time_t now_time = std::chrono::system_clock::to_time_t(now);
@@ -39,18 +55,21 @@ void LG_InitLogger()
 
     std::string logPath = PANTO_LOGPATH;
 
-    if (std::filesystem::exists(logPath))
-    {
-        logPath = LG_MakeTimestampedLogPath(logPath);
-    }
+    const std::string LogPathDebug = LG_MakeTimestampedLogPath(logPath, "DEBUG");
+    const std::string LogPathData = LG_MakeTimestampedLogPath(logPath, "DATA");
+    const std::string LogPathError = LG_MakeTimestampedLogPath(logPath, "ERROR");
 
     glogger =
     {
-        logPath,
-        std::fopen(logPath.c_str(), "a")
+        .DebugPath = LogPathDebug,
+        .DataPath = LogPathData,
+        .ErrorPath = LogPathError,
+        .Debugfp = std::fopen(LogPathDebug.c_str(), "a"),
+        .Datafp = std::fopen(LogPathData.c_str(), "a"),
+        .Errorfp = std::fopen(LogPathError.c_str(), "a")
     };
 
-    if (!glogger.fp) 
+    if (!glogger.Debugfp || !glogger.Datafp || glogger.Errorfp) 
     {
         printf("Failed logging init\n");
         fflush(stdout);
@@ -65,18 +84,42 @@ void LG_InitLogger()
 
 void LG_CloseLogger()
 {
-    if (glogger.fp)
+    if (glogger.Debugfp)
     {
-        std::fclose(glogger.fp);
-        glogger.fp = nullptr;
+        std::fclose(glogger.Debugfp);
+        glogger.Debugfp = nullptr;
+    }
+    if (glogger.Datafp)
+    {
+        std::fclose(glogger.Datafp);
+        glogger.Datafp = nullptr;
+    }
+    if (glogger.Errorfp)
+    {
+        std::fclose(glogger.Errorfp);
+        glogger.Errorfp = nullptr;
     }
 
     gloggerisinit = false;
 }
 
-static const char* Severity_str[3] = {"{DBG}", "{ERROR}", "{DATA}"};
-
 void LG_Log(LogSeverity severity, const char* fmt, ...)
+{
+    switch(severity)
+    {
+        case LogSeverity::DBG:
+            LGPriv_Log(glogger.Debugfp, fmt);
+            break;
+        case LogSeverity::DATA:
+            LGPriv_Log(glogger.Datafp, fmt);
+            break;
+        case LogSeverity::ERROR:
+            LGPriv_Log(glogger.Errorfp, fmt);
+            break;
+    };
+}
+
+void LGPriv_Log(FILE* fp, const char*fmt, ...)
 {
     if (!gloggerisinit) LG_InitLogger();
 
@@ -86,9 +129,7 @@ void LG_Log(LogSeverity severity, const char* fmt, ...)
     va_list args_copy;
     va_copy(args_copy, args);
 
-    if((i32)severity > 3)return;
-    fprintf(glogger.fp, "%s \n", Severity_str[(i32)severity]);
-    std::vfprintf(glogger.fp, fmt, args);
+    std::vfprintf(fp, fmt, args);
     if(CONFIG_PRINT_LOGS_TO_STDOUT == true)
     {
         std::vprintf(fmt, args_copy);
@@ -97,5 +138,5 @@ void LG_Log(LogSeverity severity, const char* fmt, ...)
     va_end(args_copy);
     va_end(args);
 
-    std::fflush(glogger.fp);
+    std::fflush(fp);
 }

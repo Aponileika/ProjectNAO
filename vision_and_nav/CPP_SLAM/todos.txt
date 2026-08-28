@@ -55,7 +55,8 @@ What to do next:
 
     - (DONE) Culling of points, currently get alot of bad 3d points.
 
-    - Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc,
+    - (STARTED, need to actually clean up the logging) 
+      Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc,
       right now it is too hard to navigate the logs in any reasonable way.
 
     - Make the tracking path visible in viser, right now only keyframes which is a bit misleading / not fully informative.
