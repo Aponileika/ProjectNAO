@@ -26,7 +26,7 @@ typedef struct
     u64 ID;
     u64 NumVisible;
     u64 NumFound;
-    u64 FirstKFKID;
+    u64 CreationAge;
 }typePantoMapPoint;
 
 typedef struct

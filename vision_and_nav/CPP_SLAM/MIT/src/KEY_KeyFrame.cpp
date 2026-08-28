@@ -70,6 +70,9 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
     u64 NumMatches = 0;
 
+    std::unordered_set<u64> VisibleMapPointIDs;
+    std::unordered_set<u64> MatchedMapPointIDs;
+
     while(FeatureIterator1 != FeatureVector1.end() && FeatureIterator2 != FeatureVector2.end())
     {
         if(FeatureIterator1->first == FeatureIterator2->first)
@@ -99,13 +102,19 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
                     {
                         continue;
                     }
-                    const typePantoMapPoint& MapPoint = GlobalMapPoints[ImagePoint2.MapPointID];
+
+                    typePantoMapPoint& MapPoint = GlobalMapPoints[ImagePoint2.MapPointID];
 
                     Eigen::Vector2d ProjectedPoint{};
 
                     if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
                     {
                         continue;
+                    }
+
+                    if(VisibleMapPointIDs.insert(MapPoint.ID).second)
+                    {
+                        MapPoint.NumVisible++;
                     }
 
                     const fp64 ProjectionError =
@@ -132,13 +141,22 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
                 if(BestFeatureID != PANTO_ID_NOT_SET)
                 {
+                    const typePantoImagePoint& BestMatch = LastKeyFrame.Points.ImagePoints[BestFeatureID];
+
                     if((BestDistance < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW) &&
-                        (static_cast<fp64>(BestDistance) < PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance)))
+                        (static_cast<fp64>(BestDistance) < PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance))
+                        && MatchedMapPointIDs.insert(BestMatch.MapPointID).second)
                     {
-                        const typePantoImagePoint& BestMatch = LastKeyFrame.Points.ImagePoints[BestFeatureID];
                         ImagePoint1.MapPointID = BestMatch.MapPointID;
+
+                        for(const u64 ExistingKeyFrameID : GlobalMapPoints[BestMatch.MapPointID].KeyFrameIDs)
+                        {
+                            assert(ExistingKeyFrameID != 2);
+                        }
+
                         GlobalMapPoints[BestMatch.MapPointID].KeyFrameIDs.push_back(2);
                         GlobalMapPoints[BestMatch.MapPointID].ImagePointIDs.push_back(ImagePoint1.ID);
+                        GlobalMapPoints[BestMatch.MapPointID].NumFound++;
                         NumMatches++;
                     }
                 }
@@ -161,8 +179,10 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
     return KeyFrame;
 }
 
-typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints)
+typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints,
+        typePantoVector<typePantoMapPoint>& GlobalMapPoints)
 {
+
     LG_Log(LogSeverity::DBG, "[KEY_GetKeyFrame] Predicted q = (%f, %f, %f, %f), t = (%f, %f, %f)\n",
         PredictedPose.Parameters.q.w(),
         PredictedPose.Parameters.q.x(),
@@ -189,7 +209,8 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
     PredictedPose.TimeStamp = Frame.TimeStamp;
     DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
     CurrentDescriptors.push(Descriptors.Descriptors);
-    typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePoints(Descriptors.Points, Descriptors.Descriptors, LastFrameMapPoints, PredictedPose);
+    typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePoints(Descriptors.Points, Descriptors.Descriptors, LastFrameMapPoints, PredictedPose,
+            GlobalMapPoints);
     typeKeyFrame KeyFrame = 
     {
         .Points = ImagePoints,
@@ -271,6 +292,19 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
         const u64 ImagePointID = ImagePoint.ID;
 
         typePantoMapPoint& MapPoint = GlobalMapPoints[MapPointID];
+
+        for(const u64 ExistingKeyFrameID : MapPoint.KeyFrameIDs)
+        {
+            if(ExistingKeyFrameID == ID)
+            {
+                LG_Log( LogSeverity::ERROR,
+                        "[KEY_SetAsKeyFrame] MP %llu already contains KF %llu, current ImagePoint = %llu\n",
+                        MapPointID, ID, ImagePointID);
+
+                assert(false);
+            }
+        }
+
         MapPoint.ImagePointIDs.push_back(ImagePointID);
         MapPoint.KeyFrameIDs.push_back(ID);
 
@@ -332,7 +366,8 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
     CurrentDescriptors.pop();
 }
 
-std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, typePantoVector<typePantoMapPoint>& GlobalMapPoints)
+std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, typePantoVector<typePantoMapPoint>& GlobalMapPoints,
+        const u64 MapAge)
 {
     std::vector<u64> Indexes;
     const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Pose.Pose, KeyFrame2.Pose.Pose);
@@ -466,7 +501,7 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                     if(PT_IsInfront(MapPoint, Camera1) && PT_IsInfront(MapPoint, Camera2))
                     {
                         const typePantoMapPoint NewPoint = PT_CreatePantoMapPoint(MapPoint, ImagePoint1.Descriptor, 
-                                KeyFrameIDs, ImagePointIDs, PANTO_ID_NOT_SET);
+                                KeyFrameIDs, ImagePointIDs, PANTO_ID_NOT_SET, MapAge);
                         const u64 Index = GlobalMapPoints.push_back(NewPoint);
                         GlobalMapPoints[Index].ID = Index;
                         Indexes.push_back(Index);

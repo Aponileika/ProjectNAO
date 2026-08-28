@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
+#include <unordered_set>
 
 /**
  * Performs orb stype map point to image point matching, starts by
@@ -15,7 +16,8 @@
  * it is accepted as a match and its MapPointID is set
  * */
 typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>& Points, 
-        const cv::Mat& Descriptors, std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose)
+        const cv::Mat& Descriptors, std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose,
+        typePantoVector<typePantoMapPoint>& GlobalMapPoints)
 {
     std::size_t NumImagePoints = Points.size();
     assert((static_cast<std::size_t>(Descriptors.rows) == NumImagePoints));
@@ -47,7 +49,7 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>&
         ImagePoints.CellIndexingArray[CellIndex].push_back(i);
     }
 
-    const u64 NumMatchedMapPoints = PT_MatchMapPointsToKeyFrame(ImagePoints, CandidateMapPoints, Pose);
+    const u64 NumMatchedMapPoints = PT_MatchMapPointsToKeyFrame(ImagePoints, CandidateMapPoints, Pose, GlobalMapPoints);
     LG_Log(LogSeverity::DBG, "[PT_CreatePantoImagePoints] Matched %llu/%zu map points\n",
         static_cast<unsigned long long>(NumMatchedMapPoints),
         CandidateMapPoints.size());
@@ -90,8 +92,27 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
     return ImagePoints;
 }
 
-u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<typePantoMapPoint>& MapPoints, const typeCamera& Pose)
+u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<typePantoMapPoint>& MapPoints, const typeCamera& Pose,
+        typePantoVector<typePantoMapPoint>& GlobalMapPoints)
 {
+    std::unordered_set<u64> UniqueMapPointIDs;
+
+    for(const typePantoMapPoint& MapPoint : MapPoints)
+    {
+        assert(UniqueMapPointIDs.insert(MapPoint.ID).second);
+    }
+
+    std::unordered_set<u64> AssociatedMapPointIDs;
+
+    for(const typePantoImagePoint& ImagePoint : KeyFrame.ImagePoints)
+    {
+        if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
+        {
+            AssociatedMapPointIDs.insert(
+                    ImagePoint.MapPointID);
+        }
+    }
+
     std::size_t NumMapPoints = MapPoints.size();
     u64 NumTrackedMapPoints = 0;
 
@@ -101,12 +122,14 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
 
     for(std::size_t i{}; i < NumMapPoints; i++)
     {
-        // if(!MapPoints.contains(i))
-        // {
-        //     continue;
-        // }
         Eigen::Vector4d MapPoint = MapPoints[i].Point;
         Eigen::Vector2d CandidateImagePoint = {};
+        const u64 MapPointID = MapPoints[i].ID;
+
+        if(AssociatedMapPointIDs.contains(MapPointID))
+        {
+            continue;
+        }
 
         if(i < 5)
         {
@@ -121,8 +144,8 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
         if(PROJ_Project(MapPoint, CandidateImagePoint, Pose))
         {
             NumProjectedMapPoints++;
-
             MapPoints[i].NumVisible++;
+            GlobalMapPoints[MapPoints[i].ID].NumVisible++;
 
             const fp64 u = CandidateImagePoint[0];
             const fp64 v = CandidateImagePoint[1];
@@ -197,9 +220,13 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
                     && (Top2Candidates[0].second < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD))
             {
                 const typePantoImagePoint& TopCandidate = Top2Candidates[0].first;
-                KeyFrame.ImagePoints[TopCandidate.ID].MapPointID = MapPoints[i].ID;
+                KeyFrame.ImagePoints[TopCandidate.ID].MapPointID = MapPointID;
+
+                AssociatedMapPointIDs.insert(MapPointID);
+
                 NumTrackedMapPoints++;
-                MapPoints[i].NumVisible++;
+                MapPoints[i].NumFound++;
+                GlobalMapPoints[MapPoints[i].ID].NumFound++;
             }
         }
     }

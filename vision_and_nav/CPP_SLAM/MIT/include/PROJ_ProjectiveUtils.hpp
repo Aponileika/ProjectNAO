@@ -25,6 +25,10 @@ Eigen::Vector4d PROJ_TriangulateDLT(const Eigen::Vector2d& Point1, const Eigen::
 std::vector<Eigen::Vector4d> PROJ_TriangulateLOST(const std::vector<std::vector<Eigen::Vector3d>>& pixelCoords,
         const std::vector<std::vector<Eigen::Matrix4d>>& T, const Eigen::Matrix3d K);
 bool PROJ_Project(const Eigen::Vector4d& MapPoint, Eigen::Vector2d& ImagePoint, const typeCamera& Pose);
+inline fp64 PROJ_PixelDistance(const Eigen::Vector2d& a, const Eigen::Vector2d& b)
+{
+    return (a-b).norm();
+}
 
 inline Eigen::Vector3d PROJ_Cart2Homog(Eigen::Vector2d Vec)
 {

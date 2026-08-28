@@ -12,6 +12,7 @@ typedef struct
 {
     typePantoVector<typeKeyFrame> KeyFrames;
     typePantoVector<typePantoMapPoint> MapPoints;
+    u64 Age;
 }typeGlobalMap;
 
 typedef struct
@@ -41,7 +42,7 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMa
 
 void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const typeLocalMap& LocalMap);
 void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGlobalMap& GlobalMap);
-void MAP_CullObservationEdges(typeGlobalMap& GlobalMap, typeLocalMap& LocalMap);
+void MAP_CullObservationEdges(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph);
 
 std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap,typeKeyFrame& NewKeyFrame, const typeCovisibilityGraph& CovisibilityGraph);
 void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap);
@@ -50,5 +51,8 @@ void MAP_LogGlobalMapProjectionErrors(const typeGlobalMap& GlobalMap);
 void MAP_RetriangulateLOST(typeGlobalMap& GlobalMap);
 
 void MAP_AssertGraphEqual(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph);
+void MAP_AssertMapPointObservations(const typeGlobalMap& GlobalMap);
+void MAP_LogGlobalMap(const typeGlobalMap& GlobalMap);
+void MAP_LogGraphConsistency( const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph);
 
 #endif // __MAP_MAPPING_HPP_

@@ -256,7 +256,6 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, type
         }
     }
 }
-
 void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const typeLocalMap& LocalMap)
 {
     /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
@@ -266,57 +265,89 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
      *I am unsure but I think this means that if we have 3DOF but 4 parameters
      *the optimization is reduced to the natural size of optimizing with 3DOF, whatever that means?
     */
+    std::unordered_set<u64> FixedKeyFrames;
 
-    for(const u64& KeyFrameID : LocalMap.KeyFrameIDs) 
+    for(const u64& KeyFrameID : LocalMap.KeyFrameIDs)
     {
-        typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
-
-        Problem.AddParameterBlock(Parameters.q.coeffs().data(), 4);
-        Problem.SetManifold(Parameters.q.coeffs().data(),
-                new ceres::EigenQuaternionManifold());
-
-        Problem.AddParameterBlock(Parameters.t.data(), 3);
-    }
-
-    if(LocalMap.FixedKeyFrameIDs.empty())
-    {
-        const u64 KeyFrameID = LocalMap.KeyFrameIDs.front();
+        assert(Map.KeyFrames.contains(KeyFrameID));
 
         typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
 
-        Problem.SetParameterBlockConstant(
-                Parameters.q.coeffs().data());
+        Problem.AddParameterBlock( Parameters.q.coeffs().data(), 4);
 
-        Problem.SetParameterBlockConstant(
-                Parameters.t.data());
+        Problem.SetManifold( Parameters.q.coeffs().data(), new ceres::EigenQuaternionManifold());
+
+        Problem.AddParameterBlock( Parameters.t.data(), 3);
+
+        if(KeyFrameID == 0)
+        {
+            Problem.SetParameterBlockConstant( Parameters.q.coeffs().data());
+
+            Problem.SetParameterBlockConstant( Parameters.t.data());
+
+            FixedKeyFrames.insert(KeyFrameID);
+        }
     }
 
-    for(const u64& AnchorKeyFrameID : LocalMap.FixedKeyFrameIDs) 
+    for(const u64 KeyFrameID : LocalMap.FixedKeyFrameIDs)
     {
-        typePoseParameters& Parameters = Map.KeyFrames[AnchorKeyFrameID].Pose.Parameters;
+        assert(Map.KeyFrames.contains(KeyFrameID));
 
-        Problem.AddParameterBlock(Parameters.q.coeffs().data(), 4);
-        Problem.SetManifold(Parameters.q.coeffs().data(),
-                new ceres::EigenQuaternionManifold());
+        typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
 
-        Problem.AddParameterBlock(Parameters.t.data(), 3);
+        Problem.AddParameterBlock( Parameters.q.coeffs().data(), 4);
 
-        Problem.SetParameterBlockConstant(Parameters.q.coeffs().data());
-        Problem.SetParameterBlockConstant(Parameters.t.data());
+        Problem.SetManifold( Parameters.q.coeffs().data(), new ceres::EigenQuaternionManifold());
+
+        Problem.AddParameterBlock( Parameters.t.data(), 3);
+
+        Problem.SetParameterBlockConstant( Parameters.q.coeffs().data());
+
+        Problem.SetParameterBlockConstant( Parameters.t.data());
+
+        FixedKeyFrames.insert(KeyFrameID);
+    }
+
+    if(FixedKeyFrames.size() < 2)
+    {
+        for(const u64 KeyFrameID : LocalMap.KeyFrameIDs)
+        {
+            if(FixedKeyFrames.contains(KeyFrameID))
+            {
+                continue;
+            }
+
+            typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
+
+            Problem.SetParameterBlockConstant( Parameters.q.coeffs().data());
+
+            Problem.SetParameterBlockConstant( Parameters.t.data());
+
+            FixedKeyFrames.insert(KeyFrameID);
+
+            if(FixedKeyFrames.size() == 2)
+            {
+                break;
+            }
+        }
     }
 
     std::unordered_set<u64> LocalMapPoints;
 
     for(const u64& LocalMapPointID : LocalMap.MapPointIDs)
     {
+        assert(Map.MapPoints.contains(LocalMapPointID));
+
         typePantoMapPoint& MapPoint = Map.MapPoints[LocalMapPointID];
 
-        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
-        Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
+        Problem.AddParameterBlock( MapPoint.Point.data(), 4);
+
+        Problem.SetManifold( MapPoint.Point.data(), new ceres::SphereManifold<4>());
+
         LocalMapPoints.insert(LocalMapPointID);
     }
 
-    for(const u64& KeyFrameID : LocalMap.KeyFrameIDs) 
+    for(const u64& KeyFrameID : LocalMap.KeyFrameIDs)
     {
         typeKeyFrame& KeyFrame = Map.KeyFrames[KeyFrameID];
 
@@ -326,18 +357,20 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
 
             if(MapPointID != PANTO_ID_NOT_SET && LocalMapPoints.contains(MapPointID))
             {
+                assert(Map.MapPoints.contains(MapPointID));
+
                 const fp64 PointX = ImagePoint.Point.x();
+
                 const fp64 PointY = ImagePoint.Point.y();
 
-                ceres::CostFunction* costfunc =
-                    OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create( PointX, PointY,
+                            &OPCameraIntrinsics);
 
-                ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+                ceres::LossFunction* lossfunc = new ceres::HuberLoss( CERES_HUBER_THRESHOLD);
 
                 typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
 
-                Problem.AddResidualBlock(costfunc,
-                        lossfunc,
+                Problem.AddResidualBlock(costfunc, lossfunc,
                         Parameters.q.coeffs().data(),
                         Parameters.t.data(),
                         Map.MapPoints[MapPointID].Point.data());
@@ -345,7 +378,7 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         }
     }
 
-    for(const u64& KeyFrameID : LocalMap.FixedKeyFrameIDs) 
+    for(const u64& KeyFrameID : LocalMap.FixedKeyFrameIDs)
     {
         typeKeyFrame& KeyFrame = Map.KeyFrames[KeyFrameID];
 
@@ -355,19 +388,21 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
 
             if(MapPointID != PANTO_ID_NOT_SET && LocalMapPoints.contains(MapPointID))
             {
+                assert(Map.MapPoints.contains(MapPointID));
+
                 const fp64 PointX = ImagePoint.Point.x();
+
                 const fp64 PointY = ImagePoint.Point.y();
 
-                ceres::CostFunction* costfunc =
-                    OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create( PointX, PointY,
+                            &OPCameraIntrinsics);
 
-                ceres::LossFunction* lossfunc =
-                    new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+                ceres::LossFunction* lossfunc = new ceres::HuberLoss( CERES_HUBER_THRESHOLD);
 
-                typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+                typePoseParameters& Parameters =
+                    KeyFrame.Pose.Parameters;
 
-                Problem.AddResidualBlock(costfunc,
-                        lossfunc,
+                Problem.AddResidualBlock(costfunc, lossfunc,
                         Parameters.q.coeffs().data(),
                         Parameters.t.data(),
                         Map.MapPoints[MapPointID].Point.data());
@@ -375,3 +410,4 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         }
     }
 }
+

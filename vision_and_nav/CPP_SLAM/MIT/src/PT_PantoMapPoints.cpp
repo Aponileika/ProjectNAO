@@ -1,7 +1,7 @@
 #include "../include/PT_PantoMapPoints.hpp"
 
 typePantoMapPoint PT_CreatePantoMapPoint(const Eigen::Vector4d& Point, const typeDescriptor& Descriptor, const std::pair<u64, u64>& KeyFrameIDs,
-        const std::pair<u64, u64>& ImagePointIDs, const u64 ID)
+        const std::pair<u64, u64>& ImagePointIDs, const u64 ID, const u64 Age)
 {
     typePantoVector<u64> VecKeyFrameIDs(2);
     VecKeyFrameIDs[0] = KeyFrameIDs.first;
@@ -20,7 +20,7 @@ typePantoMapPoint PT_CreatePantoMapPoint(const Eigen::Vector4d& Point, const typ
         .ID = ID,
         .NumVisible = 1,
         .NumFound = 1,
-        .FirstKFKID = KeyFrameIDs.second,
+        .CreationAge = Age
     };
 
     return MapPoint;

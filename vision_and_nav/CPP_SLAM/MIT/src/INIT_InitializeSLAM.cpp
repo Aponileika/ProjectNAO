@@ -220,7 +220,7 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
                 .ID = static_cast<u64>(i),
                 .NumVisible = 1,
                 .NumFound = 1,
-                .FirstKFKID = KeyFrameIDs[1]
+                .CreationAge = KeyFrameIDs[1]
             });
 
         ImagePoints[0].ImagePoints[ImagePointIDs[0]].MapPointID = static_cast<u64>(i);
@@ -256,7 +256,7 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
             .ImagePath = InitData.InitFrames[SecondFrameID].ImagePath
         });
 
-    return {.KeyFrames = KeyFrames, .MapPoints = InitialMapPoints};
+    return {.KeyFrames = KeyFrames, .MapPoints = InitialMapPoints, 0};
 }
 
 typePantoKeypointFrame INITPriv_GetKeyPointFrame(u64 InitFrameID)

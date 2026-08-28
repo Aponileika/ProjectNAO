@@ -53,12 +53,17 @@ What to do next:
 
     - (DONE) Add KeyFrame culling.
 
-    - Culling of points, currently get alot of bad 3d points.
+    - (DONE) Culling of points, currently get alot of bad 3d points.
 
     - Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc,
       right now it is too hard to navigate the logs in any reasonable way.
 
-    - Clean up the code a bit, right now it is a bit ugly. 
+    - Make the tracking path visible in viser, right now only keyframes which is a bit misleading / not fully informative.
+
+    - Clean up the code a bit, right now it is a bit ugly, things are passed everywhere, work with pointers to objects or something like that,
+      right now it is very messy to add anything to the code, probably change from ID -> pointer, but again not sure about this point, but the 
+      code has to be restructured, also make logging / timing not take up so much space in text, annoying to read the code and see what
+      is actually happening.
 
     - Add visualization of covisbility graph.
 

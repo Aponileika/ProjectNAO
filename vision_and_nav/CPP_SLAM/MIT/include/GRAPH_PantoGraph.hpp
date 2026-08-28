@@ -20,8 +20,12 @@ void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFr
         const u64 NumKeyFrames);
 typeCovisibility GRAPH_GetMostCovisibleFrame(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID);
 std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID, const u64 N);
-void GRAPH_UpdateCovisibility( typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<typePantoMapPoint>& GlobalMapPoints, const u64 NewKeyFrameID,
+void GRAPH_UpdateCovisibility(typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<typePantoMapPoint>& GlobalMapPoints, const u64 NewKeyFrameID,
         const std::vector<u64>& NewPointIDs);
 void GRAPH_CullKeyFrame(typeCovisibilityGraph& CovisibilityGraph, u64 KeyFrameID);
+void GRAPH_DecrementAll(typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<u64>& Nodes);
+void GRAPH_DecrementAllOther(typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<u64>& Nodes, const u64 DecrementIndex);
+void GRAPH_DecrementEdge(typeCovisibilityGraph& CovisibilityGraph, const u64 NodeA, const u64 NodeB);
+void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph);
 
 #endif // __GRAPH_PANTOGRAPH_HPP__
