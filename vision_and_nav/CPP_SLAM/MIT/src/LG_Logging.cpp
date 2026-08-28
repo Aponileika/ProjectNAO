@@ -69,7 +69,7 @@ void LG_InitLogger()
         .Errorfp = std::fopen(LogPathError.c_str(), "a")
     };
 
-    if (!glogger.Debugfp || !glogger.Datafp || glogger.Errorfp) 
+    if (!glogger.Debugfp || !glogger.Datafp || !glogger.Errorfp) 
     {
         printf("Failed logging init\n");
         fflush(stdout);
