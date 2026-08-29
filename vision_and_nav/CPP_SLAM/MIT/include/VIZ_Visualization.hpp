@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <signal.h>
+#include <csignal>
 #include <sys/wait.h>
 #include "PT_PantoImagePoint.hpp"
 #include "PT_PantoMapPoints.hpp"
@@ -17,7 +18,8 @@
 #include "PANTOVEC_PantoVector.hpp"
 
 void VIZ_InitVisualization(void);
-void VIZ_DestroyVisualization(void);
-void VIZ_WriteColmap(const typeGlobalMap& GlobalMap);
+void VIZ_StopViewer();
+void VIZ_SignalHandler(int Signal);
+void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory);
 
 #endif //__VIZ_VISUALIZATION_HPP_

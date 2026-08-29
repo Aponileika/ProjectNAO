@@ -105,38 +105,50 @@ void LG_CloseLogger()
 
 void LG_Log(LogSeverity severity, const char* fmt, ...)
 {
-    switch(severity)
+    if (!gloggerisinit)
+    {
+        LG_InitLogger();
+    }
+
+    FILE* fp = nullptr;
+
+    switch (severity)
     {
         case LogSeverity::DBG:
-            LGPriv_Log(glogger.Debugfp, fmt);
+            fp = glogger.Debugfp;
             break;
-        case LogSeverity::DATA:
-            LGPriv_Log(glogger.Datafp, fmt);
-            break;
-        case LogSeverity::ERROR:
-            LGPriv_Log(glogger.Errorfp, fmt);
-            break;
-    };
-}
 
-void LGPriv_Log(FILE* fp, const char*fmt, ...)
-{
-    if (!gloggerisinit) LG_InitLogger();
+        case LogSeverity::DATA:
+            fp = glogger.Datafp;
+            break;
+
+        case LogSeverity::ERROR:
+            fp = glogger.Errorfp;
+            break;
+    }
+
+    if (!fp)
+    {
+        std::fprintf(stderr, "Logger FILE pointer is null\n");
+        return;
+    }
 
     va_list args;
     va_start(args, fmt);
 
-    va_list args_copy;
-    va_copy(args_copy, args);
+    va_list stdoutArgs;
+    va_copy(stdoutArgs, args);
 
     std::vfprintf(fp, fmt, args);
-    if(CONFIG_PRINT_LOGS_TO_STDOUT == true)
+
+    if (CONFIG_PRINT_LOGS_TO_STDOUT)
     {
-        std::vprintf(fmt, args_copy);
+        std::vprintf(fmt, stdoutArgs);
     }
 
-    va_end(args_copy);
+    va_end(stdoutArgs);
     va_end(args);
 
     std::fflush(fp);
 }
+

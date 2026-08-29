@@ -1,4 +1,5 @@
 from pathlib import Path
+import struct
 import time
 
 import imageio.v3 as iio
@@ -11,6 +12,54 @@ from viser.extras.colmap import (
     read_images_binary,
     read_points3d_binary,
 )
+
+
+def read_tracking_binary(path: Path):
+    if not path.exists():
+        print(f"[VISER] tracking file does not exist: {path}")
+        return np.empty((0, 3), dtype=np.float64)
+
+    with path.open("rb") as f:
+        num_points_data = f.read(8)
+
+        if len(num_points_data) != 8:
+            raise RuntimeError(
+                "tracking.bin is too short"
+            )
+
+        num_points = struct.unpack("<Q", num_points_data)[0]
+
+        print(
+            f"[VISER] tracking.bin contains "
+            f"{num_points} points"
+        )
+
+        point_data = f.read(num_points * 3 * 8)
+
+        if len(point_data) != num_points * 3 * 8:
+            raise RuntimeError(
+                f"tracking.bin expected "
+                f"{num_points * 3 * 8} bytes, "
+                f"got {len(point_data)}"
+            )
+
+        if num_points == 0:
+            return np.empty(
+                (0, 3),
+                dtype=np.float64,
+            )
+
+        points = np.frombuffer(
+            point_data,
+            dtype="<f8",
+        ).reshape(num_points, 3).copy()
+
+        print(
+            f"[VISER] tracking first = {points[0]}, "
+            f"last = {points[-1]}"
+        )
+
+        return points
 
 
 def read_latest_snapshot(root: Path):
@@ -28,6 +77,10 @@ def read_latest_snapshot(root: Path):
 def load_snapshot(root: Path, snapshot_id: int):
     sparse_path = root / "sparse" / "snapshots" / str(snapshot_id)
 
+    print("[VISER] Reading tracking.bin")
+    tracks = read_tracking_binary(sparse_path / "tracking.bin")
+    print(f"[VISER] tracking.bin OK: {len(tracks)}")
+
     print("[VISER] Reading cameras.bin")
     cameras = read_cameras_binary(sparse_path / "cameras.bin")
     print(f"[VISER] cameras.bin OK: {len(cameras)}")
@@ -40,7 +93,7 @@ def load_snapshot(root: Path, snapshot_id: int):
     points3d = read_points3d_binary(sparse_path / "points3D.bin")
     print(f"[VISER] points3D.bin OK: {len(points3d)}")
 
-    return cameras, images, points3d
+    return tracks, cameras, images, points3d
 
 
 def initialize_view_from_first_camera(
@@ -103,11 +156,13 @@ def initialize_view_from_first_camera(
 def update_visualization(
     server,
     root: Path,
+    tracks,
     cameras,
     images,
     points3d,
     gui_point_size,
     gui_frustum_scale,
+    gui_tracking_thickness,
     handles,
 ):
     images_path = root / "images"
@@ -115,6 +170,7 @@ def update_visualization(
     server.scene.reset()
 
     handles["point_cloud"] = None
+    handles["tracking_trajectory"] = None
     handles["camera_frustums"] = []
 
     if len(points3d) > 0:
@@ -134,6 +190,54 @@ def update_visualization(
             colors=colors,
             point_size=gui_point_size.value,
         )
+
+    if len(tracks) >= 2:
+        tracking_points = np.asarray(
+            tracks,
+            dtype=np.float32,
+        )
+
+        tracking_segments = np.stack(
+            (
+                tracking_points[:-1],
+                tracking_points[1:],
+            ),
+            axis=1,
+        )
+
+        num_points = tracking_points.shape[0]
+
+        t = np.linspace(0.0, 1.0, num_points, dtype=np.float32)
+
+        start_color = np.array([0, 120, 255], dtype=np.float32)
+        end_color = np.array([255, 80, 80], dtype=np.float32)
+
+        point_colors = (
+            (1.0 - t[:, None]) * start_color[None, :]
+            + t[:, None] * end_color[None, :]
+        ).astype(np.uint8)
+
+        segment_colors = np.stack(
+            (
+                point_colors[:-1],
+                point_colors[1:],
+            ),
+            axis=1,
+        )
+
+        print(
+            f"[VISER] Adding tracking trajectory: "
+            f"{tracking_segments.shape}, colors: {segment_colors.shape}"
+        )
+
+        handles["tracking_trajectory"] = server.scene.add_line_segments(
+            name="/tracking/trajectory",
+            points=tracking_segments,
+            colors=segment_colors,
+            line_width=gui_tracking_thickness.value,
+        )
+    else:
+        handles["tracking_trajectory"] = None
 
     initialize_view_from_first_camera(
         server,
@@ -218,8 +322,17 @@ def main(root: str):
         initial_value=initial_frustum_scale,
     )
 
+    gui_tracking_thickness = server.gui.add_slider(
+            "Tracking thickness",
+            min=1.0,
+            max=10.0,
+            step=0.5,
+            initial_value=3.0,
+            )
+
     handles = {
         "point_cloud": None,
+        "tracking_trajectory": None,
         "camera_frustums": [],
         "camera_initialized": False,
     }
@@ -234,6 +347,13 @@ def main(root: str):
         for frustum in handles["camera_frustums"]:
             frustum.scale = gui_frustum_scale.value
 
+    @gui_tracking_thickness.on_update
+    def _(_):
+        if handles["tracking_trajectory"] is not None:
+            handles["tracking_trajectory"].line_width = (
+                    gui_tracking_thickness.value
+                    )
+
     last_snapshot_id = None
 
     print("Waiting for SLAM snapshots...")
@@ -244,7 +364,7 @@ def main(root: str):
 
         if snapshot_id is not None and snapshot_id != last_snapshot_id:
             try:
-                cameras, images, points3d = load_snapshot(
+                tracks, cameras, images, points3d = load_snapshot(
                     root,
                     snapshot_id,
                 )
@@ -252,11 +372,13 @@ def main(root: str):
                 update_visualization(
                     server,
                     root,
+                    tracks,
                     cameras,
                     images,
                     points3d,
                     gui_point_size,
                     gui_frustum_scale,
+                    gui_tracking_thickness,
                     handles,
                 )
 

@@ -61,7 +61,11 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 constexpr const char* PANTO_COLMAP_PATH = "./colmap";
 constexpr const char* PANTO_COLMAP_PYTHON_SCRIPT_PATH = "./colmap/vis_colmap.py";
 constexpr const char* PANTO_PATH_TO_PYTHON_INTERPRETER = "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/.venv/bin/python";
-#define CONFIG_PRINT_LOGS_TO_STDOUT true
+#if defined(DEBUG)
+    #define CONFIG_PRINT_LOGS_TO_STDOUT true
+#else
+    #define CONFIG_PRINT_LOGS_TO_STDOUT false
+#endif
 #define PANTO_MIN_FOUND_RATIO 0.25
 #define PANTO_INIT_MAX_REPROJECTION_ERROR 2.5
 #define PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED 2.5*2.5

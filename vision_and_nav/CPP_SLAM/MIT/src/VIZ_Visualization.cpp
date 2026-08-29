@@ -59,13 +59,15 @@ void VIZ_InitVisualization(void)
     }
 
     VIZPriv_ViewerPID = PID;
-    std::atexit(VIZ_DestroyVisualization);
+    std::atexit(VIZ_StopViewer);
+    std::signal(SIGINT, VIZ_SignalHandler);
+    std::signal(SIGTERM, VIZ_SignalHandler);
 
     LG_Log(LogSeverity::DBG, "[VIZ_StartViewer] Started viewer process PID = %d\n",
             static_cast<i32>(PID));
 }
 
-void VIZ_DestroyVisualization(void)
+void VIZ_StopViewer()
 {
     if(VIZPriv_ViewerPID <= 0)
     {
@@ -74,19 +76,25 @@ void VIZ_DestroyVisualization(void)
 
     kill(VIZPriv_ViewerPID, SIGTERM);
 
-    waitpid(
-            VIZPriv_ViewerPID,
-            nullptr,
-            0);
+    int Status = 0;
 
-    LG_Log(LogSeverity::DBG,
-            "[VIZ_DestroyVisualization] Stopped viewer process PID = %d\n",
-            static_cast<i32>(VIZPriv_ViewerPID));
+    if(waitpid(VIZPriv_ViewerPID, &Status, 0) == -1)
+    {
+        perror("waitpid");
+    }
 
     VIZPriv_ViewerPID = -1;
 }
 
-void VIZ_WriteColmap(const typeGlobalMap& GlobalMap)
+void VIZ_SignalHandler(int Signal)
+{
+    VIZ_StopViewer();
+
+    std::_Exit(
+            128 + Signal);
+}
+
+void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory)
 {
     static u64 SnapshotID = 0;
 
@@ -100,6 +108,7 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap)
     VIZPriv_WriteCameras(GlobalMap.KeyFrames, SnapshotPath);
     VIZPriv_WriteImages(GlobalMap.KeyFrames, SnapshotPath);
     VIZPriv_WritePoints(GlobalMap, SnapshotPath);
+    VIZPriv_WriteTrackingTrajectory(TrackingTrajectory, SnapshotPath);
 
     LG_Log(LogSeverity::DBG,
             "[VIZ_WriteColmap] Publishing snapshot %llu from path %s\n",
@@ -109,6 +118,49 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap)
     VIZPriv_PublishSnapshot(SnapshotID);
 
     SnapshotID++;
+}
+
+void VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& TrackingTrajectory, const std::string& SnapshotPath)
+{
+    
+    const std::string TrackingPath = SnapshotPath + "/tracking.bin";
+
+    FILE* fp = fopen(TrackingPath.c_str(), "wb");
+
+    assert(fp != nullptr);
+
+    const u64 NumPoints = static_cast<u64>(TrackingTrajectory.size());
+
+    fwrite(&NumPoints, sizeof(u64), 1, fp);
+
+    for(const Eigen::Vector3d& Point :
+        TrackingTrajectory)
+    {
+        fwrite(&Point.x(), sizeof(fp64), 1, fp);
+        fwrite(&Point.y(), sizeof(fp64), 1, fp);
+        fwrite(&Point.z(), sizeof(fp64), 1, fp);
+    }
+
+    fclose(fp);
+
+        if(!TrackingTrajectory.empty())
+    {
+        const Eigen::Vector3d& First =
+            TrackingTrajectory.front();
+
+        const Eigen::Vector3d& Last =
+            TrackingTrajectory.back();
+
+        LG_Log(
+                LogSeverity::DBG,
+                "[VIZPriv_WriteTrackingTrajectory] First = (%f, %f, %f), Last = (%f, %f, %f)\n",
+                First.x(),
+                First.y(),
+                First.z(),
+                Last.x(),
+                Last.y(),
+                Last.z());
+    }
 }
 
 void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)

@@ -47,6 +47,8 @@ typedef struct
     fp64 AccumulatedDistance;
     DBoW3::Vocabulary* Vocabulary;
     typePantoVector<u64> RecentMapPointIndexes;
+
+    std::vector<Eigen::Vector3d> TrackingTrajectory;
 }typeSLAM;
 
 struct typeTimingStatistics

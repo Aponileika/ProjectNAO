@@ -2,6 +2,30 @@
 #include "MAPPriv_Mapping.hpp"
 #include <unordered_map>
 
+typeMappingData MappingData = 
+{
+    .RecentMapPointsCulled = 0,
+    .KeyFramesCulled = 0,
+    .MapPointsCulled = 0,
+
+    .ObservationEdgesCulled = 0,
+    .NumObservationEdgesPixelErrorHigh = 0,
+    .NumObservationEdgesFailedProjection = 0,
+    .SumPixelErrorRemovedPixels = 0.0,
+    .SquaredSumPixelErrorRemovedPixels = 0.0
+};
+
+    u64 RecentMapPointsCulled;
+
+    u64 KeyFramesCulled;
+
+    u64 MapPointsCulled;
+
+    u64 ObservationEdgesCulled;
+    u64 NumObservationEdgesPixelErrorHigh;
+    u64 NumObservationEdgesFailedProjection;
+    fp64 SumPixelErrorRemovedPixels;
+    fp64 SquaredSumPixelErrorRemovedPixels;
 u64 MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame)
 {
     const u64 ID = GlobalMap.KeyFrames.push_back(KeyFrame);
@@ -201,15 +225,13 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMa
     return LocalMapInfo;
 }
 
-void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const typeLocalMap& LocalMap)
+void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const typeLocalMap& LocalMap, const u64 CurrentFrameID)
 {
     std::vector<u64> CulledKeyFrameIDs;
 
-    const u64 CurrentKeyFrameID = GlobalMap.KeyFrames.back().ID;
-
     for(const u64& KeyFrameID : LocalMap.KeyFrameIDs)
     {
-        if(KeyFrameID == CurrentKeyFrameID)
+        if(KeyFrameID == CurrentFrameID)
         {
             continue;
         }
@@ -253,6 +275,7 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& Covisibil
         if(static_cast<fp64>(NumRedundantMapPoints) > 0.9 * static_cast<fp64>(NumMapPoints))
         {
             CulledKeyFrameIDs.push_back(KeyFrameID);
+            MappingData.KeyFramesCulled++;
         }
     }
 
@@ -336,6 +359,7 @@ void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGl
             RecentMapPointIndexes.remove(i);
             MAPPriv_CullRecentMapPoint(MapPoint, MapPointIndex, GlobalMap);
             NumRemoved++;
+            MappingData.RecentMapPointsCulled++;
             continue;
         }
         else if(Age >= 2 && NumObservations <= 2)
@@ -343,6 +367,7 @@ void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGl
             RecentMapPointIndexes.remove(i);
             MAPPriv_CullRecentMapPoint(MapPoint, MapPointIndex, GlobalMap);
             NumRemoved++;
+            MappingData.RecentMapPointsCulled++;
             continue;
         }
         else if(Age >= 3)
@@ -421,6 +446,7 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
                         ImagePointID);
 
                 CulledIndexes.push_back(i);
+                MappingData.NumObservationEdgesFailedProjection++;
 
                 continue;
             }
@@ -443,8 +469,12 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
                         PixelError,
                         PANTO_PIXEL_CHI_SQUARED_T);
 
+
                 CulledIndexes.push_back(i);
                 NumAboveThreshold++;
+                MappingData.NumObservationEdgesPixelErrorHigh++;
+                MappingData.SumPixelErrorRemovedPixels += PixelError;
+                MappingData.SquaredSumPixelErrorRemovedPixels += PixelError*PixelError;
             }
         }
 
@@ -473,6 +503,8 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
                     RemainingObservations);
 
             CulledMapPointIDs.push_back( MapPoint.ID);
+
+            MappingData.MapPointsCulled++;
 
             continue;
         }
@@ -574,8 +606,10 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
           );
 }
 
-std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& NewKeyFrame, const typeCovisibilityGraph& CovisibilityGraph)
+std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& NewKeyFrame, const typeCovisibilityGraph& CovisibilityGraph,
+        const u64 LatestKeyFrameID)
 {
+    // BUGGED
     const u64 LatestKeyFrameID = GlobalMap.KeyFrames.back().ID;
     std::vector<typeCovisibility> MostCovisible = GRAPH_GetTopNCovisibleFrames(CovisibilityGraph, LatestKeyFrameID, PANTO_TOP_N_KF_FOR_LOCAL_MAP);
 
@@ -1180,3 +1214,92 @@ void MAP_LogGraphConsistency( const typeGlobalMap& GlobalMap, const typeCovisibi
         }
     }
 }
+
+void MAP_LogMappingData(void)
+{
+    static bool IsLogged = false;
+
+    if(IsLogged)
+    {
+        LG_Log(
+            LogSeverity::DBG,
+            "[MAP_LogMappingData] WARNING: Mapping data logged more than once"
+        );
+    }
+
+    const u64 NumHighPixelErrors =
+        MappingData.NumObservationEdgesPixelErrorHigh;
+
+    double MeanPixelError = 0.0;
+    double PixelErrorVariance = 0.0;
+    double PixelErrorStandardDeviation = 0.0;
+
+    if(NumHighPixelErrors > 0)
+    {
+        const double N = static_cast<double>(NumHighPixelErrors);
+
+        MeanPixelError =
+            MappingData.SumPixelErrorRemovedPixels / N;
+
+        if(NumHighPixelErrors > 1)
+        {
+            PixelErrorVariance =
+                (
+                    MappingData.SquaredSumPixelErrorRemovedPixels -
+                    (
+                        MappingData.SumPixelErrorRemovedPixels *
+                        MappingData.SumPixelErrorRemovedPixels
+                    ) / N
+                ) / (N - 1.0);
+
+            // Protect against a tiny negative value caused by rounding.
+            PixelErrorVariance = std::max(0.0, PixelErrorVariance);
+            PixelErrorStandardDeviation = std::sqrt(PixelErrorVariance);
+        }
+    }
+
+    LG_Log(
+        LogSeverity::DATA,
+        "\n"
+        "======================= MAPPING DATA =======================\n"
+        " Culling\n"
+        "   Recent map points culled          : %llu\n"
+        "   Keyframes culled                  : %llu\n"
+        "   Map points culled                 : %llu\n"
+        "\n"
+        " Observation edges\n"
+        "   Total edges culled                : %llu\n"
+        "   Pixel error too high              : %llu\n"
+        "   Failed projection                 : %llu\n"
+        "\n"
+        " High pixel-error statistics\n"
+        "   Mean pixel error                  : %.6f px\n"
+        "   Pixel-error variance              : %.6f px^2\n"
+        "   Pixel-error standard deviation    : %.6f px\n"
+        "============================================================\n",
+        static_cast<unsigned long long>(
+            MappingData.RecentMapPointsCulled
+        ),
+        static_cast<unsigned long long>(
+            MappingData.KeyFramesCulled
+        ),
+        static_cast<unsigned long long>(
+            MappingData.MapPointsCulled
+        ),
+        static_cast<unsigned long long>(
+            MappingData.ObservationEdgesCulled
+        ),
+        static_cast<unsigned long long>(
+            NumHighPixelErrors
+        ),
+        static_cast<unsigned long long>(
+            MappingData.NumObservationEdgesFailedProjection
+        ),
+        MeanPixelError,
+        PixelErrorVariance,
+        PixelErrorStandardDeviation
+    );
+
+    IsLogged = true;
+}
+
