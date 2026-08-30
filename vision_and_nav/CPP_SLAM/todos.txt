@@ -97,3 +97,20 @@ see if any active:
 ps -axo pid,ppid,pgid,command | grep '[p]ython'
 kill:
 pkill -f './colmap/vis_colmap.py'
+
+Chat gpt recommended next sequences:
+
+Yes. freiburg1_xyz is basically TUM’s “does your pipeline run at all?” sequence; TUM itself recommends xyz first, then desk once that works.
+
+For your monocular system, I’d try these next, roughly in this order:
+
+rgbd_dataset_freiburg1_desk — probably the best next test. It has more varied translation/rotation, a larger scene, and loop closure structure. TUM explicitly recommends it after xyz.
+freiburg1_desk2 — similar environment but a bit harder/different motion; good for checking that success on desk wasn’t accidental.
+freiburg1_plant — longer trajectory and lots of viewpoint change around an object. Good test of feature persistence and local-map matching.
+freiburg1_teddy — also substantial viewpoint/orientation variation and a much longer trajectory than xyz.
+freiburg1_room — larger whole-room trajectory and loop closure. This is a good “does the system actually behave like SLAM rather than short-baseline VO?” test.
+
+I would also run freiburg1_rpy, but for a different reason. It contains mostly roll/pitch/yaw motion with very little translation. For monocular SLAM that's deliberately nasty because you get poor parallax. It is an excellent test of whether your system:
+
+Stereo camera w/ IMU?
+https://shop.luxonis.com/products/oak-d-s2?RGB+Camera+Focus=Fixed-focus
