@@ -55,14 +55,14 @@ What to do next:
 
     - (DONE) Culling of points, currently get alot of bad 3d points.
 
-    - (STARTED, Kind of OK now, ERROR should be called on each assert fail, so test assert in if statement, if failure,
-       log error and assert(fail)) 
-      Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc,
+    - (DONE) Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc,
       right now it is too hard to navigate the logs in any reasonable way.
 
-    - Make the tracking path visible in viser, right now only keyframes which is a bit misleading / not fully informative.
+    - (DONE) Make the tracking path visible in viser, right now only keyframes which is a bit misleading / not fully informative.
 
-    - Optimize KeyGetKeyFrame.
+    - (DONE) Optimize KeyGetKeyFrame.
+
+    - (DONE, kind of) Check if get desc can be optimized.
 
     - Clean up the code a bit, right now it is a bit ugly, things are passed everywhere, work with pointers to objects or something like that,
       right now it is very messy to add anything to the code, probably change from ID -> pointer, but again not sure about this point, but the 

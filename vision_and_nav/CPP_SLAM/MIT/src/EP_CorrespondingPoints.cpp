@@ -148,7 +148,7 @@ DescRet __EP_GetDesc(const cv::Mat& img)
 }
 
 
-static std::vector<cv::KeyPoint> __EP_Anms(const cv::Ptr<cv::Feature2D> detector, cv::Mat img)
+std::vector<cv::KeyPoint> __EP_Anms(const cv::Ptr<cv::Feature2D>& detector, const cv::Mat& img)
 {
     std::vector<cv::KeyPoint> kp;
     detector->detect(img, kp, cv::noArray());

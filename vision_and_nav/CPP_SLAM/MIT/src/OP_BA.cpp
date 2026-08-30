@@ -98,8 +98,11 @@ void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
 
     for(typePantoMapPoint& MapPoint : Map.MapPoints)
     {
-        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
-        Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
+        if(PT_GetNumObservations(MapPoint) > 1)
+        {
+            Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+            Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
+        }
     }
 
     for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
@@ -109,6 +112,11 @@ void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
             const u64 MapPointID = ImagePoint.MapPointID;
             if(MapPointID != PANTO_ID_NOT_SET)
             {
+                if(PT_GetNumObservations(Map.MapPoints[MapPointID]) <= 1)
+                {
+                    continue;
+                }
+
                 const fp64 PointX = ImagePoint.Point.x();
                 const fp64 PointY = ImagePoint.Point.y();
 
@@ -159,8 +167,11 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
 
     for(typePantoMapPoint& MapPoint : Map.MapPoints)
     {
-        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
-        Problem.SetParameterBlockConstant(MapPoint.Point.data());
+        if(PT_GetNumObservations(MapPoint) > 1)
+        {
+            Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+            Problem.SetParameterBlockConstant(MapPoint.Point.data());
+        }
     }
 
     for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
@@ -170,6 +181,11 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
             const u64 MapPointID = ImagePoint.MapPointID;
             if(MapPointID != PANTO_ID_NOT_SET)
             {
+                if(PT_GetNumObservations(Map.MapPoints[MapPointID]) <= 1)
+                {
+                    continue;
+                }
+
                 const fp64 PointX = ImagePoint.Point.x();
                 const fp64 PointY = ImagePoint.Point.y();
 
@@ -227,10 +243,16 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, type
     {
         const u64 MapPointID = ImagePoint.MapPointID;
 
+
         if(MapPointID != PANTO_ID_NOT_SET)
         {
             typePantoMapPoint& MapPoint =
                 Map.MapPoints[MapPointID];
+
+            if(PT_GetNumObservations(MapPoint) <= 1)
+            {
+                continue;
+            }
 
             Problem.AddParameterBlock(
                     MapPoint.Point.data(), 4);
@@ -272,19 +294,14 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         assert(Map.KeyFrames.contains(KeyFrameID));
 
         typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
-
         Problem.AddParameterBlock( Parameters.q.coeffs().data(), 4);
-
         Problem.SetManifold( Parameters.q.coeffs().data(), new ceres::EigenQuaternionManifold());
-
         Problem.AddParameterBlock( Parameters.t.data(), 3);
 
         if(KeyFrameID == 0)
         {
             Problem.SetParameterBlockConstant( Parameters.q.coeffs().data());
-
             Problem.SetParameterBlockConstant( Parameters.t.data());
-
             FixedKeyFrames.insert(KeyFrameID);
         }
     }
@@ -296,13 +313,9 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
 
         Problem.AddParameterBlock( Parameters.q.coeffs().data(), 4);
-
         Problem.SetManifold( Parameters.q.coeffs().data(), new ceres::EigenQuaternionManifold());
-
         Problem.AddParameterBlock( Parameters.t.data(), 3);
-
         Problem.SetParameterBlockConstant( Parameters.q.coeffs().data());
-
         Problem.SetParameterBlockConstant( Parameters.t.data());
 
         FixedKeyFrames.insert(KeyFrameID);
@@ -318,11 +331,8 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
             }
 
             typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
-
             Problem.SetParameterBlockConstant( Parameters.q.coeffs().data());
-
             Problem.SetParameterBlockConstant( Parameters.t.data());
-
             FixedKeyFrames.insert(KeyFrameID);
 
             if(FixedKeyFrames.size() == 2)
@@ -338,12 +348,14 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
     {
         assert(Map.MapPoints.contains(LocalMapPointID));
 
+        if(PT_GetNumObservations(Map.MapPoints[LocalMapPointID]) <= 1)
+        {
+            continue;
+        }
+
         typePantoMapPoint& MapPoint = Map.MapPoints[LocalMapPointID];
-
         Problem.AddParameterBlock( MapPoint.Point.data(), 4);
-
         Problem.SetManifold( MapPoint.Point.data(), new ceres::SphereManifold<4>());
-
         LocalMapPoints.insert(LocalMapPointID);
     }
 
@@ -358,9 +370,12 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
             if(MapPointID != PANTO_ID_NOT_SET && LocalMapPoints.contains(MapPointID))
             {
                 assert(Map.MapPoints.contains(MapPointID));
+                if(PT_GetNumObservations(Map.MapPoints[MapPointID]) <= 1)
+                {
+                    continue;
+                }
 
                 const fp64 PointX = ImagePoint.Point.x();
-
                 const fp64 PointY = ImagePoint.Point.y();
 
                 ceres::CostFunction* costfunc = OP_ReprojectionError::Create( PointX, PointY,
@@ -389,6 +404,11 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
             if(MapPointID != PANTO_ID_NOT_SET && LocalMapPoints.contains(MapPointID))
             {
                 assert(Map.MapPoints.contains(MapPointID));
+
+                if(PT_GetNumObservations(Map.MapPoints[MapPointID]) <= 1)
+                {
+                    continue;
+                }
 
                 const fp64 PointX = ImagePoint.Point.x();
 
