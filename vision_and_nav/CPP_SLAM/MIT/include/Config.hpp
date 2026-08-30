@@ -74,6 +74,7 @@ constexpr const char* PANTO_PATH_TO_PYTHON_INTERPRETER = "/Users/Jonathan/Progra
 #define PANTO_MAX_LOCAL_TRACKING_MAP_SIZE 80
 #define PANTO_PIXEL_CHI_SQUARED_T 5.991
 #define PANTO_PIXEL_CHI_SQUARED_T_SQRT 2.448
+#define PANTO_IMAGEPOINT_RESERVE 1000
 
 constexpr fp64 PANTO_MINIMUMPARALLAX = 1.0 * M_PI / 180.0;
 
@@ -202,6 +203,7 @@ inline constexpr const char* PANTO_VocabFilePath =
 
 #define PANTO_GRID_COLUMNS 20 // 640 / 32
 #define PANTO_GRID_ROWS 15 // 480 / 32
+#define PANTO_NUM_IMAGE_CELLS PANTO_GRID_COLUMNS * PANTO_GRID_ROWS
 
 /*                      
  ******************************************************************                                                  

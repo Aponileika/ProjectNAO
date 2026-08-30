@@ -97,12 +97,9 @@ void SL_PantoSLAM(i32 num_loops)
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Starting loop %d\n", i);
 
+#if defined(DEBUG)
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Logging all poses\n");
-
         MAP_LogGlobalMapPoses(PantoSLAM.GlobalMap);
-
-        const PantoClock::time_point FrameStartTime = PantoClock::now();
-
         for(const typePantoMapPoint& MapPoint :
                 PantoSLAM.PreviousFrameData.PreviousFrameMapPoints)
         {
@@ -115,6 +112,10 @@ void SL_PantoSLAM(i32 num_loops)
                 assert(false);
             }
         }
+#endif 
+
+        const PantoClock::time_point FrameStartTime = PantoClock::now();
+
         typeKeyFrame CurrentFrame = KEY_GetKeyFrame(PantoSLAM.NextFramePosePrediction, PantoSLAM.PreviousFrameData.PreviousFrameMapPoints, PantoSLAM.GlobalMap.MapPoints);
 
         if(CurrentFrame.Pose.TimeStamp < 0.0f)
@@ -173,8 +174,6 @@ void SL_PantoSLAM(i32 num_loops)
         const PantoClock::time_point SecondTrackingStartTime = PantoClock::now();
         OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {}, &CurrentFrame);
 
-        PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(CurrentFrame.Pose));
-
         MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
         const PantoClock::time_point SecondTrackingEndTime = PantoClock::now();
         const fp64 SecondTrackingTime =
@@ -186,6 +185,8 @@ void SL_PantoSLAM(i32 num_loops)
         PantoSLAM.PreviousFrameData.PreviousPreviousFramePose = PantoSLAM.PreviousFrameData.PreviousFramePose;
         PantoSLAM.PreviousFrameData.PreviousFramePose = CurrentFrame.Pose;
         PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFramePose.Pose, PantoSLAM.PreviousFrameData.PreviousPreviousFramePose.Pose);
+
+        PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(CurrentFrame.Pose));
 
         const PantoClock::time_point KeyFrameEvaluationStartTime = PantoClock::now();
         typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, CurrentFrame, LocalMapInfo);
@@ -206,7 +207,9 @@ void SL_PantoSLAM(i32 num_loops)
 
             PantoSLAM.AccumulatedDistance = 0.0f;
 
+#if defined(DEBUG)
             MAP_AssertMapPointObservations(PantoSLAM.GlobalMap);
+#endif
 
             PantoSLAM.CurrentFrameID = MAP_AppendKeyFrame(PantoSLAM.GlobalMap, CurrentFrame);
 
@@ -216,24 +219,29 @@ void SL_PantoSLAM(i32 num_loops)
 
             GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, CurrentKeyFrame, PantoSLAM.GlobalMap.MapPoints, PantoSLAM.CurrentFrameID);
 
+#if defined(DEBUG)
             MAP_LogGlobalMap(PantoSLAM.GlobalMap);
             MAP_LogGraphConsistency(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
             GRAPH_Log(PantoSLAM.CovisibilityGraph);
+#endif
 
             MAP_CullRecentMapPoints(PantoSLAM.RecentMapPointIndexes, PantoSLAM.GlobalMap);
 
+#if defined(DEBUG)
             MAP_LogGlobalMap(PantoSLAM.GlobalMap);
             MAP_LogGraphConsistency(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
             GRAPH_Log(PantoSLAM.CovisibilityGraph);
+#endif
 
             const PantoClock::time_point MapPointCreationStartTime = PantoClock::now();
 
-            std::vector<u64> NewPointIndexes = MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, CurrentKeyFrame, PantoSLAM.CovisibilityGraph);
+            std::vector<u64> NewPointIndexes = MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, CurrentKeyFrame, PantoSLAM.CovisibilityGraph, PantoSLAM.CurrentFrameID);
 
+#if defined(DEBUG)
             MAP_LogGlobalMap(PantoSLAM.GlobalMap);
             GRAPH_Log(PantoSLAM.CovisibilityGraph);
-
-            PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
+#endif
+            PantoSLAM.LocalMap = MAP_CreateLocalMap(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph, PantoSLAM.CurrentFrameID);
 
             for(const u64& MapPointID : NewPointIndexes)
             {
@@ -251,9 +259,11 @@ void SL_PantoSLAM(i32 num_loops)
 
             GRAPH_UpdateCovisibility(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.MapPoints, PantoSLAM.CurrentFrameID, NewPointIndexes);
 
+#if defined(DEBUG)
             MAP_LogGlobalMap(PantoSLAM.GlobalMap);
             MAP_LogGraphConsistency(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
             GRAPH_Log(PantoSLAM.CovisibilityGraph);
+#endif
 
             const PantoClock::time_point LocalBAStartTime = PantoClock::now();
 
@@ -316,12 +326,6 @@ void SL_PantoSLAM(i32 num_loops)
         SL_AddTimingSample(LoopTiming, LoopTime);
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Finished loop %d\n", i);
-    }
-
-    PantoSLAM.TrackingTrajectory.clear();
-    for(const typeKeyFrame& KeyFrame : PantoSLAM.GlobalMap.KeyFrames)
-    {
-        PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Pose));
     }
 
 #if !defined(DEBUG)

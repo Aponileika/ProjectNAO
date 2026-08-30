@@ -19,10 +19,11 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>&
         const cv::Mat& Descriptors, std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose,
         typePantoVector<typePantoMapPoint>& GlobalMapPoints)
 {
-    std::size_t NumImagePoints = Points.size();
+    const std::size_t NumImagePoints = Points.size();
     assert((static_cast<std::size_t>(Descriptors.rows) == NumImagePoints));
 
     typePantoKeypointFrame ImagePoints;
+    ImagePoints.ImagePoints.reserve(NumImagePoints);
 
     for(std::size_t i{}; i < NumImagePoints; i++)
     {
@@ -97,10 +98,12 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
 {
     std::unordered_set<u64> UniqueMapPointIDs;
 
+#if defined(DEBUG)
     for(const typePantoMapPoint& MapPoint : MapPoints)
     {
         assert(UniqueMapPointIDs.insert(MapPoint.ID).second);
     }
+#endif
 
     std::unordered_set<u64> AssociatedMapPointIDs;
 
@@ -108,8 +111,7 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
     {
         if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
         {
-            AssociatedMapPointIDs.insert(
-                    ImagePoint.MapPointID);
+            AssociatedMapPointIDs.insert( ImagePoint.MapPointID);
         }
     }
 
@@ -131,16 +133,6 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
             continue;
         }
 
-        if(i < 5)
-        {
-            LG_Log(LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] Map point %zu -> (%f, %f, %f, %f)\n",
-                    i,
-                    MapPoint[0],
-                    MapPoint[1],
-                    MapPoint[2],
-                    MapPoint[3]);
-        }
-
         if(PROJ_Project(MapPoint, CandidateImagePoint, Pose))
         {
             NumProjectedMapPoints++;
@@ -150,31 +142,24 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
             const fp64 u = CandidateImagePoint[0];
             const fp64 v = CandidateImagePoint[1];
 
-            if(i < 5)
-            {
-                LG_Log(LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] Projected point %zu -> (%f, %f)\n", i, u, v);
-            }
+            const fp64 Radius = PANTO_MAPPOINT_MATCH_SEARCH_RADIUS;
+
+            const fp64 MinU = u - Radius;
+            const fp64 MaxU = u + Radius;
+            const fp64 MinV = v - Radius;
+            const fp64 MaxV = v + Radius;
 
             const i64 MinCellX = std::max<i64>( 0, static_cast<i64>((u - PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
             const i64 MaxCellX = std::min<i64>( PANTO_GRID_COLUMNS - 1, static_cast<i64>((u + PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
             const i64 MinCellY = std::max<i64>( 0, static_cast<i64>((v - PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
             const i64 MaxCellY = std::min<i64>( PANTO_GRID_ROWS - 1, static_cast<i64>((v + PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
 
-            if(i < 5)
-            {
-                LG_Log(LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] Cells X [%llu,%llu] Y [%llu,%llu]\n",
-                        static_cast<unsigned long long>(MinCellX),
-                        static_cast<unsigned long long>(MaxCellX),
-                        static_cast<unsigned long long>(MinCellY),
-                        static_cast<unsigned long long>(MaxCellY));
-            }
-
             const typeDescriptor& MapPointDescriptor = MapPoints[i].Descriptor;
+            u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1;
 
-            std::vector<std::pair<typePantoImagePoint, u32>> Top2Candidates(2);
+            u32 SecondBestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1;
 
-            Top2Candidates[0] = std::make_pair(typePantoImagePoint{}, PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1);
-            Top2Candidates[1] = std::make_pair(typePantoImagePoint{}, PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1);
+            u64 BestImagePointID = PANTO_ID_NOT_SET;
 
             for(i64 j(MinCellY); j <= MaxCellY; j++)
             {
@@ -193,40 +178,54 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
                             continue;
                         }
 
+                        const fp64 ImageU = ImagePoint.Point[0];
+                        const fp64 ImageV = ImagePoint.Point[1];
+
+                        if(
+                                ImageU < MinU ||
+                                ImageU > MaxU ||
+                                ImageV < MinV ||
+                                ImageV > MaxV)
+                        {
+                            continue;
+                        }
+
                         const typeDescriptor& ImagePointDescriptor = ImagePoint.Descriptor;
 
-                        const u32 HammingDistance = PANTO_HammingDistance(MapPointDescriptor, ImagePointDescriptor);
+                        const u32 HammingDistance = PANTO_HammingDistance( MapPointDescriptor, ImagePointDescriptor);
 
-                        if(HammingDistance < Top2Candidates[0].second) 
+                        if(HammingDistance < BestDistance)
                         {
-                            Top2Candidates[1] = Top2Candidates[0];
+                            SecondBestDistance = BestDistance;
 
-                            Top2Candidates[0].first = ImagePoint;
-                            Top2Candidates[0].second = HammingDistance;
+                            BestDistance = HammingDistance;
+                            BestImagePointID = ImagePoint.ID;
                         }
-                        else if(HammingDistance < Top2Candidates[1].second)
+                        else if(HammingDistance < SecondBestDistance)
                         {
-                            Top2Candidates[1].first = ImagePoint;
-                            Top2Candidates[1].second = HammingDistance;
+                            SecondBestDistance = HammingDistance;
                         }
                     }
                 }
             }
-            if(Top2Candidates[1].second == PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1) continue;
+            if(SecondBestDistance > PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD)
+            {
+                continue;
+            }
 
             NumWithTwoCandidates++;
 
-            if((static_cast<fp64>(Top2Candidates[0].second) < PANTO_MATCHRATIO * static_cast<fp64>(Top2Candidates[1].second))
-                    && (Top2Candidates[0].second < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD))
+            if( static_cast<fp64>(BestDistance) < PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance)
+                    && BestDistance < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD)
             {
-                const typePantoImagePoint& TopCandidate = Top2Candidates[0].first;
-                KeyFrame.ImagePoints[TopCandidate.ID].MapPointID = MapPointID;
+                KeyFrame.ImagePoints[ BestImagePointID].MapPointID = MapPointID;
 
-                AssociatedMapPointIDs.insert(MapPointID);
+                AssociatedMapPointIDs.insert( MapPointID);
 
                 NumTrackedMapPoints++;
+
                 MapPoints[i].NumFound++;
-                GlobalMapPoints[MapPoints[i].ID].NumFound++;
+                GlobalMapPoints[MapPointID].NumFound++;
             }
         }
     }

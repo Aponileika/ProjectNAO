@@ -131,9 +131,8 @@ typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, 
     return LocalMap;
 }
 
-typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph)
+typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const u64 LatestKeyFrameID)
 {
-    const u64 LatestKeyFrameID = GlobalMap.KeyFrames.back().ID;
     std::vector<typeCovisibility> MostCovisible = GRAPH_GetTopNCovisibleFrames(CovisibilityGraph, LatestKeyFrameID, PANTO_TOP_N_KF_FOR_LOCAL_MAP);
     typeLocalMap LocalMap;
     std::unordered_set<u64> KeyFrameInLocalMap;
@@ -609,8 +608,6 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
 std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& NewKeyFrame, const typeCovisibilityGraph& CovisibilityGraph,
         const u64 LatestKeyFrameID)
 {
-    // BUGGED
-    const u64 LatestKeyFrameID = GlobalMap.KeyFrames.back().ID;
     std::vector<typeCovisibility> MostCovisible = GRAPH_GetTopNCovisibleFrames(CovisibilityGraph, LatestKeyFrameID, PANTO_TOP_N_KF_FOR_LOCAL_MAP);
 
     std::vector<typeKeyFrame> LocalMapKeyFrames;
