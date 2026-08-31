@@ -60,6 +60,8 @@ What to do next:
 
     - (DONE) Make the tracking path visible in viser, right now only keyframes which is a bit misleading / not fully informative.
 
+    - Robustify, what happens if no map associations are found from the last frame?
+
     - Optimize KeyGetKeyFrame, investigate what is taking time, getting descriptors -> detect and compute? anything else? Probably alter
       opencv AKAZE code so nonlinear scale space is not thrown away. So make a "custom" version that just caches the nonlinear scale space,
       like detect and compute does, easy, just add a local private variable in AKAZE_impl that stores upyr and keeps track if it is current or not
