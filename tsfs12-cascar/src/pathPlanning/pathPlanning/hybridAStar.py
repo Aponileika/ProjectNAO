@@ -293,7 +293,15 @@ class HybridAStar():
 
     def search(self, start, goal, map=None, xlim=None, ylim=None):
         if map is None:
-            return dubinsPath( (start[0], start[1]), start[2], (goal[0], goal[1]), goal[2], getDistance=True)
+            validPaths, validLengths = dubinsPath( (start[0], start[1]), start[2], (goal[0], goal[1]), goal[2], getDistance=True)
+            shortestPath = None
+            shortestPathLength = np.inf
+            for path, length in zip(validPaths, validLengths):
+                if length < shortestPathLength:
+                    shortestPath = path
+                    shortestPathLength = length
+
+            return shortestPath
 
         minX = xlim[0]
         minY = ylim[0]
