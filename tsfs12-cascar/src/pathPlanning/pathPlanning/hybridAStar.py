@@ -2,7 +2,7 @@ import numpy as np
 import heapq
 from scipy.ndimage import binary_dilation
 from collections import deque
-from math import sin, cos
+from math import sin, cos, sqrt
 
 import dubinPath
 
@@ -195,6 +195,29 @@ class HybridAStar():
         return shortestPath
 
 
+    def removeDupes(self, trajectory):
+        i = 0
+        while i < len(trajectory):
+            if trajectory[i] == trajectory[i+1]:
+                trajectory.pop(i+1)
+            else:
+                i += 1
+        return trajectory
+
+
+    def addDistance(self, trajectory):
+        dist = 0
+        trajectory[0] = (trajectory[0][0], trajectory[0][1], trajectory[0][2], dist)
+        for i in range(1, len(trajectory)):
+            curr = trajectory[i]
+            past = trajectory[i-1]
+            dist += sqrt( (curr[0]-past[0])**2 + (curr[1]-past[1])**2 )
+
+            trajectory[i] = (curr[0], curr[1], curr[2], dist)
+
+        return trajectory
+
+
     def addDubinPaths(self, path, goalNode):
         """
         Function that looks for shortcuts in the form of dubin paths.
@@ -268,7 +291,10 @@ class HybridAStar():
         return path
         
 
-    def search(self, start, goal, map, xlim, ylim):
+    def search(self, start, goal, map=None, xlim=None, ylim=None):
+        if map is None:
+            return dubinPath.dubinsPath( (start[0], start[1]), start[2], (goal[0], goal[1]), goal[3], getDistance=True)
+
         minX = xlim[0]
         minY = ylim[0]
 
@@ -326,6 +352,8 @@ class HybridAStar():
                     path[i] = (point[0], point[1], self.wrap_angle(point[2] + np.pi)) #Since the search is backwards, add turn every point around.
 
                 path = self.addDubinPaths(path, goalNode)
+                path = self.removeDupes(path)
+                path = self.addDistance(path)
                 return path
 
             for dTheta, steeringAngle in zip(self.dThetas, self.steeringAngles):

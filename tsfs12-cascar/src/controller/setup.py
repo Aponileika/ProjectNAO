@@ -24,7 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-		'auto_control = controller.auto_control:main',
+		'pursuit = controller.pursuit:main',
+        'mpc = controller.mpc:main',
         ],
     },
 )
