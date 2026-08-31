@@ -446,7 +446,7 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
 
                 CulledIndexes.push_back(i);
                 MappingData.NumObservationEdgesFailedProjection++;
-
+                MappingData.ObservationEdgesCulled++;
                 continue;
             }
 
@@ -471,6 +471,7 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
 
                 CulledIndexes.push_back(i);
                 NumAboveThreshold++;
+                MappingData.ObservationEdgesCulled++;
                 MappingData.NumObservationEdgesPixelErrorHigh++;
                 MappingData.SumPixelErrorRemovedPixels += PixelError;
                 MappingData.SquaredSumPixelErrorRemovedPixels += PixelError*PixelError;
