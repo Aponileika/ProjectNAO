@@ -293,7 +293,7 @@ class HybridAStar():
 
     def search(self, start, goal, map=None, xlim=None, ylim=None):
         if map is None:
-            return dubinsPath( (start[0], start[1]), start[2], (goal[0], goal[1]), goal[3], getDistance=True)
+            return dubinsPath( (start[0], start[1]), start[2], (goal[0], goal[1]), goal[2], getDistance=True)
 
         minX = xlim[0]
         minY = ylim[0]
