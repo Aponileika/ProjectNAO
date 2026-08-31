@@ -619,8 +619,8 @@ void KEYPriv_SolveBootStrapData(void)
         FuzzyInference.MaxRuleThreshold,
         FuzzyInference.SpatialTrackingThreshold);
 
-    FuzzyInference.VelocityParamameters.second = 0.200895;
-    FuzzyInference.VelocityParamameters.first = 0.050224;
+    FuzzyInference.VelocityParamameters.second = 0.200895 * 1000000;
+    FuzzyInference.VelocityParamameters.first = 0.050224 * 10000;
 
     FuzzyInference.TrackingRatioParameters.second = 0.155848;
     FuzzyInference.TrackingRatioParameters.first = 0.038962;
