@@ -50,7 +50,6 @@ typedef struct
     bool Valid;
 }typeInitReconstruction;
 
-// set to PANTO_FEATURE_TRACK_NOT_OBSERVED if no track exists
 typedef struct
 {
     std::vector<u64> FeatureTrack;

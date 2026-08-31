@@ -61,6 +61,8 @@ void SL_PantoSLAM(i32 num_loops)
 
     INIT_DestroyInitData();
 
+    OP_BundleAdjust(PantoSLAM.GlobalMap, typePoseAndPoints, {}, nullptr);
+
     const PantoClock::time_point InitializationEndTime = PantoClock::now();
 
     LG_Log(LogSeverity::DATA, "[SLAMTiming] Initialization = %.6f s\n",
@@ -76,15 +78,21 @@ void SL_PantoSLAM(i32 num_loops)
         PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Pose));
     }
 
+#if defined(DEBUG)
     MAP_LogGlobalMap(PantoSLAM.GlobalMap);
     MAP_LogGraphConsistency(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
     GRAPH_Log(PantoSLAM.CovisibilityGraph);
+#endif
 
     LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error before tracking\n");
     MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
     OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {}, &PantoSLAM.GlobalMap.KeyFrames.back());
     LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error after tracking\n");
     MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
+
+#if !defined(DEBUG)
+    VIZ_WriteColmap(PantoSLAM.GlobalMap, PantoSLAM.TrackingTrajectory);
+#endif
 
     PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
     PantoSLAM.PreviousFrameData.PreviousPreviousFramePose = PantoSLAM.GlobalMap.KeyFrames[1].Pose;
@@ -134,16 +142,60 @@ void SL_PantoSLAM(i32 num_loops)
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Inserting preliminary keyframe\n");
 
         const PantoClock::time_point FirstTrackingStartTime = PantoClock::now();
-
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Running first tracking optimization\n");
+        const Eigen::Matrix3d RBefore =
+            CurrentFrame.Pose.Pose.R;
+        const Eigen::Vector3d tBefore =
+            CurrentFrame.Pose.Pose.t;
 
-        OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {}, &CurrentFrame);
+        OP_BundleAdjust( PantoSLAM.GlobalMap, typeTracking, {}, &CurrentFrame);
 
+        /*
+         * Compare optimized pose against predicted/input pose.
+         */
+        const Eigen::Matrix3d& RAfter =
+            CurrentFrame.Pose.Pose.R;
+        const Eigen::Vector3d& tAfter =
+            CurrentFrame.Pose.Pose.t;
+        /*
+         * Relative rotation:
+         *
+         * R_delta = R_after * R_before^T
+         */
+        const Eigen::Matrix3d RDelta =
+            RAfter * RBefore.transpose();
+
+        const fp64 CosAngle =
+            std::clamp(
+                    (RDelta.trace() - 1.0) * 0.5,
+                    -1.0,
+                    1.0);
+
+        const fp64 RotationChangeRadians =
+            std::acos(CosAngle);
+
+        const fp64 RotationChangeDegrees =
+            RotationChangeRadians * 180.0 / M_PI;
+
+        const Eigen::Vector3d TranslationDelta =
+            tAfter - tBefore;
+
+        LG_Log(
+                LogSeverity::DBG,
+                "[SLAMLoop] First tracking BA pose change: "
+                "R = %.6f deg, "
+                "dt = (%.6f, %.6f, %.6f), "
+                "|dt| = %.6f\n",
+                RotationChangeDegrees,
+                TranslationDelta.x(),
+                TranslationDelta.y(),
+                TranslationDelta.z(),
+                TranslationDelta.norm());
         const PantoClock::time_point FirstTrackingEndTime = PantoClock::now();
+        
 
         const fp64 FirstTrackingTime =
             std::chrono::duration<fp64>(FirstTrackingEndTime - FirstTrackingStartTime).count();
-
         SL_AddTimingSample(FirstTrackingTiming, FirstTrackingTime);
 
         const PantoClock::time_point LocalMapCreationStartTime = PantoClock::now();
@@ -196,7 +248,7 @@ void SL_PantoSLAM(i32 num_loops)
             NumTestedKeyFrames+=1.0;
         }
 
-        if(KEY_IsKeyFrame(KeyFrameInfo))
+        if(KEY_IsKeyFrame(KeyFrameInfo) || (i % 20 == 0))
         {
             if(i >= PANTO_NUM_BOOTSTRAP_FRAMES)
             {
@@ -328,9 +380,6 @@ void SL_PantoSLAM(i32 num_loops)
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Finished loop %d\n", i);
     }
 
-#if !defined(DEBUG)
-    VIZ_WriteColmap(PantoSLAM.GlobalMap, PantoSLAM.TrackingTrajectory);
-#endif
 
     const PantoClock::time_point SLAMEndTime = PantoClock::now();
 

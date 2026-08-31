@@ -610,29 +610,41 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& 
         const u64 LatestKeyFrameID)
 {
     std::vector<typeCovisibility> MostCovisible = GRAPH_GetTopNCovisibleFrames(CovisibilityGraph, LatestKeyFrameID, PANTO_TOP_N_KF_FOR_LOCAL_MAP);
-
     std::vector<typeKeyFrame> LocalMapKeyFrames;
-    std::vector<typePantoMapPoint> LocalMapMapPoints;
+
     for(const typeCovisibility& Covisibility : MostCovisible)
     {
         LocalMapKeyFrames.push_back(GlobalMap.KeyFrames[Covisibility.KeyFrameID]);
     }
+
+    std::unordered_set<u64> LocalMapPointIDs;
     for(const typeKeyFrame& KeyFrame : LocalMapKeyFrames)
     {
-        for(const typePantoImagePoint& ImagePoint : GlobalMap.KeyFrames[KeyFrame.ID].Points.ImagePoints)
+        for(const typePantoImagePoint& ImagePoint :
+                GlobalMap.KeyFrames[KeyFrame.ID].Points.ImagePoints)
         {
             if(ImagePoint.MapPointID == PANTO_ID_NOT_SET)
             {
                 continue;
             }
-            LocalMapMapPoints.push_back(GlobalMap.MapPoints[ImagePoint.MapPointID]);
+
+            LocalMapPointIDs.insert( ImagePoint.MapPointID);
+        }
+    }
+
+    std::vector<typePantoMapPoint> LocalMapMapPoints;
+    LocalMapMapPoints.reserve(LocalMapPointIDs.size());
+
+    for(const u64 MapPointID : LocalMapPointIDs)
+    {
+        if(GlobalMap.MapPoints.contains(MapPointID))
+        {
+            LocalMapMapPoints.push_back(GlobalMap.MapPoints[MapPointID]);
         }
     }
 
     Eigen::Vector3d NewCameraCenter = CM_GetCameraCenter(NewKeyFrame.Pose);
-
     std::vector<u64> NewPointIndexes;
-
     for(const typeKeyFrame& KeyFrameLocal : LocalMapKeyFrames)
     {
         // Ignore new keyframe

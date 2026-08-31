@@ -106,15 +106,19 @@ public:
 
             std::vector<fp64> Errors = F_Error(Points1, Points2, FCurrent);
 
-            fp64 Score = 0;
+            fp64 Score = 0.0;
 
             for(const fp64 Error : Errors)
             {
-                if(Error < ErrorThreshold)
+                const fp64 NormalizedError =
+                    Error / ErrorThreshold;
+
+                if(NormalizedError < 1.0)
                 {
-                    Score += 1.0 - Error / ErrorThreshold;
+                    Score += 1.0 - NormalizedError;
                 }
             }
+
             if(Score > MaxScore)
             {
                 MaxScore = Score;
@@ -270,11 +274,7 @@ public:
                 ++i)
             {
                 const Eigen::Vector4d Point4D =
-                    PROJ_TriangulateDLT(
-                        Points1[i],
-                        Points2[i],
-                        P1,
-                        P2);
+                    PROJ_TriangulateDLT( Points1[i], Points2[i], P1, P2);
 
                 if(!Point4D.allFinite())
                 {
@@ -365,7 +365,7 @@ public:
 
             const std::size_t ParallaxIndex =
                 std::min<std::size_t>(
-                        50,
+                        PANTO_INIT_MIN_STATIONARY_POINTS - 50,
                         CosParallaxes.size() - 1);
 
             const fp64 Parallax =
@@ -542,15 +542,19 @@ public:
 
             std::vector<fp64> Errors = H_Error(Points1, Points2, HCurrent);
 
-            fp64 Score = 0;
+            fp64 Score = 0.0;
 
             for(const fp64 Error : Errors)
             {
-                if(Error < ErrorThreshold)
+                const fp64 NormalizedError =
+                    Error / ErrorThreshold;
+
+                if(NormalizedError < 1.0)
                 {
-                    Score += 1.0 - Error / ErrorThreshold;
+                    Score += 1.0 - NormalizedError;
                 }
             }
+
             if(Score > MaxScore)
             {
                 MaxScore = Score;
@@ -815,11 +819,7 @@ public:
                 ++i)
             {
                 const Eigen::Vector4d Point4D =
-                    PROJ_TriangulateDLT(
-                        Points1[i],
-                        Points2[i],
-                        P1,
-                        P2);
+                    PROJ_TriangulateDLT( Points1[i], Points2[i], P1, P2);
 
                 if(!Point4D.allFinite())
                 {
@@ -910,7 +910,7 @@ public:
 
             const std::size_t ParallaxIndex =
                 std::min<std::size_t>(
-                        50,
+                        PANTO_INIT_MIN_STATIONARY_POINTS - 50,
                         CosParallaxes.size() - 1);
 
             const fp64 Parallax =
@@ -1036,7 +1036,7 @@ void INITPriv_MatchHistoricalFrames(void);
 std::vector<u64> INITPriv_STRANSAC(void);
 u64 INITPriv_RandomSeed(void);
 std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::vector<Eigen::Vector2d>& PointFrameNew, const std::vector<Eigen::Vector2d>& PointFrameHistorical);
-std::vector<u64> INITPriv_GetCandidateFrameIDs(std::vector<u64> StationaryTrackIDs);
+std::vector<u64> INITPriv_GetCandidateFrameIDs(const std::vector<u64>& StationaryTrackIDs);
 typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFrame, const typeInitFrame& NewFrame, const std::vector<u64>& StationaryTrackIDs);
 typePantoKeypointFrame INITPriv_GetKeyPointFrame(u64 InitFrameID);
 void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points, 

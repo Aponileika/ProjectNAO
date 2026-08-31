@@ -60,7 +60,9 @@ What to do next:
 
     - (DONE) Make the tracking path visible in viser, right now only keyframes which is a bit misleading / not fully informative.
 
-    - Robustify, what happens if no map associations are found from the last frame?
+    - (DONE) Add min num of 3d points for reconstruction.
+
+    - (NOT DONE IGNORE FOR NOW) Robustify, what happens if no map associations are found from the last frame?
 
     - Optimize KeyGetKeyFrame, investigate what is taking time, getting descriptors -> detect and compute? anything else? Probably alter
       opencv AKAZE code so nonlinear scale space is not thrown away. So make a "custom" version that just caches the nonlinear scale space,
@@ -105,9 +107,7 @@ pkill -f './colmap/vis_colmap.py'
 
 Chat gpt recommended next sequences:
 
-Yes. freiburg1_xyz is basically TUM’s “does your pipeline run at all?” sequence; TUM itself recommends xyz first, then desk once that works.
-
-For your monocular system, I’d try these next, roughly in this order:
+Ignore all pure rotational sequences for now.
 
 rgbd_dataset_freiburg1_desk — probably the best next test. It has more varied translation/rotation, a larger scene, and loop closure structure. TUM explicitly recommends it after xyz.
 freiburg1_desk2 — similar environment but a bit harder/different motion; good for checking that success on desk wasn’t accidental.
@@ -119,3 +119,11 @@ I would also run freiburg1_rpy, but for a different reason. It contains mostly r
 
 Stereo camera w/ IMU?
 https://shop.luxonis.com/products/oak-d-s2?RGB+Camera+Focus=Fixed-focus
+
+create video from sequence, after renaming
+ffmpeg \
+    -framerate 30 \
+    -i rgb_ordered/frame%d.png \
+    -c:v libx264 \
+    -pix_fmt yuv420p \
+    pioneer_slam2.mp4

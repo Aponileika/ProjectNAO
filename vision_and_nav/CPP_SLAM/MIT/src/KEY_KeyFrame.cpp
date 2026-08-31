@@ -105,25 +105,25 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
                     typePantoMapPoint& MapPoint = GlobalMapPoints[ImagePoint2.MapPointID];
 
-                    Eigen::Vector2d ProjectedPoint{};
+                    // Eigen::Vector2d ProjectedPoint{};
 
-                    if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
-                    {
-                        continue;
-                    }
+                    // if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
+                    // {
+                    //     continue;
+                    // }
 
                     if(VisibleMapPointIDs.insert(MapPoint.ID).second)
                     {
                         MapPoint.NumVisible++;
                     }
+                    
+                    // const fp64 ProjectionError =
+                    //     (ProjectedPoint - ImagePoint1.Point).norm();
 
-                    const fp64 ProjectionError =
-                        (ProjectedPoint - ImagePoint1.Point).norm();
-
-                    if(ProjectionError > PANTO_MAPPOINT_MATCH_SEARCH_RADIUS)
-                    {
-                        continue;
-                    }
+                    // if(ProjectionError > PANTO_MAPPOINT_MATCH_SEARCH_RADIUS)
+                    // {
+                    //     continue;
+                    // }
 
                     const u32 Distance = PANTO_HammingDistance(ImagePoint1.Descriptor, ImagePoint2.Descriptor);
 
@@ -373,9 +373,6 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
     const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Pose.Pose, KeyFrame2.Pose.Pose);
     const Eigen::Matrix3d F12 = F21.transpose();
 
-    Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Pose);
-    Eigen::Matrix<fp64, 3, 4> Rt2 = CM_GetRt(KeyFrame2.Pose);
-
     typePantoVector<typePantoImagePoint>& AllImagePoints1 = KeyFrame1.Points.ImagePoints;
     typePantoVector<typePantoImagePoint>& AllImagePoints2 = KeyFrame2.Points.ImagePoints;
 
@@ -391,6 +388,13 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
     const typeCamera& Camera2 = KeyFrame2.Pose;
 
     const Eigen::Matrix3d K = CM_GetIntrinsics()->K;
+
+    Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Pose);
+    Eigen::Matrix<fp64, 3, 4> Rt2 = CM_GetRt(KeyFrame2.Pose);
+
+    const Eigen::Matrix<fp64, 3, 4> P1 = K * Rt1;
+
+    const Eigen::Matrix<fp64, 3, 4> P2 = K * Rt2;
 
     const fp64 fx = K(0, 0);
     const fp64 fy = K(1, 1);
@@ -414,8 +418,9 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                 }
                 typePantoImagePoint& ImagePoint1 = AllImagePoints1[FeatureID1];
 
-                u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
-                u32 SecondBestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1;
+                u32 BestDistance = std::numeric_limits<u32>::max();
+
+                u32 SecondBestDistance = std::numeric_limits<u32>::max();
                 u64 BestFeatureID = PANTO_ID_NOT_SET;
 
                 if(ImagePoint1.MapPointID != PANTO_ID_NOT_SET)
@@ -488,27 +493,38 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                     }
                 }
 
-                if(SecondBestDistance == PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1)
+                if(BestFeatureID == PANTO_ID_NOT_SET)
                 {
                     continue;
                 }
-                if(BestFeatureID != PANTO_ID_NOT_SET && BestDistance < PANTO_MATCHRATIO * SecondBestDistance)
+
+                if(BestDistance >= PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW)
                 {
-                    typePantoImagePoint& ImagePoint2 = AllImagePoints2[BestFeatureID];
-                    std::pair<u64, u64> ImagePointIDs(ImagePoint1.ID, ImagePoint2.ID);
-                    Eigen::Vector4d MapPoint = PROJ_TriangulateDLT(ImagePoint1.Point, ImagePoint2.Point, Rt1, Rt2);
+                    continue;
+                }
 
-                    if(PT_IsInfront(MapPoint, Camera1) && PT_IsInfront(MapPoint, Camera2))
+                if(SecondBestDistance != std::numeric_limits<u32>::max())
+                {
+                    if(static_cast<fp64>(BestDistance) >= PANTO_MATCHRATIO *
+                            static_cast<fp64>(SecondBestDistance))
                     {
-                        const typePantoMapPoint NewPoint = PT_CreatePantoMapPoint(MapPoint, ImagePoint1.Descriptor, 
-                                KeyFrameIDs, ImagePointIDs, PANTO_ID_NOT_SET, MapAge);
-                        const u64 Index = GlobalMapPoints.push_back(NewPoint);
-                        GlobalMapPoints[Index].ID = Index;
-                        Indexes.push_back(Index);
-
-                        ImagePoint1.MapPointID = Index;
-                        ImagePoint2.MapPointID = Index;
+                        continue;
                     }
+                }
+                typePantoImagePoint& ImagePoint2 = AllImagePoints2[BestFeatureID];
+                std::pair<u64, u64> ImagePointIDs(ImagePoint1.ID, ImagePoint2.ID);
+                Eigen::Vector4d MapPoint = PROJ_TriangulateDLT(ImagePoint1.Point, ImagePoint2.Point, P1, P2);
+
+                if(PT_IsInfront(MapPoint, Camera1) && PT_IsInfront(MapPoint, Camera2))
+                {
+                    const typePantoMapPoint NewPoint = PT_CreatePantoMapPoint(MapPoint, ImagePoint1.Descriptor, 
+                            KeyFrameIDs, ImagePointIDs, PANTO_ID_NOT_SET, MapAge);
+                    const u64 Index = GlobalMapPoints.push_back(NewPoint);
+                    GlobalMapPoints[Index].ID = Index;
+                    Indexes.push_back(Index);
+
+                    ImagePoint1.MapPointID = Index;
+                    ImagePoint2.MapPointID = Index;
                 }
             }
             ++FeatureIterator1;
@@ -619,14 +635,14 @@ void KEYPriv_SolveBootStrapData(void)
         FuzzyInference.MaxRuleThreshold,
         FuzzyInference.SpatialTrackingThreshold);
 
-    FuzzyInference.VelocityParamameters.second = 0.200895 * 1000000;
-    FuzzyInference.VelocityParamameters.first = 0.050224 * 10000;
-
-    FuzzyInference.TrackingRatioParameters.second = 0.155848;
-    FuzzyInference.TrackingRatioParameters.first = 0.038962;
-
-    FuzzyInference.AccumulatedDistanceParameters.second = 0.258651;
-    FuzzyInference.AccumulatedDistanceParameters.first = 0.012933; 
+    // FuzzyInference.VelocityParamameters.second = 0.200895 * 1000000;
+    // FuzzyInference.VelocityParamameters.first = 0.050224 * 10000;
+    //
+    // FuzzyInference.TrackingRatioParameters.second = 0.155848;
+    // FuzzyInference.TrackingRatioParameters.first = 0.038962;
+    //
+    // FuzzyInference.AccumulatedDistanceParameters.second = 0.258651;
+    // FuzzyInference.AccumulatedDistanceParameters.first = 0.012933; 
     
     FuzzyInference.MaxRuleThreshold = PANTO_KEYFRAME_FUZZY_MAX_RULE_THRESHOLD;
     FuzzyInference.SpatialTrackingThreshold = PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD;

@@ -55,6 +55,8 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>&
         static_cast<unsigned long long>(NumMatchedMapPoints),
         CandidateMapPoints.size());
 
+    assert(NumMatchedMapPoints > 10);
+
     return ImagePoints;
 }
 

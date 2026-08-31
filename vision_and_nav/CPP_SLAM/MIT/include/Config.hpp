@@ -33,14 +33,14 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 
 #define CERES_MAX_ITER 200
 #define CERES_NUM_THREADS 4
-#define CERES_HUBER_THRESHOLD 5.991
+#define CERES_HUBER_THRESHOLD 2.5
 
 #define OPENCV_AKAZETHRESHOLD 0.001
 #define OPENCV_AKAZE_NOCTAVES 4
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
-#define PANTO_LOCAL_MAP_SAMPLE_STRIDE 5
-#define PANTO_NUM_BOOTSTRAP_FRAMES 1
+#define PANTO_LOCAL_MAP_SAMPLE_STRIDE 2
+#define PANTO_NUM_BOOTSTRAP_FRAMES 50
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
 #define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 20
@@ -54,9 +54,9 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define PANTO_BASELINE_LARGE_ENOUGH_TRIANGULATION(BaseLine, MedianDepth) ((BaseLine / MedianDepth) > PANTO_BASELINE_THRESHOLD)
 #define PANTO_FEATURE_TRACK_NOT_OBSERVED -1
 #if defined(DEBUG)
-    #define PANTO_INIT_MIN_NUM_FRAMES 5
+    #define PANTO_INIT_MIN_NUM_FRAMES 2
 #else
-    #define PANTO_INIT_MIN_NUM_FRAMES 30
+    #define PANTO_INIT_MIN_NUM_FRAMES 60
 #endif
 constexpr const char* PANTO_COLMAP_PATH = "./colmap";
 constexpr const char* PANTO_COLMAP_PYTHON_SCRIPT_PATH = "./colmap/vis_colmap.py";
@@ -64,7 +64,7 @@ constexpr const char* PANTO_PATH_TO_PYTHON_INTERPRETER = "/Users/Jonathan/Progra
 #if defined(DEBUG)
     #define CONFIG_PRINT_LOGS_TO_STDOUT true
 #else
-    #define CONFIG_PRINT_LOGS_TO_STDOUT false
+    #define CONFIG_PRINT_LOGS_TO_STDOUT true
 #endif
 #define PANTO_MIN_FOUND_RATIO 0.25
 #define PANTO_INIT_MAX_REPROJECTION_ERROR 2.5
@@ -86,29 +86,27 @@ using PantoClock = std::chrono::steady_clock;
 #define PANTO_USE_DATASET true
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
+#define PANTO_ACTIVE_DATASET TUM_FREIBURG1_XYZ
+
 #define DATASETS \
-    X(TUM_FREIBURG1_XYZ, "/tum/rgbd_dataset_freiburg1_xyz") 
+    X(TUM_FREIBURG1_XYZ, "/tum/rgbd_dataset_freiburg1_xyz") \
+    X(TUM_FREIBURG1_RPY, "/tum/rgbd_dataset_freiburg1_rpy") \
+    X(TUM_FREIBURG2_XYZ, "/tum/rgbd_dataset_freiburg2_xyz") \
+    X(TUM_FREIBURG2_PIONEER_SLAM, "/tum/rgbd_dataset_freiburg2_pioneer_slam")
 
 #define DATASET_SEQUENCES \
-    X(TUM_FREIBURG1_XYZ, RGB_ORDERED, "rgb_ordered")
+    X(TUM_FREIBURG1_XYZ, RGB_ORDERED, "rgb_ordered") \
+    X(TUM_FREIBURG1_RPY, RGB_ORDERED, "rgb_ordered") \
+    X(TUM_FREIBURG2_XYZ, RGB_ORDERED, "rgb_ordered") \
+    X(TUM_FREIBURG2_PIONEER_SLAM, RGB_ORDERED, "rgb_ordered")
 
-//fx, fy, s, cx, cy
-//k1, k2, p1, p2, k3
+//fx, fy, s, cx, cy //k1, k2, p1, p2, k3
 #define DATASET_INTRINSICS \
-X(TUM_FREIBURG1_XYZ, \
-    517.3, 516.5, 0.0, 318.6, 255.3, \
-    0.2624, -0.9531, -0.0054, 0.0026, 1.1633) \
-X(WEBCAM_JE, \
-    9.747187409387847 * 100.0, \
-    9.765223334221673 * 100.0, \
-    0.0, \
-    6.663249058750432 * 100.0, \
-    3.374737864029501 * 100.0, \
-    6.475901025911835 * 0.01, \
-   -1.903655376657792 * 0.1, \
-   -3.666863513699757 * 0.001, \
-    2.119531347424837 * 0.001, \
-    1.113497353924944 * 0.1)
+    X(TUM_FREIBURG1_XYZ, 517.3, 516.5, 0.0, 318.6, 255.3, 0.2624, -0.9531, -0.0054, 0.0026, 1.1633) \
+    X(TUM_FREIBURG1_RPY, 517.3, 516.5, 0.0, 318.6, 255.3, 0.2624, -0.9531, -0.0054, 0.0026, 1.1633) \
+    X(TUM_FREIBURG2_XYZ, 520.9, 521.0, 0.0, 325.1, 249.7, 0.2312, -0.7849, -0.0033, -0.0001, 0.9172) \
+    X(TUM_FREIBURG2_PIONEER_SLAM, 520.9, 521.0, 0.0, 325.1, 249.7, 0.2312, -0.7849, -0.0033, -0.0001, 0.9172) \
+    X(WEBCAM_JE, 974.7187409387847, 976.5223334221673, 0.0, 666.3249058750432, 337.4737864029501, 0.06475901025911835, -0.1903655376657792, -0.003666863513699757, 0.002119531347424837, 0.1113497353944944)
 
 enum class Dataset : u8
 {
@@ -127,9 +125,20 @@ DATASETS
 DATASET_SEQUENCES
 #undef X
 
-constexpr auto panto_dataset_path = DATASET_PATH_TUM_FREIBURG1_XYZ;
-constexpr auto panto_sequence_path = SEQUENCE_PATH_TUM_FREIBURG1_XYZ_RGB_ORDERED;
-const Dataset panto_dataset = Dataset::TUM_FREIBURG1_XYZ;
+#define PANTO_EXPAND_DATASET_PATH_IMPL(dataset) DATASET_PATH_##dataset
+#define PANTO_EXPAND_DATASET_PATH(dataset) PANTO_EXPAND_DATASET_PATH_IMPL(dataset)
+
+#define PANTO_EXPAND_SEQUENCE_PATH_IMPL(dataset) SEQUENCE_PATH_##dataset##_RGB_ORDERED
+#define PANTO_EXPAND_SEQUENCE_PATH(dataset) PANTO_EXPAND_SEQUENCE_PATH_IMPL(dataset)
+
+constexpr auto panto_dataset_path =
+    PANTO_EXPAND_DATASET_PATH(PANTO_ACTIVE_DATASET);
+
+constexpr auto panto_sequence_path =
+    PANTO_EXPAND_SEQUENCE_PATH(PANTO_ACTIVE_DATASET);
+
+const Dataset panto_dataset =
+    Dataset::PANTO_ACTIVE_DATASET;
 
 #define PANTO_LOGPATH "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/logs/Latest"
 #define PANTO_LOGPATH_HISTORICAL "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/logs/Historical"
@@ -183,7 +192,8 @@ inline constexpr const char* PANTO_VocabFilePath =
 
 #define PANTO_FUNDAMENTAL_MIN_POINTS 8
 #define PANTO_HOMOGRAPHY_MIN_POINTS 4
-#define PANTO_INIT_MIN_STATIONARY_POINTS 50
+#define PANTO_INIT_MIN_STATIONARY_POINTS 200
+#define PANTO_MIN_NUMBER_INITIAL_MAP_POINTS 100
 #define PANTO_NUM_THREADS_MAX 8
 
 /*                      

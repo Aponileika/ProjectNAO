@@ -156,6 +156,12 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
         }
     }
 
+    if(MostPoints < PANTO_MIN_NUMBER_INITIAL_MAP_POINTS)
+    {
+        Reconstruction[BestReconstructionIndex].Valid = false;
+        return Reconstruction[BestReconstructionIndex];
+    }
+
     LG_Log(
         LogSeverity::DBG,
         "[INIT_ProcessNewFrame] Selected reconstruction %llu with %zu map points\n",
@@ -353,17 +359,15 @@ void INITPriv_MatchHistoricalFrames(void)
                             SecondBestDistance = Distance;
                         }
                     }
-                    if(SecondBestDistance == PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1) continue;
+                    if(SecondBestDistance == PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW + 1) continue;
                     if((static_cast<fp64>(BestDistance) < PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance))
-                            && (BestDistance < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD))
+                            && (BestDistance < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW))
                     {
                         const typeInitImagePoint& TopCandidate = HistoricalFrame.ImagePoints[BestFeatureID];
                         const u64 FeatureTrackID = TopCandidate.FeatureTrackID;
 
                         if(FeatureTrackID == PANTO_ID_NOT_SET)
                         {
-                            if(FeatureTrackID == PANTO_ID_NOT_SET)
-                            {
                                 const u64 NewFeatureTrackID =
                                     static_cast<u64>(InitData.FeatureTracks.size());
 
@@ -392,7 +396,6 @@ void INITPriv_MatchHistoricalFrames(void)
 
                                 HistoricalFrame.ImagePoints[BestFeatureID].FeatureTrackID =
                                     NewFeatureTrackID;
-                            }
                         }
                         else
                         {
@@ -561,12 +564,29 @@ std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::v
 
     LG_Log(LogSeverity::DBG,"[INITPriv_ScoredFAndHEstimation] Fundamental score: %lf, Homography score: %lf\n", Fundamental->MaxScore, Homography->MaxScore);
 
-    if(Fundamental->MaxScore > Homography->MaxScore)
+    const fp64 FundamentalScore = Fundamental->MaxScore;
+
+    const fp64 HomographyScore = Homography->MaxScore;
+
+    const fp64 TotalScore = FundamentalScore + HomographyScore;
+
+    if(TotalScore <= std::numeric_limits<fp64>::epsilon())
     {
         return Fundamental;
     }
 
-    return Homography;
+    const fp64 HomographyRatio = HomographyScore / TotalScore;
+
+    LG_Log( LogSeverity::DBG,
+            "[INITPriv_ScoredFAndHEstimation] " "F score = %.3f, H score = %.3f, H ratio = %.3f\n",
+            FundamentalScore, HomographyScore, HomographyRatio);
+
+    if(HomographyRatio > 0.40)
+    {
+        return Homography;
+    }
+
+    return Fundamental;
 }
 
 u64 INITPriv_RandomSeed(void)
@@ -579,28 +599,38 @@ u64 INITPriv_RandomSeed(void)
     return (High << 32) | Low;
 }
 
-std::vector<u64> INITPriv_GetCandidateFrameIDs(std::vector<u64> StationaryTrackIDs)
+std::vector<u64> INITPriv_GetCandidateFrameIDs(const std::vector<u64>& StationaryTrackIDs)
 {
-    std::vector<u64> Covisibility(InitData.InitFrames.size(), 0);
+    std::vector<u64> Covisibility( InitData.InitFrames.size(), 0);
 
     const u64 LatestFrameID = InitData.InitFrames.back().ID;
+
     for(const u64 TrackID : StationaryTrackIDs)
     {
         const typeFeatureTrack& FeatureTrack = InitData.FeatureTracks[TrackID];
 
-        for(u64 i = 0; i < LatestFrameID; i++)
+        for(u64 i = 0; i < LatestFrameID; ++i)
         {
             if(FeatureTrack.FeatureTrack[i] != PANTO_ID_NOT_SET)
             {
-                Covisibility[i]++;
+                ++Covisibility[i];
             }
         }
     }
 
-    std::vector<u64> CandidateFrameIDs(LatestFrameID);
+    std::vector<u64> CandidateFrameIDs;
+    CandidateFrameIDs.reserve(LatestFrameID);
 
-    std::iota(CandidateFrameIDs.begin(), CandidateFrameIDs.end(), 0);
-    std::sort(CandidateFrameIDs.begin(), CandidateFrameIDs.end(), [&Covisibility](const u64 A, const u64 B)
+    for(u64 i = 0; i < LatestFrameID; ++i)
+    {
+        if(Covisibility[i] >= PANTO_FUNDAMENTAL_MIN_POINTS)
+        {
+            CandidateFrameIDs.push_back(i);
+        }
+    }
+
+    std::sort( CandidateFrameIDs.begin(), CandidateFrameIDs.end(),
+        [&Covisibility](const u64 A, const u64 B)
         {
             return Covisibility[A] > Covisibility[B];
         });
@@ -734,3 +764,4 @@ void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points,
                 PANTO_ID_NOT_SET);
     }
 }
+
