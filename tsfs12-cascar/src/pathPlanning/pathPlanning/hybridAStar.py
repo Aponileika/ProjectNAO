@@ -4,7 +4,7 @@ from scipy.ndimage import binary_dilation
 from collections import deque
 from math import sin, cos, sqrt
 
-import dubinPath
+from .dubinPath import *
 
 
 class Node():
@@ -244,7 +244,7 @@ class HybridAStar():
             staticPoint = path[upper]
             for i in range(lower, upper - 1):
                 dynamicPoint = path[i]
-                dubins, dubinLengths = dubinPath.dubinsPath(np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], 
+                dubins, dubinLengths = dubinsPath(np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], 
                                              np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], getDistance=False)
                 shortestPath = self.getShortestDubin(dubins, dubinLengths, upper - i)
 
@@ -258,7 +258,7 @@ class HybridAStar():
             staticPoint = path[lower]
             for i in range(upper, lower + 1, -1):
                 dynamicPoint = path[i]
-                dubins, dubinLengths = dubinPath.dubinsPath(np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], 
+                dubins, dubinLengths = dubinsPath(np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], 
                                              np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], getDistance=False)
                 shortestPath = self.getShortestDubin(dubins, dubinLengths, i - lower)
 
@@ -293,7 +293,7 @@ class HybridAStar():
 
     def search(self, start, goal, map=None, xlim=None, ylim=None):
         if map is None:
-            return dubinPath.dubinsPath( (start[0], start[1]), start[2], (goal[0], goal[1]), goal[3], getDistance=True)
+            return dubinsPath( (start[0], start[1]), start[2], (goal[0], goal[1]), goal[3], getDistance=True)
 
         minX = xlim[0]
         minY = ylim[0]
