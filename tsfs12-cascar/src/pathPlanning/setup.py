@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'dubinPath = pathPlanning.dubinPath:main',
+            'pathPlanning = pathPlanning.pathPlanning:main',
         ],
     },
 )

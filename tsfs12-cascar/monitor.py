@@ -107,8 +107,8 @@ class Monitor():
 
             # Planned path
             if self.path:
-                xs = [p['x'] for p in self.path]
-                ys = [p['y'] for p in self.path]
+                xs = [p[0] for p in self.path]
+                ys = [p[1] for p in self.path]
                 self.plan_path.set_data(xs, ys)
 
             # Current positions
@@ -220,7 +220,7 @@ class Monitor():
                 self.pastTrueX = []
                 self.pastTrueY = []
                 self.pastTrueTheta = []
-                
+
             else:
                 command = None
 

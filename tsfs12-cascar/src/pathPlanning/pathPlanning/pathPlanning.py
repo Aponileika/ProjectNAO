@@ -4,6 +4,7 @@ import json
 from math import *
 
 from dubinPath import *
+import hybridAStar
 
 import rclpy
 from rclpy.node import Node
@@ -33,6 +34,7 @@ class dubinsPath(Node):
         self.theta = 0
 
         self.plannedPath = []
+        self.pathPlanner = hybridAStar.hybridAStar()
 
         ##FOR TEST PURPOSES; REPLACE WITH ACTION
         self.xGoal = 2
@@ -51,8 +53,9 @@ class dubinsPath(Node):
 
         #FOR TEST PURPOSES; REPLACE WITH ACTION
         if not self.path_planned:
-            self.plannedPath = dubinsPath(np.array([self.x, self.y]), self.theta,
-                                               np.array([self.xGoal, self.yGoal]), self.thetaGoal)
+            #self.plannedPath = dubinsPath(np.array([self.x, self.y]), self.theta,
+            #                                   np.array([self.xGoal, self.yGoal]), self.thetaGoal)
+            self.plannedPath = self.pathPlanner.search((self.x, self.y, self.theta), (self.xGoal, self.yGoal, self.thetaGoal), map=None)
 
             print(self.plannedPath)
             self.publishPath()
