@@ -66,7 +66,8 @@ What to do next:
       so if a detect -> compute has been called in order, upyr is saved for compute, when compute is called the upyr must be marked as invalid.
 
     - Add DATA for keyframe inference, probably remove velocity change -> feature distribution, why would we want to insert an image
-      with high acceleration, it should be more likely to be blurry.
+      with high acceleration, it should be more likely to be blurry, it should really be the inverse, so stable velocity should make keyframe insertion
+      more likely, maybe it should be more of a weight rather than a fuzzy parameter.
 
     - Add better data logs for localmapping, how many anchors, mow many frames are selected for the local map? Do the same
       for the tracking local map, how many frames?
@@ -88,6 +89,7 @@ What to do next:
      (they all need to be normalized to 0-1), think about scale ambiguity when calculating errors, since for different scenes scale will be different,
      use metric scale by just correcting the first two frames to metric scale based on ground truth, this should not affect optimization since it happens
      after the init so wont make a difference. So just find the optimal pair -> read GT -> set second selected frame to gt R and t -> retriangulate points.
+     Note that this requires the algorithm in general to be visual inertial since it always needs to be in metric scale. Maybe bootstrapping isnt so bad.
 
     - Implement threading, use same structure as orb, tracking <-> local mapping <-> global mapping threads. std::jthread / thread? 
       How to handle atomicity? I assume as soon as keyframe is inserted -> abort global BA.
