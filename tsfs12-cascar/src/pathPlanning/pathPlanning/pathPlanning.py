@@ -3,8 +3,8 @@ import random
 import json
 from math import *
 
-from dubinPath import *
-import hybridAStar
+from .dubinPath import *
+from .hybridAStar import *
 
 import rclpy
 from rclpy.node import Node
@@ -34,7 +34,7 @@ class dubinsPath(Node):
         self.theta = 0
 
         self.plannedPath = []
-        self.pathPlanner = hybridAStar.hybridAStar()
+        self.pathPlanner = HybridAStar()
 
         ##FOR TEST PURPOSES; REPLACE WITH ACTION
         self.xGoal = 2
