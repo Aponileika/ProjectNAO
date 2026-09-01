@@ -58,8 +58,6 @@ inline Eigen::Matrix<fp64, 3, 4>CM_GetRt(const typeCamera& CameraPose)
     Rt.block<3, 3>(0, 0) = CameraPose.Pose.R;
     Rt.col(3) = CameraPose.Pose.t;
 
-    Rt = CM_GetIntrinsics()->K * Rt;
-
     return Rt;
 }
 

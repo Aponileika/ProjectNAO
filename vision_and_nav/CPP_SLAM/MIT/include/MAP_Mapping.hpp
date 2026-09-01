@@ -40,7 +40,7 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisi
 typePantoVector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Map, const typeKeyFrame& LastKeyFrame);
 typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMapTracking& LocalMap, typeKeyFrame& NewKeyFrame);
 
-void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const typeLocalMap& LocalMap, const u64 CurrentFrameID);
+void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const u64 CurrentFrameID);
 void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGlobalMap& GlobalMap);
 void MAP_CullObservationEdges(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph);
 

@@ -224,11 +224,33 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMa
     return LocalMapInfo;
 }
 
-void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const typeLocalMap& LocalMap, const u64 CurrentFrameID)
+void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const u64 CurrentFrameID)
 {
+    assert(GlobalMap.KeyFrames.contains(CurrentFrameID));
+    assert(CovisibilityGraph.contains(CurrentFrameID));
+
+    std::vector<u64> CovisibleKeyFrameIDs;
+    CovisibleKeyFrameIDs.reserve(CovisibilityGraph[CurrentFrameID].size());
+
+    for(const auto& [KeyFrameID, Weight] : CovisibilityGraph[CurrentFrameID])
+    {
+        if(Weight == 0)
+        {
+            continue;
+        }
+
+        assert(GlobalMap.KeyFrames.contains(KeyFrameID));
+        CovisibleKeyFrameIDs.push_back(KeyFrameID);
+    }
+
+    LG_Log(LogSeverity::DBG,
+            "[MAP_CullLocalMap] Evaluating %zu covisible keyframes connected to KF %llu\n",
+            CovisibleKeyFrameIDs.size(),
+            CurrentFrameID);
+
     std::vector<u64> CulledKeyFrameIDs;
 
-    for(const u64& KeyFrameID : LocalMap.KeyFrameIDs)
+    for(const u64 KeyFrameID : CovisibleKeyFrameIDs)
     {
         if(KeyFrameID == CurrentFrameID)
         {
@@ -257,7 +279,6 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& Covisibil
             NumMapPoints++;
 
             const typePantoMapPoint& MapPoint = GlobalMap.MapPoints[MapPointID];
-
             const u64 OtherObservations = MapPoint.KeyFrameIDs.active_size() - 1;
 
             if(OtherObservations >= 3)
@@ -281,7 +302,6 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& Covisibil
     for(const u64 CulledID : CulledKeyFrameIDs)
     {
         typeKeyFrame& KeyFrame = GlobalMap.KeyFrames[CulledID];
-
         for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
             const u64 MapPointID = ImagePoint.MapPointID;
@@ -297,7 +317,6 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& Covisibil
             }
 
             typePantoMapPoint& MapPoint = GlobalMap.MapPoints[MapPointID];
-
             for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
             {
                 if(!MapPoint.KeyFrameIDs.contains(i) || !MapPoint.ImagePointIDs.contains(i))
@@ -315,9 +334,7 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& Covisibil
         }
 
         GRAPH_CullKeyFrame(CovisibilityGraph, CulledID);
-
         GlobalMap.KeyFrames.remove(CulledID);
-
         LG_Log(LogSeverity::DBG, "[MAP_CullLocalMap] culled keyframe %llu\n", CulledID);
     }
 
@@ -458,7 +475,7 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
             NumErrors++;
             SumError+=PixelError;
 
-            if(PixelError > PANTO_PIXEL_CHI_SQUARED_T)
+            if(PixelError > PANTO_PIXEL_CHI_SQUARED_T_SQRT)
             {
                 LG_Log( LogSeverity::DBG,
                         "[MAP_CullObservationEdges] MP %llu observation KF %llu IP %llu rejected: error = %.6f > %.6f\n",
@@ -466,7 +483,7 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
                         KeyFrameID,
                         ImagePointID,
                         PixelError,
-                        PANTO_PIXEL_CHI_SQUARED_T);
+                        PANTO_PIXEL_CHI_SQUARED_T_SQRT);
 
 
                 CulledIndexes.push_back(i);
@@ -497,13 +514,9 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
 
         if(RemainingObservations < 1)
         {
-            LG_Log( LogSeverity::DBG,
-                    "[MAP_CullObservationEdges] MP %llu marked for full deletion: remaining observations = %llu\n",
-                    MapPoint.ID,
-                    RemainingObservations);
-
+            LG_Log( LogSeverity::DBG, "[MAP_CullObservationEdges] MP %llu marked for full deletion: remaining observations = %llu\n",
+                    MapPoint.ID, RemainingObservations);
             CulledMapPointIDs.push_back( MapPoint.ID);
-
             MappingData.MapPointsCulled++;
 
             continue;
@@ -512,23 +525,17 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
         for(const u64 CulledIndex : CulledIndexes)
         {
             assert( KeyFrameIDs.contains( CulledIndex));
-
             assert( ImagePointIDs.contains( CulledIndex));
 
             const u64 KeyFrameID = KeyFrameIDs[CulledIndex];
-
             const u64 ImagePointID = ImagePointIDs[CulledIndex];
 
             typePantoImagePoint& ImagePoint = GlobalMap.KeyFrames[ KeyFrameID]. Points.ImagePoints[ ImagePointID];
-
             GRAPH_DecrementAllOther( CovisibilityGraph, KeyFrameIDs, CulledIndex);
 
             ImagePoint.MapPointID = PANTO_ID_NOT_SET;
-
             KeyFrameIDs.remove( CulledIndex);
-
             ImagePointIDs.remove( CulledIndex);
-
             NumCulledObservationEdges++;
         }
     }
@@ -1312,4 +1319,3 @@ void MAP_LogMappingData(void)
 
     IsLogged = true;
 }
-

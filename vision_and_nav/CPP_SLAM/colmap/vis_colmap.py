@@ -153,6 +153,79 @@ def initialize_view_from_first_camera(
     handles["camera_initialized"] = True
 
 
+def get_track_follow_pose(
+    tracks,
+    images,
+    distance: float,
+    height: float,
+    look_ahead: float,
+):
+    """Return a third-person viewer pose at the newest tracked position."""
+    if len(tracks) == 0 or len(images) == 0:
+        return None
+
+    target_position = np.asarray(tracks[-1], dtype=np.float64)
+
+    if not np.all(np.isfinite(target_position)):
+        return None
+
+    latest_img = images[max(images.keys())]
+    T_world_camera = vtf.SE3.from_rotation_and_translation(
+        vtf.SO3(latest_img.qvec),
+        latest_img.tvec,
+    ).inverse()
+    Rwc = T_world_camera.rotation().as_matrix()
+
+    # COLMAP/OpenCV cameras look along +Z with -Y as camera-up.
+    forward = Rwc @ np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    up = Rwc @ np.array([0.0, -1.0, 0.0], dtype=np.float64)
+    forward /= np.linalg.norm(forward)
+    up /= np.linalg.norm(up)
+
+    viewer_position = target_position - distance * forward + height * up
+    viewer_look_at = target_position + look_ahead * forward
+
+    return viewer_position, viewer_look_at, up
+
+
+def update_track_follow_camera(
+    server,
+    handles,
+    gui_follow_track,
+    gui_follow_distance,
+    gui_follow_height,
+    gui_follow_look_ahead,
+    client=None,
+):
+    if not gui_follow_track.value:
+        return
+
+    pose = get_track_follow_pose(
+        handles["latest_tracks"],
+        handles["latest_images"],
+        gui_follow_distance.value,
+        gui_follow_height.value,
+        gui_follow_look_ahead.value,
+    )
+
+    if pose is None:
+        return
+
+    viewer_position, viewer_look_at, viewer_up = pose
+
+    server.initial_camera.position = viewer_position
+    server.initial_camera.look_at = viewer_look_at
+    server.initial_camera.up = viewer_up
+
+    clients = [client] if client is not None else server.get_clients().values()
+
+    for current_client in clients:
+        with current_client.atomic():
+            current_client.camera.position = viewer_position
+            current_client.camera.look_at = viewer_look_at
+            current_client.camera.up_direction = viewer_up
+
+
 def update_visualization(
     server,
     root: Path,
@@ -163,15 +236,20 @@ def update_visualization(
     gui_point_size,
     gui_frustum_scale,
     gui_tracking_thickness,
+    gui_follow_track,
+    gui_follow_distance,
+    gui_follow_height,
+    gui_follow_look_ahead,
     handles,
 ):
     images_path = root / "images"
 
-    server.scene.reset()
+    handles["latest_tracks"] = tracks
+    handles["latest_images"] = images
 
-    handles["point_cloud"] = None
-    handles["tracking_trajectory"] = None
-    handles["camera_frustums"] = []
+    if handles["point_cloud"] is not None:
+        handles["point_cloud"].remove()
+        handles["point_cloud"] = None
 
     if len(points3d) > 0:
         points = np.array(
@@ -190,6 +268,10 @@ def update_visualization(
             colors=colors,
             point_size=gui_point_size.value,
         )
+
+    if handles["tracking_trajectory"] is not None:
+        handles["tracking_trajectory"].remove()
+        handles["tracking_trajectory"] = None
 
     if len(tracks) >= 2:
         tracking_points = np.asarray(
@@ -245,7 +327,18 @@ def update_visualization(
         handles,
     )
 
-    for img_id, img in images.items():
+    # Camera images are by far the most expensive scene objects to decode,
+    # encode, and send. Keep existing handles alive between snapshots and only
+    # create frustums for newly seen keyframes. Iterating in descending ID order
+    # makes the latest images appear first during initial scene loading.
+    removed_img_ids = handles["camera_frames"].keys() - images.keys()
+
+    for img_id in removed_img_ids:
+        handles["camera_frames"].pop(img_id).remove()
+        handles["camera_frustums"].pop(img_id, None)
+
+    for img_id in sorted(images.keys(), reverse=True):
+        img = images[img_id]
         cam = cameras[img.camera_id]
 
         T_world_camera = vtf.SE3.from_rotation_and_translation(
@@ -253,7 +346,13 @@ def update_visualization(
             img.tvec,
         ).inverse()
 
-        server.scene.add_frame(
+        if img_id in handles["camera_frames"]:
+            frame = handles["camera_frames"][img_id]
+            frame.wxyz = T_world_camera.rotation().wxyz
+            frame.position = T_world_camera.translation()
+            continue
+
+        handles["camera_frames"][img_id] = server.scene.add_frame(
             f"/colmap/frame_{img_id}",
             wxyz=T_world_camera.rotation().wxyz,
             position=T_world_camera.translation(),
@@ -261,18 +360,13 @@ def update_visualization(
             axes_radius=gui_frustum_scale.value * 0.025,
         )
 
-        image_file = images_path / img.name
-
-        image = None
-
-        if image_file.is_file():
-            image = iio.imread(image_file)
-
         if cam.model == "PINHOLE":
             fx, fy, cx, cy = cam.params
 
             H = cam.height
             W = cam.width
+            image_file = images_path / img.name
+            image = iio.imread(image_file) if image_file.is_file() else None
 
             frustum = server.scene.add_camera_frustum(
                 f"/colmap/frame_{img_id}/frustum",
@@ -282,13 +376,22 @@ def update_visualization(
                 image=image,
             )
 
-            handles["camera_frustums"].append(frustum)
+            handles["camera_frustums"][img_id] = frustum
 
         else:
             print(
                 f"[VISER] Skipping frustum for image {img_id}: "
                 f"camera model is {cam.model}"
             )
+
+    update_track_follow_camera(
+        server,
+        handles,
+        gui_follow_track,
+        gui_follow_distance,
+        gui_follow_height,
+        gui_follow_look_ahead,
+    )
 
 
 def main(root: str):
@@ -323,18 +426,56 @@ def main(root: str):
     )
 
     gui_tracking_thickness = server.gui.add_slider(
-            "Tracking thickness",
-            min=1.0,
-            max=10.0,
-            step=0.5,
-            initial_value=3.0,
-            )
+        "Tracking thickness",
+        min=1.0,
+        max=10.0,
+        step=0.5,
+        initial_value=3.0,
+    )
+
+    server.gui.add_markdown(
+        "**Free camera:** W/A/S/D move, Q/E move down/up, "
+        "arrow keys rotate, and the mouse orbits/pans/zooms."
+    )
+
+    gui_follow_track = server.gui.add_checkbox(
+        "Follow latest track",
+        initial_value=False,
+        hint="Toggle a third-person view behind the newest tracked frame.",
+    )
+
+    gui_follow_distance = server.gui.add_slider(
+        "Follow distance",
+        min=0.05,
+        max=20.0,
+        step=0.05,
+        initial_value=2.0,
+    )
+
+    gui_follow_height = server.gui.add_slider(
+        "Follow height",
+        min=0.0,
+        max=10.0,
+        step=0.05,
+        initial_value=0.5,
+    )
+
+    gui_follow_look_ahead = server.gui.add_slider(
+        "Follow look-ahead",
+        min=0.05,
+        max=20.0,
+        step=0.05,
+        initial_value=2.0,
+    )
 
     handles = {
         "point_cloud": None,
         "tracking_trajectory": None,
-        "camera_frustums": [],
+        "camera_frames": {},
+        "camera_frustums": {},
         "camera_initialized": False,
+        "latest_tracks": np.empty((0, 3), dtype=np.float64),
+        "latest_images": {},
     }
 
     @gui_point_size.on_update
@@ -344,15 +485,53 @@ def main(root: str):
 
     @gui_frustum_scale.on_update
     def _(_):
-        for frustum in handles["camera_frustums"]:
+        for frustum in handles["camera_frustums"].values():
             frustum.scale = gui_frustum_scale.value
 
     @gui_tracking_thickness.on_update
     def _(_):
         if handles["tracking_trajectory"] is not None:
             handles["tracking_trajectory"].line_width = (
-                    gui_tracking_thickness.value
-                    )
+                gui_tracking_thickness.value
+            )
+
+    def refresh_track_follow():
+        update_track_follow_camera(
+            server,
+            handles,
+            gui_follow_track,
+            gui_follow_distance,
+            gui_follow_height,
+            gui_follow_look_ahead,
+        )
+
+    @gui_follow_track.on_update
+    def _(_):
+        refresh_track_follow()
+
+    @gui_follow_distance.on_update
+    def _(_):
+        refresh_track_follow()
+
+    @gui_follow_height.on_update
+    def _(_):
+        refresh_track_follow()
+
+    @gui_follow_look_ahead.on_update
+    def _(_):
+        refresh_track_follow()
+
+    @server.on_client_connect
+    def _(client):
+        update_track_follow_camera(
+            server,
+            handles,
+            gui_follow_track,
+            gui_follow_distance,
+            gui_follow_height,
+            gui_follow_look_ahead,
+            client=client,
+        )
 
     last_snapshot_id = None
 
@@ -379,6 +558,10 @@ def main(root: str):
                     gui_point_size,
                     gui_frustum_scale,
                     gui_tracking_thickness,
+                    gui_follow_track,
+                    gui_follow_distance,
+                    gui_follow_height,
+                    gui_follow_look_ahead,
                     handles,
                 )
 

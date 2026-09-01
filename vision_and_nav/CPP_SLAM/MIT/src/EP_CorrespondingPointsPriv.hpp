@@ -21,5 +21,5 @@ cv::Mat __EP_CrossProdMat(cv::Mat x);
 void __EP_InitAkaze(void);
 void __EP_destroy(void);
 DescRet __EP_GetDesc(const cv::Mat& img);
-std::vector<cv::KeyPoint> __EP_Anms(const cv::Ptr<cv::Feature2D>& detector, const cv::Mat& img);
+std::vector<cv::KeyPoint> __EP_Anms(std::vector<cv::KeyPoint>& KeyPoints, const i32 ImageColumns, const i32 ImageRows);
 #endif // __EP_CORRESPONDINGPOINTSPRIV_HPP

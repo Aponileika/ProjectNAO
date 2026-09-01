@@ -38,17 +38,19 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define OPENCV_AKAZETHRESHOLD 0.001
 #define OPENCV_AKAZE_NOCTAVES 4
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
+#define PANTO_DESCRIPTOR_ANMS false
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
 #define PANTO_LOCAL_MAP_SAMPLE_STRIDE 2
 #define PANTO_NUM_BOOTSTRAP_FRAMES 50
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
-#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 20
+#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 30
 #define PANTO_KEYFRAME_MEAN_VELOCITY_THRESHOLD_GAIN 4
 #define PANTO_KEYFRAME_MEAN_TRACKING_HIGH_THRESHOLD_GAIN 0.8f
 #define PANTO_KEYFRAME_MEAN_TRACKING_LOW_THRESHOLD_GAIN 0.2f
 #define PANTO_KEYFRAME_FUZZY_MAX_RULE_THRESHOLD 0.95f
 #define PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD 0.5f
+#define PANTO_TRACKING_MIN_MATCHED_MAP_POINTS 10
 // Same as slam orb, baseline > 1% of median depth of local map relative to a keyframe
 #define PANTO_BASELINE_THRESHOLD 0.01f
 #define PANTO_BASELINE_LARGE_ENOUGH_TRIANGULATION(BaseLine, MedianDepth) ((BaseLine / MedianDepth) > PANTO_BASELINE_THRESHOLD)
@@ -56,7 +58,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #if defined(DEBUG)
     #define PANTO_INIT_MIN_NUM_FRAMES 2
 #else
-    #define PANTO_INIT_MIN_NUM_FRAMES 60
+    #define PANTO_INIT_MIN_NUM_FRAMES 10
 #endif
 constexpr const char* PANTO_COLMAP_PATH = "./colmap";
 constexpr const char* PANTO_COLMAP_PYTHON_SCRIPT_PATH = "./colmap/vis_colmap.py";
@@ -86,19 +88,21 @@ using PantoClock = std::chrono::steady_clock;
 #define PANTO_USE_DATASET true
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
-#define PANTO_ACTIVE_DATASET TUM_FREIBURG1_XYZ
+#define PANTO_ACTIVE_DATASET TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD
 
 #define DATASETS \
     X(TUM_FREIBURG1_XYZ, "/tum/rgbd_dataset_freiburg1_xyz") \
     X(TUM_FREIBURG1_RPY, "/tum/rgbd_dataset_freiburg1_rpy") \
     X(TUM_FREIBURG2_XYZ, "/tum/rgbd_dataset_freiburg2_xyz") \
-    X(TUM_FREIBURG2_PIONEER_SLAM, "/tum/rgbd_dataset_freiburg2_pioneer_slam")
+    X(TUM_FREIBURG2_PIONEER_SLAM, "/tum/rgbd_dataset_freiburg2_pioneer_slam") \
+    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, "/tum/rgbd_dataset_freiburg3_long_office_household") 
 
 #define DATASET_SEQUENCES \
     X(TUM_FREIBURG1_XYZ, RGB_ORDERED, "rgb_ordered") \
     X(TUM_FREIBURG1_RPY, RGB_ORDERED, "rgb_ordered") \
     X(TUM_FREIBURG2_XYZ, RGB_ORDERED, "rgb_ordered") \
-    X(TUM_FREIBURG2_PIONEER_SLAM, RGB_ORDERED, "rgb_ordered")
+    X(TUM_FREIBURG2_PIONEER_SLAM, RGB_ORDERED, "rgb_ordered") \
+    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, RGB_ORDERED, "rgb_ordered") 
 
 //fx, fy, s, cx, cy //k1, k2, p1, p2, k3
 #define DATASET_INTRINSICS \
@@ -106,6 +110,7 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG1_RPY, 517.3, 516.5, 0.0, 318.6, 255.3, 0.2624, -0.9531, -0.0054, 0.0026, 1.1633) \
     X(TUM_FREIBURG2_XYZ, 520.9, 521.0, 0.0, 325.1, 249.7, 0.2312, -0.7849, -0.0033, -0.0001, 0.9172) \
     X(TUM_FREIBURG2_PIONEER_SLAM, 520.9, 521.0, 0.0, 325.1, 249.7, 0.2312, -0.7849, -0.0033, -0.0001, 0.9172) \
+    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, 535.4, 539.2, 0.0, 320.1, 247.6, 0.0, 0.0, 0.0, 0.0, 0.0) \
     X(WEBCAM_JE, 974.7187409387847, 976.5223334221673, 0.0, 666.3249058750432, 337.4737864029501, 0.06475901025911835, -0.1903655376657792, -0.003666863513699757, 0.002119531347424837, 0.1113497353944944)
 
 enum class Dataset : u8
@@ -180,7 +185,7 @@ inline constexpr const char* PANTO_VocabFilePath =
 // Controls how deep vocab tree 
 #define PANTO_DBOW_DEPTH 5
 
-#define PANTO_DBOW_LEVELSUP (PANTO_DBOW_DEPTH - 1)
+#define PANTO_DBOW_LEVELSUP (PANTO_DBOW_DEPTH - 2)
 
 #define PANTO_INIT_ERROR_THRESHOLD_INLIER_HOMOGRAPHY 5.991*PANTO_PIXEL_MEAS_STD_DEV*PANTO_PIXEL_MEAS_STD_DEV
 
@@ -188,13 +193,14 @@ inline constexpr const char* PANTO_VocabFilePath =
 
 #define PANTO_INIT_STRANSAC_RATIO_INLIER_OUTLIER_THRESHOLD 0.6f
 
-#define PANTO_INIT_RANSAC_LOOP_CNT 500
+#define PANTO_INIT_RANSAC_LOOP_CNT 1000
 
 #define PANTO_FUNDAMENTAL_MIN_POINTS 8
 #define PANTO_HOMOGRAPHY_MIN_POINTS 4
-#define PANTO_INIT_MIN_STATIONARY_POINTS 200
-#define PANTO_MIN_NUMBER_INITIAL_MAP_POINTS 100
-#define PANTO_NUM_THREADS_MAX 8
+#define PANTO_INIT_MIN_STATIONARY_POINTS 100
+#define PANTO_MIN_NUMBER_INITIAL_MAP_POINTS 50
+#define PANTO_NUM_THREADS_MAX 4
+#define PANTO_INIT_CANDIDATE_BATCHES 5
 
 /*                      
  ******************************************************************                                                  

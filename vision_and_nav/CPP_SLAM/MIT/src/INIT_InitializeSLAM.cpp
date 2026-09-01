@@ -8,8 +8,18 @@ static typePantoInitData InitData =
     .EnoughStationaryPointsForInit = false
 };
 
+static u32 InitNumFrames = 1;
+
 void INIT_CreateInitData(void)
 {
+    InitData =
+    {
+        .InitFrames{},
+        .FeatureTracks{},
+        .EnoughStationaryPointsForInit = false
+    };
+    InitNumFrames = 1;
+
     LG_Log(LogSeverity::DBG, "[INIT_CreateInitData] Creating initialization data\n");
 
     typePantoFrame FirstFrame = FR_GetFrame();
@@ -29,8 +39,6 @@ void INIT_CreateInitData(void)
 
 typeInitReconstruction INIT_ProcessNewFrame(void)
 {
-    static u32 NumFrames = 1;
-
     LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Processing new initialization frame\n");
 
     typePantoFrame Frame = FR_GetFrame();
@@ -56,13 +64,14 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
         "[INIT_ProcessNewFrame] ST-RANSAC found %zu stationary tracks\n",
         StationaryTrackIDs.size());
 
-    NumFrames++;
+    InitNumFrames++;
 
-    if(StationaryTrackIDs.size() < PANTO_INIT_MIN_STATIONARY_POINTS || NumFrames < PANTO_INIT_MIN_NUM_FRAMES)
+    if(StationaryTrackIDs.size() < PANTO_INIT_MIN_STATIONARY_POINTS || InitNumFrames < PANTO_INIT_MIN_NUM_FRAMES)
     {
         LG_Log(
             LogSeverity::DBG,
-            "[INIT_ProcessNewFrame] Not enough stationary tracks for reconstruction\n");
+            "[INIT_ProcessNewFrame] Not enough stationary tracks for reconstruction, %zu\n",
+            StationaryTrackIDs.size());
 
         return
         {
@@ -98,9 +107,6 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
         };
     }
 
-    std::vector<std::thread> ReconstructionThreads;
-    ReconstructionThreads.reserve(NumCandidates);
-
     LG_Log(
         LogSeverity::DBG,
         "[INIT_ProcessNewFrame] Found %zu candidate initialization frames\n",
@@ -108,32 +114,49 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
 
     std::vector<typeInitReconstruction> Reconstruction(NumCandidates);
 
-    for(std::size_t i = 0; i < NumCandidates; i++)
+    for(std::size_t BatchStart = 0; BatchStart < NumCandidates; BatchStart += PANTO_NUM_THREADS_MAX)
     {
-        ReconstructionThreads.emplace_back([&, i]()
+        const std::size_t BatchEnd =
+            std::min<std::size_t>(BatchStart + PANTO_NUM_THREADS_MAX, NumCandidates);
+
+        std::vector<std::thread> ReconstructionThreads;
+        ReconstructionThreads.reserve(BatchEnd - BatchStart);
+
+        LG_Log(
+            LogSeverity::DBG,
+            "[INIT_ProcessNewFrame] Starting reconstruction batch [%zu, %zu)\n",
+            BatchStart,
+            BatchEnd);
+
+        for(std::size_t i = BatchStart; i < BatchEnd; i++)
         {
-            LG_Log(
-                LogSeverity::DBG,
-                "[INIT_ProcessNewFrame] Reconstruction thread %zu started for frame %llu\n",
-                i,
-                static_cast<unsigned long long>(CandidateIDs[i]));
+            ReconstructionThreads.emplace_back([&, i]()
+            {
+                LG_Log(
+                    LogSeverity::DBG,
+                    "[INIT_ProcessNewFrame] Reconstruction thread %zu started for frame %llu\n",
+                    i,
+                    static_cast<unsigned long long>(CandidateIDs[i]));
 
-            Reconstruction[i] =
-                INITPriv_Reconstruct(
-                    InitData.InitFrames[CandidateIDs[i]],
-                    InitData.InitFrames.back(),
-                    StationaryTrackIDs);
-        });
+                Reconstruction[i] =
+                    INITPriv_Reconstruct(
+                        InitData.InitFrames[CandidateIDs[i]],
+                        InitData.InitFrames.back(),
+                        StationaryTrackIDs);
+            });
+        }
+
+        LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Joining reconstruction batch threads\n");
+
+        for(std::thread& ReconstructionThread : ReconstructionThreads)
+        {
+            ReconstructionThread.join();
+        }
+
+        LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Reconstruction batch complete\n");
     }
 
-    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] Joining reconstruction threads\n");
-
-    for(u64 i = 0; i < NumCandidates; i++)
-    {
-        ReconstructionThreads[i].join();
-    }
-
-    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] All reconstruction threads joined\n");
+    LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] All reconstruction batches complete\n");
 
     std::size_t MostPoints = 0;
     u64 BestReconstructionIndex = 0;
@@ -181,6 +204,8 @@ void INIT_DestroyInitData(void)
 {
     InitData.InitFrames.clear();
     InitData.FeatureTracks.clear();
+    InitData.EnoughStationaryPointsForInit = false;
+    InitNumFrames = 1;
 }
 
 typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
@@ -635,7 +660,10 @@ std::vector<u64> INITPriv_GetCandidateFrameIDs(const std::vector<u64>& Stationar
             return Covisibility[A] > Covisibility[B];
         });
 
-    const std::size_t NumCandidates = std::min<std::size_t>(PANTO_NUM_THREADS_MAX, CandidateFrameIDs.size());
+    const std::size_t MaxCandidates =
+        PANTO_NUM_THREADS_MAX * PANTO_INIT_CANDIDATE_BATCHES;
+    const std::size_t NumCandidates =
+        std::min<std::size_t>(MaxCandidates, CandidateFrameIDs.size());
 
     CandidateFrameIDs.resize(NumCandidates);
 
@@ -764,4 +792,3 @@ void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points,
                 PANTO_ID_NOT_SET);
     }
 }
-

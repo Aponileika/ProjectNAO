@@ -64,9 +64,9 @@ What to do next:
 
     - (NOT DONE IGNORE FOR NOW) Robustify, what happens if no map associations are found from the last frame?
 
-    - Look for more bugs, cant explore?
+    From here it is stalled, current work focuses on IMU
 
-    - Optimize KeyGetKeyFrame, investigate what is taking time, getting descriptors -> detect and compute? anything else? Probably alter
+    - (STALLED) Optimize KeyGetKeyFrame, investigate what is taking time, getting descriptors -> detect and compute? anything else? Probably alter
       opencv AKAZE code so nonlinear scale space is not thrown away. So make a "custom" version that just caches the nonlinear scale space,
       like detect and compute does, easy, just add a local private variable in AKAZE_impl that stores upyr and keeps track if it is current or not
       so if a detect -> compute has been called in order, upyr is saved for compute, when compute is called the upyr must be marked as invalid.
