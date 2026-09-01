@@ -1,1 +1,9 @@
 This is the todo list for IMU integration
+
+-   find appropriate monocular inertial SLAM
+-   IMU initialization
+-   IMU and visual initialization syncing
+-   IMU accumulation based on sampling frequency see SLAM ORB 3
+-   IMU integration into bundle adjustment / pose optimization 
+-   IMU pose prediction
+-   Loop closure
