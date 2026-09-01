@@ -220,6 +220,10 @@ class Monitor():
                 self.pastTrueX = []
                 self.pastTrueY = []
                 self.pastTrueTheta = []
+            elif command.split(" ")[0].lower() == "goal":
+                splitCommand = command.split(" ")
+                goal = (splitCommand[0], splitCommand[1], splitCommand[2] * 3.1415 / 180)
+                command = {"command": "goal", "goal": goal}
 
             else:
                 command = None

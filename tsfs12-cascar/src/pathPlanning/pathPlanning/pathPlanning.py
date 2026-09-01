@@ -27,6 +27,13 @@ class dubinsPath(Node):
             10
         )
 
+        self.goal_sub = self.create_subscription(
+            Pose2D,
+            "goal",
+            self.goal_callback,
+            10
+        )
+
         self.Ts = Ts
 
         self.x = 0
@@ -51,16 +58,18 @@ class dubinsPath(Node):
         self.y = msg.y
         self.theta = msg.theta
 
-        #FOR TEST PURPOSES; REPLACE WITH ACTION
-        if not self.path_planned:
-            #self.plannedPath = dubinsPath(np.array([self.x, self.y]), self.theta,
-            #                                   np.array([self.xGoal, self.yGoal]), self.thetaGoal)
-            self.plannedPath = self.pathPlanner.search((self.x, self.y, self.theta), (self.xGoal, self.yGoal, self.thetaGoal), map=None)
 
-            print(self.plannedPath)
-            self.publishPath()
-            self.path_planned = True
-            self.get_logger().info("PATH PLANNED")
+    def goal_callback(self, msg):
+        self.xGoal = msg.x
+        self.yGoal = msg.y
+        self.thetaGoal = msg.theta
+
+        self.plannedPath = self.pathPlanner.search((self.x, self.y, self.theta), 
+                                                   (self.xGoal, self.yGoal, self.thetaGoal), 
+                                                   map=None)
+        print(self.plannedPath)
+        self.publishPath()
+        self.get_logger().info("PATH PLANNED")
 
         
     def publishPath(self):

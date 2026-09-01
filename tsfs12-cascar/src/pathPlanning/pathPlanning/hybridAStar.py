@@ -17,7 +17,7 @@ class Node():
         self.parent = parent
         self.g = g
         self.h = h
-
+        
     @property
     def f(self):
         return self.g + self.h
@@ -197,7 +197,7 @@ class HybridAStar():
 
     def removeDupes(self, trajectory):
         i = 0
-        while i < len(trajectory):
+        while i < len(trajectory)-1:
             if trajectory[i] == trajectory[i+1]:
                 trajectory.pop(i+1)
             else:
@@ -438,8 +438,8 @@ if __name__ == "__main__":
         start = (random.uniform(-4, -1), random.uniform(-4, 4), random.uniform(-np.pi, np.pi))
         goal = (random.uniform(1, 4), random.uniform(-4, 4), random.uniform(-np.pi, np.pi))
 
-        start = (-3, 0, 0)
-        goal = (3, 0, np.pi)
+        #start = (-3, 0, 0)
+        #goal = (3, 0, np.pi)
 
         print("Search started")
         t0 = time.time()
