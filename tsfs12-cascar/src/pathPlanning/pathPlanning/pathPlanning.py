@@ -64,9 +64,46 @@ class dubinsPath(Node):
         self.yGoal = msg.y
         self.thetaGoal = msg.theta
 
+        #TEMP MAP BELOW; EVENTUALLY CHANGE TO MAP SUBSCRIBER
+
+        xlim = None
+        ylim = None
+        map = None
+
+        def add_rectangle_obstacle(grid, obstacle, xlim, ylim, resolution):
+            """Add a rectangular obstacle defined in world coordinates to the occupancy grid."""
+            x_min, x_max, y_min, y_max = obstacle
+
+            x0 = int((x_min - xlim[0]) / resolution)
+            x1 = int((x_max - xlim[0]) / resolution)
+            y0 = int((y_min - ylim[0]) / resolution)
+            y1 = int((y_max - ylim[0]) / resolution)
+
+            x0 = max(0, x0)
+            x1 = min(grid.shape[1], x1)
+            y0 = max(0, y0)
+            y1 = min(grid.shape[0], y1)
+
+            grid[y0:y1, x0:x1] = 1
+            return grid
+
+        xlim = (-5,5)
+        ylim = xlim
+        xy_resolution = 0.05
+
+        size = int((xlim[1]-xlim[0])/xy_resolution)
+        map = np.zeros((size,size))
+
+        obstacles = [
+            (-0.16, 0.16, -0.16, 0.16)
+        ]
+        for obstacle in obstacles:
+            map = add_rectangle_obstacle(map, obstacle, xlim, ylim, xy_resolution)
+
+
         self.plannedPath = self.pathPlanner.search((self.x, self.y, self.theta), 
                                                    (self.xGoal, self.yGoal, self.thetaGoal), 
-                                                   map=None)
+                                                   map=map, xlim=xlim, ylim=ylim)
         print(self.plannedPath)
         self.publishPath()
         self.get_logger().info("PATH PLANNED")

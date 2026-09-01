@@ -222,7 +222,8 @@ class Monitor():
                 self.pastTrueTheta = []
             elif command.split(" ")[0].lower() == "goal":
                 splitCommand = command.split(" ")
-                goal = (splitCommand[0], splitCommand[1], splitCommand[2] * 3.1415 / 180)
+                goal = (float(splitCommand[1]), float(splitCommand[2]), float(splitCommand[3]) * 3.1415 / 180)
+                print(f"Goal: {goal}")
                 command = {"command": "goal", "goal": goal}
 
             else:

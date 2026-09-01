@@ -46,7 +46,7 @@ class Localization(Node):
 
         self.standstillIterations = 0
 
-        self.x = 0
+        self.x = -2
         self.y = 0
         self.theta = 0
 
