@@ -362,7 +362,7 @@ class HybridAStar():
                 path = self.addDubinPaths(path, goalNode)
                 path = self.removeDupes(path)
                 path = self.addDistance(path)
-                for i in range(path):
+                for i in range(len(path)):
                     point = path[i]
                     path[i] = (point[0]+xlim[0], point[1]+ylim[0], point[2], point[3])
                 return path
