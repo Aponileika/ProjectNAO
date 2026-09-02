@@ -88,7 +88,9 @@ using PantoClock = std::chrono::steady_clock;
 #define PANTO_USE_DATASET true
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
-#define PANTO_ACTIVE_DATASET TUM_FREIBURG1_XYZ
+#ifndef PANTO_ACTIVE_DATASET
+    #define PANTO_ACTIVE_DATASET TUM_FREIBURG1_XYZ
+#endif
 
 #define DATASETS \
     X(TUM_FREIBURG1_XYZ, "/tum/rgbd_dataset_freiburg1_xyz") \
@@ -96,7 +98,7 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG2_XYZ, "/tum/rgbd_dataset_freiburg2_xyz") \
     X(TUM_FREIBURG2_PIONEER_SLAM, "/tum/rgbd_dataset_freiburg2_pioneer_slam") \
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, "/tum/rgbd_dataset_freiburg3_long_office_household") \
-    X(EUROC_MAV_VICON_ROOM1_EASY, "/vicon_room1/V1_01_easy/mav0")
+    X(EUROC_MAV_VICON_ROOM1_EASY, "/EuRoC/vicon_room1/V1_01_easy/mav0")
 
 #define DATASET_SEQUENCES \
     X(TUM_FREIBURG1_XYZ, RGB_ORDERED, "rgb_ordered") \
@@ -104,7 +106,7 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG2_XYZ, RGB_ORDERED, "rgb_ordered") \
     X(TUM_FREIBURG2_PIONEER_SLAM, RGB_ORDERED, "rgb_ordered") \
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, RGB_ORDERED, "rgb_ordered") \
-    X(EUROC_MAV_VICON_ROOM1_EASY, RGB_ORDERED, "/mav0/cam0")
+    X(EUROC_MAV_VICON_ROOM1_EASY, RGB_ORDERED, "/cam0/data")
 
 #define DATASET_IMUS \
     X(TUM_FREIBURG1_XYZ, IMU_MEASUREMENTS, "") \
@@ -112,7 +114,15 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG2_XYZ, IMU_MEASUREMENTS, "") \
     X(TUM_FREIBURG2_PIONEER_SLAM, IMU_MEASUREMENTS, "") \
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, IMU_MEASUREMENTS, "") \
-    X(EUROC_MAV_VICON_ROOM1_EASY, IMU_MEASUREMENTS, "/mav0/imu0")
+    X(EUROC_MAV_VICON_ROOM1_EASY, IMU_MEASUREMENTS, "/imu0")
+
+#define DATASET_GT \
+    X(TUM_FREIBURG1_XYZ, GT_POSE, "") \
+    X(TUM_FREIBURG1_RPY, GT_POSE, "") \
+    X(TUM_FREIBURG2_XYZ, GT_POSE, "") \
+    X(TUM_FREIBURG2_PIONEER_SLAM, GT_POSE, "") \
+    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, GT_POSE, "") \
+    X(EUROC_MAV_VICON_ROOM1_EASY, GT_POSE, "/state_groundtruth_estimate0")
 
 // Sensor extrinsics are T_BS: sensor frame with respect to the body frame.
 #define PANTO_T_BS_IDENTITY \
@@ -141,6 +151,12 @@ using PantoClock = std::chrono::steady_clock;
 // rate_hz, T_BS, gyroscope noise density, gyroscope random walk,
 // accelerometer noise density, accelerometer random walk
 #define DATASET_IMU_INTRINSICS \
+    X(TUM_FREIBURG1_XYZ, 0.0, PANTO_T_BS_IDENTITY, 0.0, 0.0, 0.0, 0.0) \
+    X(TUM_FREIBURG1_RPY, 0.0, PANTO_T_BS_IDENTITY, 0.0, 0.0, 0.0, 0.0) \
+    X(TUM_FREIBURG2_XYZ, 0.0, PANTO_T_BS_IDENTITY, 0.0, 0.0, 0.0, 0.0) \
+    X(TUM_FREIBURG2_PIONEER_SLAM, 0.0, PANTO_T_BS_IDENTITY, 0.0, 0.0, 0.0, 0.0) \
+    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, 0.0, PANTO_T_BS_IDENTITY, 0.0, 0.0, 0.0, 0.0) \
+    X(WEBCAM_JE, 0.0, PANTO_T_BS_IDENTITY, 0.0, 0.0, 0.0, 0.0) \
     X(EUROC_MAV_VICON_ROOM1_EASY, 200.0, PANTO_T_BS_IDENTITY, 1.6968e-04, 1.9393e-05, 2.0000e-3, 3.0000e-3)
 
 enum class Dataset : u8
@@ -165,6 +181,11 @@ DATASET_SEQUENCES
 DATASET_IMUS
 #undef X
 
+#define X(dataset, seq, folder) \
+    constexpr const char* GT_##dataset##_##seq = folder;
+DATASET_GT
+#undef X
+
 #define PANTO_EXPAND_DATASET_PATH_IMPL(dataset) DATASET_PATH_##dataset
 #define PANTO_EXPAND_DATASET_PATH(dataset) PANTO_EXPAND_DATASET_PATH_IMPL(dataset)
 
@@ -174,6 +195,9 @@ DATASET_IMUS
 #define PANTO_EXPAND_IMU_PATH_IMPL(dataset) IMU_MEASUREMENTS_##dataset##_IMU_MEASUREMENTS
 #define PANTO_EXPAND_IMU_PATH(dataset) PANTO_EXPAND_IMU_PATH_IMPL(dataset)
 
+#define PANTO_EXPAND_GT_PATH_IMPL(dataset) GT_##dataset##_GT_POSE
+#define PANTO_EXPAND_GT_PATH(dataset) PANTO_EXPAND_GT_PATH_IMPL(dataset)
+
 constexpr auto panto_dataset_path =
     PANTO_EXPAND_DATASET_PATH(PANTO_ACTIVE_DATASET);
 
@@ -182,6 +206,9 @@ constexpr auto panto_sequence_path =
 
 constexpr auto panto_imu_path =
     PANTO_EXPAND_IMU_PATH(PANTO_ACTIVE_DATASET);
+
+constexpr auto panto_gt_path =
+    PANTO_EXPAND_GT_PATH(PANTO_ACTIVE_DATASET);
 
 const Dataset panto_dataset =
     Dataset::PANTO_ACTIVE_DATASET;
@@ -262,16 +289,44 @@ inline constexpr const char* PANTO_VocabFilePath =
 DATASET_INTRINSICS
 #undef X
 
+#define X(name, rate_hz, t_bs, gyro_noise_density, gyro_random_walk, accel_noise_density, accel_random_walk) \
+    constexpr fp64 DATASET_IMU_RATE_HZ_##name = rate_hz; \
+    constexpr fp64 DATASET_GYROSCOPE_NOISE_DENSITY_##name = gyro_noise_density; \
+    constexpr fp64 DATASET_GYROSCOPE_RANDOM_WALK_##name = gyro_random_walk; \
+    constexpr fp64 DATASET_ACCELEROMETER_NOISE_DENSITY_##name = accel_noise_density; \
+    constexpr fp64 DATASET_ACCELEROMETER_RANDOM_WALK_##name = accel_random_walk;
+DATASET_IMU_INTRINSICS
+#undef X
+
 #define PANTO_EXPAND_IMAGE_WIDTH_IMPL(dataset) DATASET_IMAGE_WIDTH_##dataset
 #define PANTO_EXPAND_IMAGE_WIDTH(dataset) PANTO_EXPAND_IMAGE_WIDTH_IMPL(dataset)
 #define PANTO_EXPAND_IMAGE_HEIGHT_IMPL(dataset) DATASET_IMAGE_HEIGHT_##dataset
 #define PANTO_EXPAND_IMAGE_HEIGHT(dataset) PANTO_EXPAND_IMAGE_HEIGHT_IMPL(dataset)
 #define PANTO_EXPAND_CAMERA_RATE_HZ_IMPL(dataset) DATASET_CAMERA_RATE_HZ_##dataset
 #define PANTO_EXPAND_CAMERA_RATE_HZ(dataset) PANTO_EXPAND_CAMERA_RATE_HZ_IMPL(dataset)
+#define PANTO_EXPAND_IMU_RATE_HZ_IMPL(dataset) DATASET_IMU_RATE_HZ_##dataset
+#define PANTO_EXPAND_IMU_RATE_HZ(dataset) PANTO_EXPAND_IMU_RATE_HZ_IMPL(dataset)
+#define PANTO_EXPAND_GYROSCOPE_NOISE_DENSITY_IMPL(dataset) DATASET_GYROSCOPE_NOISE_DENSITY_##dataset
+#define PANTO_EXPAND_GYROSCOPE_NOISE_DENSITY(dataset) PANTO_EXPAND_GYROSCOPE_NOISE_DENSITY_IMPL(dataset)
+#define PANTO_EXPAND_GYROSCOPE_RANDOM_WALK_IMPL(dataset) DATASET_GYROSCOPE_RANDOM_WALK_##dataset
+#define PANTO_EXPAND_GYROSCOPE_RANDOM_WALK(dataset) PANTO_EXPAND_GYROSCOPE_RANDOM_WALK_IMPL(dataset)
+#define PANTO_EXPAND_ACCELEROMETER_NOISE_DENSITY_IMPL(dataset) DATASET_ACCELEROMETER_NOISE_DENSITY_##dataset
+#define PANTO_EXPAND_ACCELEROMETER_NOISE_DENSITY(dataset) PANTO_EXPAND_ACCELEROMETER_NOISE_DENSITY_IMPL(dataset)
+#define PANTO_EXPAND_ACCELEROMETER_RANDOM_WALK_IMPL(dataset) DATASET_ACCELEROMETER_RANDOM_WALK_##dataset
+#define PANTO_EXPAND_ACCELEROMETER_RANDOM_WALK(dataset) PANTO_EXPAND_ACCELEROMETER_RANDOM_WALK_IMPL(dataset)
 
 constexpr u64 PANTO_IMAGE_WIDTH = PANTO_EXPAND_IMAGE_WIDTH(PANTO_ACTIVE_DATASET);
 constexpr u64 PANTO_IMAGE_HEIGHT = PANTO_EXPAND_IMAGE_HEIGHT(PANTO_ACTIVE_DATASET);
 constexpr fp64 PANTO_CAMERA_RATE_HZ = PANTO_EXPAND_CAMERA_RATE_HZ(PANTO_ACTIVE_DATASET);
+constexpr fp64 PANTO_IMU_RATE_HZ = PANTO_EXPAND_IMU_RATE_HZ(PANTO_ACTIVE_DATASET);
+constexpr fp64 PANTO_GYROSCOPE_NOISE_DENSITY =
+    PANTO_EXPAND_GYROSCOPE_NOISE_DENSITY(PANTO_ACTIVE_DATASET);
+constexpr fp64 PANTO_GYROSCOPE_RANDOM_WALK =
+    PANTO_EXPAND_GYROSCOPE_RANDOM_WALK(PANTO_ACTIVE_DATASET);
+constexpr fp64 PANTO_ACCELEROMETER_NOISE_DENSITY =
+    PANTO_EXPAND_ACCELEROMETER_NOISE_DENSITY(PANTO_ACTIVE_DATASET);
+constexpr fp64 PANTO_ACCELEROMETER_RANDOM_WALK =
+    PANTO_EXPAND_ACCELEROMETER_RANDOM_WALK(PANTO_ACTIVE_DATASET);
 
 constexpr u64 PANTO_GRID_COLUMNS =
     (PANTO_IMAGE_WIDTH + PANTO_CELL_SIZE - 1) / PANTO_CELL_SIZE;

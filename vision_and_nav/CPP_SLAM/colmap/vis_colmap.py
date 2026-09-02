@@ -14,6 +14,22 @@ from viser.extras.colmap import (
 )
 
 
+def read_viser_image(path: Path):
+    image = iio.imread(path)
+
+    if image.ndim == 2:
+        image = np.repeat(image[:, :, None], 3, axis=2)
+    elif image.ndim == 3 and image.shape[2] == 1:
+        image = np.repeat(image, 3, axis=2)
+
+    if image.ndim != 3 or image.shape[2] not in (3, 4):
+        raise ValueError(
+            f"unsupported image shape {image.shape} for {path}"
+        )
+
+    return np.ascontiguousarray(image)
+
+
 def read_tracking_binary(path: Path):
     if not path.exists():
         print(f"[VISER] tracking file does not exist: {path}")
@@ -81,19 +97,46 @@ def load_snapshot(root: Path, snapshot_id: int):
     tracks = read_tracking_binary(sparse_path / "tracking.bin")
     print(f"[VISER] tracking.bin OK: {len(tracks)}")
 
-    print("[VISER] Reading cameras.bin")
-    cameras = read_cameras_binary(sparse_path / "cameras.bin")
-    print(f"[VISER] cameras.bin OK: {len(cameras)}")
+    cameras_path = sparse_path / "cameras.bin"
 
-    print("[VISER] Reading images.bin")
-    images = read_images_binary(sparse_path / "images.bin")
-    print(f"[VISER] images.bin OK: {len(images)}")
+    if cameras_path.exists():
+        print("[VISER] Reading cameras.bin")
+        cameras = read_cameras_binary(cameras_path)
+        print(f"[VISER] cameras.bin OK: {len(cameras)}")
+    else:
+        cameras = {}
+        print("[VISER] cameras.bin omitted")
 
-    print("[VISER] Reading points3D.bin")
-    points3d = read_points3d_binary(sparse_path / "points3D.bin")
-    print(f"[VISER] points3D.bin OK: {len(points3d)}")
+    images_path = sparse_path / "images.bin"
 
-    return tracks, cameras, images, points3d
+    if images_path.exists():
+        print("[VISER] Reading images.bin")
+        images = read_images_binary(images_path)
+        print(f"[VISER] images.bin OK: {len(images)}")
+    else:
+        images = {}
+        print("[VISER] images.bin omitted")
+
+    points_path = sparse_path / "points3D.bin"
+
+    if points_path.exists():
+        print("[VISER] Reading points3D.bin")
+        points3d = read_points3d_binary(points_path)
+        print(f"[VISER] points3D.bin OK: {len(points3d)}")
+    else:
+        points3d = {}
+        print("[VISER] points3D.bin omitted")
+
+    ground_truth_path = root / "sparse" / "imu_ground_truth.bin"
+
+    if ground_truth_path.exists():
+        print("[VISER] Reading IMU ground-truth trajectory")
+        ground_truth = read_tracking_binary(ground_truth_path)
+        print(f"[VISER] IMU ground truth OK: {len(ground_truth)}")
+    else:
+        ground_truth = np.empty((0, 3), dtype=np.float64)
+
+    return tracks, ground_truth, cameras, images, points3d
 
 
 def initialize_view_from_first_camera(
@@ -230,6 +273,7 @@ def update_visualization(
     server,
     root: Path,
     tracks,
+    ground_truth,
     cameras,
     images,
     points3d,
@@ -246,6 +290,27 @@ def update_visualization(
 
     handles["latest_tracks"] = tracks
     handles["latest_images"] = images
+    handles["camera_image_preview"].visible = len(images) > 0
+
+    if len(images) > 0:
+        latest_img_id = max(images.keys())
+        latest_image_file = images_path / images[latest_img_id].name
+
+        if latest_image_file.is_file():
+            try:
+                handles["camera_image_preview"].image = read_viser_image(
+                    latest_image_file
+                )
+            except Exception as error:
+                print(
+                    f"[VISER] Failed to read camera image "
+                    f"{latest_img_id} from {latest_image_file}: {error}"
+                )
+        else:
+            print(
+                f"[VISER] Missing camera image {latest_img_id}: "
+                f"{latest_image_file}"
+            )
 
     if handles["point_cloud"] is not None:
         handles["point_cloud"].remove()
@@ -321,6 +386,43 @@ def update_visualization(
     else:
         handles["tracking_trajectory"] = None
 
+    if handles["ground_truth_size"] != len(ground_truth):
+        if handles["ground_truth_trajectory"] is not None:
+            handles["ground_truth_trajectory"].remove()
+            handles["ground_truth_trajectory"] = None
+
+        if len(ground_truth) >= 2:
+            ground_truth_points = np.asarray(
+                ground_truth,
+                dtype=np.float32,
+            )
+            ground_truth_segments = np.stack(
+                (
+                    ground_truth_points[:-1],
+                    ground_truth_points[1:],
+                ),
+                axis=1,
+            )
+            ground_truth_colors = np.empty(
+                ground_truth_segments.shape,
+                dtype=np.uint8,
+            )
+            ground_truth_colors[:] = np.array(
+                [40, 230, 80],
+                dtype=np.uint8,
+            )
+
+            handles["ground_truth_trajectory"] = (
+                server.scene.add_line_segments(
+                    name="/ground_truth/trajectory",
+                    points=ground_truth_segments,
+                    colors=ground_truth_colors,
+                    line_width=gui_tracking_thickness.value,
+                )
+            )
+
+        handles["ground_truth_size"] = len(ground_truth)
+
     initialize_view_from_first_camera(
         server,
         images,
@@ -366,7 +468,22 @@ def update_visualization(
             H = cam.height
             W = cam.width
             image_file = images_path / img.name
-            image = iio.imread(image_file) if image_file.is_file() else None
+
+            if image_file.is_file():
+                try:
+                    image = read_viser_image(image_file)
+                except Exception as error:
+                    image = None
+                    print(
+                        f"[VISER] Failed to read camera image "
+                        f"{img_id} from {image_file}: {error}"
+                    )
+            else:
+                image = None
+                print(
+                    f"[VISER] Missing camera image {img_id}: "
+                    f"{image_file}"
+                )
 
             frustum = server.scene.add_camera_frustum(
                 f"/colmap/frame_{img_id}/frustum",
@@ -377,6 +494,25 @@ def update_visualization(
             )
 
             handles["camera_frustums"][img_id] = frustum
+
+            @frustum.on_click
+            def _(_, selected_image_file=image_file, selected_id=img_id):
+                if not selected_image_file.is_file():
+                    print(
+                        f"[VISER] Missing camera image {selected_id}: "
+                        f"{selected_image_file}"
+                    )
+                    return
+
+                try:
+                    handles["camera_image_preview"].image = read_viser_image(
+                        selected_image_file
+                    )
+                except Exception as error:
+                    print(
+                        f"[VISER] Failed to read camera image "
+                        f"{selected_id} from {selected_image_file}: {error}"
+                    )
 
         else:
             print(
@@ -433,6 +569,14 @@ def main(root: str):
         initial_value=3.0,
     )
 
+    camera_image_preview = server.gui.add_image(
+        np.zeros((2, 2, 3), dtype=np.uint8),
+        label="Camera image (latest; click a frustum to inspect)",
+        format="jpeg",
+        jpeg_quality=90,
+        visible=False,
+    )
+
     server.gui.add_markdown(
         "**Free camera:** W/A/S/D move, Q/E move down/up, "
         "arrow keys rotate, and the mouse orbits/pans/zooms."
@@ -471,11 +615,14 @@ def main(root: str):
     handles = {
         "point_cloud": None,
         "tracking_trajectory": None,
+        "ground_truth_trajectory": None,
+        "ground_truth_size": 0,
         "camera_frames": {},
         "camera_frustums": {},
         "camera_initialized": False,
         "latest_tracks": np.empty((0, 3), dtype=np.float64),
         "latest_images": {},
+        "camera_image_preview": camera_image_preview,
     }
 
     @gui_point_size.on_update
@@ -492,6 +639,10 @@ def main(root: str):
     def _(_):
         if handles["tracking_trajectory"] is not None:
             handles["tracking_trajectory"].line_width = (
+                gui_tracking_thickness.value
+            )
+        if handles["ground_truth_trajectory"] is not None:
+            handles["ground_truth_trajectory"].line_width = (
                 gui_tracking_thickness.value
             )
 
@@ -543,7 +694,7 @@ def main(root: str):
 
         if snapshot_id is not None and snapshot_id != last_snapshot_id:
             try:
-                tracks, cameras, images, points3d = load_snapshot(
+                tracks, ground_truth, cameras, images, points3d = load_snapshot(
                     root,
                     snapshot_id,
                 )
@@ -552,6 +703,7 @@ def main(root: str):
                     server,
                     root,
                     tracks,
+                    ground_truth,
                     cameras,
                     images,
                     points3d,
