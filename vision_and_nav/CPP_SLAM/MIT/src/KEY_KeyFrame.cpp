@@ -16,6 +16,27 @@ static typeKeyFrameTimingStatistics GetFrameTiming{};
 static typeKeyFrameTimingStatistics GetDescriptorsTiming{};
 static typeKeyFrameTimingStatistics CreateImagePointsTiming{};
 
+struct typeIsKeyFrameStatistics
+{
+    u64 Evaluations = 0;
+    u64 TrueDecisions = 0;
+    u64 BootstrapTrueDecisions = 0;
+    u64 FuzzyEvaluations = 0;
+    u64 FuzzyTrueDecisions = 0;
+    u64 MaxRuleTriggered = 0;
+    u64 SpatialRuleTriggered = 0;
+    u64 MaxRuleOnly = 0;
+    u64 SpatialRuleOnly = 0;
+    u64 BothRules = 0;
+    u64 MaxVelocityTriggered = 0;
+    u64 MaxDistanceTriggered = 0;
+    u64 MaxTrackingTriggered = 0;
+    u64 SpatialVelocityTrackingTriggered = 0;
+    u64 SpatialDistanceTrackingTriggered = 0;
+};
+
+static typeIsKeyFrameStatistics IsKeyFrameStatistics{};
+
 static void KEYPriv_AddTimingSample(typeKeyFrameTimingStatistics& Statistics, const fp64 Time)
 {
     Statistics.Count++;
@@ -317,9 +338,42 @@ void KEY_LogGetKeyFrameTimingStatistics(void)
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/PT_CreatePantoImagePoints", CreateImagePointsTiming);
 }
 
+void KEY_LogIsKeyFrameStatistics(void)
+{
+    const typeIsKeyFrameStatistics& Statistics = IsKeyFrameStatistics;
+
+    LG_Log(LogSeverity::DATA,
+            "[SLAMKeyFrameDecisionSummary] Evaluations = %llu, true = %llu, false = %llu\n",
+            static_cast<unsigned long long>(Statistics.Evaluations),
+            static_cast<unsigned long long>(Statistics.TrueDecisions),
+            static_cast<unsigned long long>(Statistics.Evaluations - Statistics.TrueDecisions));
+    LG_Log(LogSeverity::DATA,
+            "[SLAMKeyFrameDecisionSummary] True decision source: bootstrap = %llu, fuzzy rules = %llu\n",
+            static_cast<unsigned long long>(Statistics.BootstrapTrueDecisions),
+            static_cast<unsigned long long>(Statistics.FuzzyTrueDecisions));
+    LG_Log(LogSeverity::DATA,
+            "[SLAMKeyFrameDecisionSummary] Fuzzy evaluations = %llu; max only = %llu, spatial only = %llu, both = %llu\n",
+            static_cast<unsigned long long>(Statistics.FuzzyEvaluations),
+            static_cast<unsigned long long>(Statistics.MaxRuleOnly),
+            static_cast<unsigned long long>(Statistics.SpatialRuleOnly),
+            static_cast<unsigned long long>(Statistics.BothRules));
+    LG_Log(LogSeverity::DATA,
+            "[SLAMKeyFrameDecisionSummary] Max rule triggered = %llu; parameters: velocity = %llu, distance = %llu, tracking = %llu\n",
+            static_cast<unsigned long long>(Statistics.MaxRuleTriggered),
+            static_cast<unsigned long long>(Statistics.MaxVelocityTriggered),
+            static_cast<unsigned long long>(Statistics.MaxDistanceTriggered),
+            static_cast<unsigned long long>(Statistics.MaxTrackingTriggered));
+    LG_Log(LogSeverity::DATA,
+            "[SLAMKeyFrameDecisionSummary] Spatial rule triggered = %llu; branches: velocity+tracking = %llu, distance+tracking = %llu\n",
+            static_cast<unsigned long long>(Statistics.SpatialRuleTriggered),
+            static_cast<unsigned long long>(Statistics.SpatialVelocityTrackingTriggered),
+            static_cast<unsigned long long>(Statistics.SpatialDistanceTrackingTriggered));
+}
+
 void KEY_Reset(void)
 {
     CurrentDescriptors = {};
+    IsKeyFrameStatistics = {};
 
     BootStrapData =
     {
@@ -342,6 +396,8 @@ void KEY_Reset(void)
 
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
 {
+    IsKeyFrameStatistics.Evaluations++;
+
     LG_Log( LogSeverity::DBG,
         "[KEY_IsKeyFrame] Incoming information: VelocityChange = %f, LocalMapTrackingRatio = %f, AcumulatedDistanceTravelled = %f\n",
         Information.VelocityChange,
@@ -369,14 +425,20 @@ bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
             BootStrapData.LocalMapTrackingRatio,
             BootStrapData.AcumulatedDistanceTravelled);
 
+        IsKeyFrameStatistics.TrueDecisions++;
+        IsKeyFrameStatistics.BootstrapTrueDecisions++;
+
         return true;
     }
     if(!BootStrapData.BootStrapDataSolved)
     {
         KEYPriv_SolveBootStrapData();
     }
-    if(KEYPriv_IsKeyFrame(Information))
+    const bool Decision = KEYPriv_IsKeyFrame(Information);
+
+    if(Decision)
     {
+        IsKeyFrameStatistics.TrueDecisions++;
         return true;
     }
 
@@ -1223,7 +1285,31 @@ bool KEYPriv_IsKeyFrame(const typeKeyFrameInformation& KeyFrameInformation)
     fp64 MinDistTracking = std::min(DistanceMembership, TrackingMembership);
     fp64 SpatialMembership = FUZZY_UNIONRULEINFERENCE(MinVelTracking, MinDistTracking);
     
-    bool Decision = (MaxMemberShip > FuzzyInference.MaxRuleThreshold) || (SpatialMembership > FuzzyInference.SpatialTrackingThreshold);
+    const bool MaxVelocityTriggered = VelocityMembership > FuzzyInference.MaxRuleThreshold;
+    const bool MaxDistanceTriggered = DistanceMembership > FuzzyInference.MaxRuleThreshold;
+    const bool MaxTrackingTriggered = TrackingMembership > FuzzyInference.MaxRuleThreshold;
+    const bool SpatialVelocityTrackingTriggered = MinVelTracking > FuzzyInference.SpatialTrackingThreshold;
+    const bool SpatialDistanceTrackingTriggered = MinDistTracking > FuzzyInference.SpatialTrackingThreshold;
+    const bool MaxRuleTriggered = MaxVelocityTriggered || MaxDistanceTriggered || MaxTrackingTriggered;
+    const bool SpatialRuleTriggered = SpatialVelocityTrackingTriggered || SpatialDistanceTrackingTriggered;
+    const bool Decision = MaxRuleTriggered || SpatialRuleTriggered;
+
+    IsKeyFrameStatistics.FuzzyEvaluations++;
+
+    if(Decision)
+    {
+        IsKeyFrameStatistics.FuzzyTrueDecisions++;
+        IsKeyFrameStatistics.MaxRuleTriggered += MaxRuleTriggered;
+        IsKeyFrameStatistics.SpatialRuleTriggered += SpatialRuleTriggered;
+        IsKeyFrameStatistics.MaxRuleOnly += MaxRuleTriggered && !SpatialRuleTriggered;
+        IsKeyFrameStatistics.SpatialRuleOnly += SpatialRuleTriggered && !MaxRuleTriggered;
+        IsKeyFrameStatistics.BothRules += MaxRuleTriggered && SpatialRuleTriggered;
+        IsKeyFrameStatistics.MaxVelocityTriggered += MaxVelocityTriggered;
+        IsKeyFrameStatistics.MaxDistanceTriggered += MaxDistanceTriggered;
+        IsKeyFrameStatistics.MaxTrackingTriggered += MaxTrackingTriggered;
+        IsKeyFrameStatistics.SpatialVelocityTrackingTriggered += SpatialVelocityTrackingTriggered;
+        IsKeyFrameStatistics.SpatialDistanceTrackingTriggered += SpatialDistanceTrackingTriggered;
+    }
 
     LG_Log(LogSeverity::DBG,
             "[KEYPriv_IsKeyFrame] Inputs: VelocityChange = %.6f, AccumulatedDistance = %.6f, TrackingRatio = %.6f\n",
@@ -1249,8 +1335,8 @@ bool KEYPriv_IsKeyFrame(const typeKeyFrameInformation& KeyFrameInformation)
     LG_Log(LogSeverity::DBG,
             "[KEYPriv_IsKeyFrame] Decision = %s, MaxRuleTriggered = %s, SpatialRuleTriggered = %s\n",
             Decision ? "true" : "false",
-            MaxMemberShip > FuzzyInference.MaxRuleThreshold ? "true" : "false",
-            SpatialMembership > FuzzyInference.SpatialTrackingThreshold ? "true" : "false");
+            MaxRuleTriggered ? "true" : "false",
+            SpatialRuleTriggered ? "true" : "false");
 
     return Decision;
 }

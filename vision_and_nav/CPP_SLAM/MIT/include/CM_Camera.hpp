@@ -19,6 +19,10 @@ typedef struct
     fp64 p1;
     fp64 p2;
     fp64 k3;
+    u64 ImageWidth;
+    u64 ImageHeight;
+    fp64 RateHz;
+    Eigen::Matrix4d T_BS;
 }typeCameraIntrinsics;
 
 typedef struct 

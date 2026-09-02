@@ -378,7 +378,7 @@ public:
                     CosParallaxes.end());
 
             const std::size_t ParallaxIndex = std::min<std::size_t>(
-                        50,
+                        PANTO_INIT_MIN_STATIONARY_POINTS / 2,
                         CosParallaxes.size() - 1);
 
             const fp64 Parallax =
@@ -937,7 +937,7 @@ public:
                     CosParallaxes.end());
 
             const std::size_t ParallaxIndex =
-                std::min<std::size_t>(50, CosParallaxes.size() - 1);
+                std::min<std::size_t>(PANTO_INIT_MIN_STATIONARY_POINTS / 2, CosParallaxes.size() - 1);
 
             const fp64 Parallax = std::acos(
                         CosParallaxes[ParallaxIndex]) *

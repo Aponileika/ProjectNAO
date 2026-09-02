@@ -16,6 +16,7 @@ GFLAGS := $(shell brew --prefix gflags)
 SUITESPARSE := $(shell brew --prefix suite-sparse)
 OPENBLAS := $(shell brew --prefix openblas)
 TBB := $(shell brew --prefix tbb)
+SOPHUS := $(shell brew --prefix sophus)
 
 CXX := clang++
 
@@ -26,7 +27,8 @@ BASE_CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -std=c++20 \
 	-I$(EIGEN)/include/eigen3 \
 	-I$(SUITESPARSE)/include \
 	-I$(EXT_INCLUDE_DIR) \
-	-I$(OPENCV)/include/opencv4
+	-I$(OPENCV)/include/opencv4 \
+	-I$(SOPHUS)/include 
 
 ifeq ($(DEBUG),1)
 	CXXFLAGS := $(BASE_CXXFLAGS) -O0 -g -fsanitize=address -fno-omit-frame-pointer -DDEBUG

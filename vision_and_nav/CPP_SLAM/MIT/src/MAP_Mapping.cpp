@@ -208,12 +208,25 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMa
     LG_Log(LogSeverity::DBG, "[MAP_MatchMapPointLocalMap] Getting median scene depth");
     const fp64 MedianDepth = KEY_GetLocalMapMedianDepth(NewKeyFrame, LocalMapPoints);
 
-    const u64 NumLocalMapPoints = static_cast<u64>(LocalMapPoints.size());
     const typeCamera& Pose = NewKeyFrame.Pose;
     LG_Log(LogSeverity::DBG, "[MAP_MatchMapPointLocalMap] Matching mappoints to keyframe");
-    const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(NewKeyFrame.Points, LocalMapPoints, Pose, GlobalMap.MapPoints);
+    u64 NumProjectedMapPoints = 0;
+    const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(
+            NewKeyFrame.Points,
+            LocalMapPoints,
+            Pose,
+            GlobalMap.MapPoints,
+            &NumProjectedMapPoints);
 
-    const fp64 TrackingRatio = static_cast<fp64>(NumTrackedMapPoints) / static_cast<fp64>(NumLocalMapPoints);
+    const fp64 TrackingRatio = NumProjectedMapPoints > 0
+        ? static_cast<fp64>(NumTrackedMapPoints) / static_cast<fp64>(NumProjectedMapPoints)
+        : 0.0;
+
+    LG_Log(LogSeverity::DBG,
+            "[MAP_MatchMapPointLocalMap] Tracking ratio = %llu/%llu = %.6f\n",
+            static_cast<unsigned long long>(NumTrackedMapPoints),
+            static_cast<unsigned long long>(NumProjectedMapPoints),
+            TrackingRatio);
 
     typeLocalMapInfo LocalMapInfo = 
     {

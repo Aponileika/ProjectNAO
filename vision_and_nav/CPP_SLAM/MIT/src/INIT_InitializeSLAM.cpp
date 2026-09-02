@@ -158,17 +158,24 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
     LG_Log(LogSeverity::DBG, "[INIT_ProcessNewFrame] All reconstruction batches complete\n");
 
     std::size_t MostPoints = 0;
-    u64 BestReconstructionIndex = 0;
+    u64 BestReconstructionIndex = PANTO_ID_NOT_SET;
 
     for(u64 i = 0; i < NumCandidates; i++)
     {
         const std::size_t NumPoints =
             Reconstruction[i].MapPoints.size();
 
-        LG_Log(LogSeverity::DBG,
-            "[INIT_ProcessNewFrame] Reconstruction %llu has %zu map points\n",
-            static_cast<unsigned long long>(i),
-            NumPoints);
+        LG_Log(
+                LogSeverity::DBG,
+                "[INIT_ProcessNewFrame] Reconstruction %llu has %zu map points, valid = %s\n",
+                static_cast<unsigned long long>(i),
+                NumPoints,
+                Reconstruction[i].Valid ? "true" : "false");
+
+        if(!Reconstruction[i].Valid)
+        {
+            continue;
+        }
 
         if(NumPoints > MostPoints)
         {
@@ -177,23 +184,50 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
         }
     }
 
+    if(BestReconstructionIndex == PANTO_ID_NOT_SET)
+    {
+        LG_Log(
+                LogSeverity::DBG,
+                "[INIT_ProcessNewFrame] No valid initialization reconstruction found\n");
+
+        return
+        {
+            .R{},
+                .t{},
+                .NumPointsInFront{},
+                .MapPoints{},
+                .ChosenInitFrameID{},
+                .Valid = false
+        };
+    }
+
     if(MostPoints < PANTO_MIN_NUMBER_INITIAL_MAP_POINTS)
     {
         Reconstruction[BestReconstructionIndex].Valid = false;
+
+        LG_Log(
+                LogSeverity::DBG,
+                "[INIT_ProcessNewFrame] Best valid reconstruction only has %zu map points, minimum is %llu\n",
+                MostPoints,
+                static_cast<unsigned long long>(PANTO_MIN_NUMBER_INITIAL_MAP_POINTS));
+
         return Reconstruction[BestReconstructionIndex];
     }
 
     LG_Log(
-        LogSeverity::DBG,
-        "[INIT_ProcessNewFrame] Selected reconstruction %llu with %zu map points\n",
-        static_cast<unsigned long long>(BestReconstructionIndex),
-        MostPoints);
+            LogSeverity::DBG,
+            "[INIT_ProcessNewFrame] Selected valid reconstruction %llu with %zu map points\n",
+            static_cast<unsigned long long>(BestReconstructionIndex),
+            MostPoints);
 
     LG_Log(
-        LogSeverity::DBG,
-        "[INIT_ProcessNewFrame] Selected initialization frames %llu and %llu\n",
-        static_cast<unsigned long long>(InitData.InitFrames[CandidateIDs[BestReconstructionIndex]].ID),
-        static_cast<unsigned long long>(InitData.InitFrames.back().ID));
+            LogSeverity::DBG,
+            "[INIT_ProcessNewFrame] Selected initialization frames %llu and %llu\n",
+            static_cast<unsigned long long>(
+                InitData.InitFrames[
+                CandidateIDs[BestReconstructionIndex]].ID),
+            static_cast<unsigned long long>(
+                InitData.InitFrames.back().ID));
 
     return Reconstruction[BestReconstructionIndex];
 }

@@ -94,7 +94,7 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
 }
 
 u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<typePantoMapPoint>& MapPoints, const typeCamera& Pose,
-        typePantoVector<typePantoMapPoint>& GlobalMapPoints)
+        typePantoVector<typePantoMapPoint>& GlobalMapPoints, u64* NumProjectedMapPointsOutput)
 {
     std::unordered_set<u64> UniqueMapPointIDs;
 
@@ -117,6 +117,7 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
 
     std::size_t NumMapPoints = MapPoints.size();
     u64 NumTrackedMapPoints = 0;
+    u64 NumNewMatchedMapPoints = 0;
 
     u64 NumProjectedMapPoints = 0;
     u64 NumCandidateImagePoints = 0;
@@ -128,14 +129,18 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
         Eigen::Vector2d CandidateImagePoint = {};
         const u64 MapPointID = MapPoints[i].ID;
 
-        if(AssociatedMapPointIDs.contains(MapPointID))
-        {
-            continue;
-        }
+        const bool AlreadyAssociated = AssociatedMapPointIDs.contains(MapPointID);
 
         if(PROJ_Project(MapPoint, CandidateImagePoint, Pose))
         {
             NumProjectedMapPoints++;
+
+            if(AlreadyAssociated)
+            {
+                NumTrackedMapPoints++;
+                continue;
+            }
+
             MapPoints[i].NumVisible++;
             GlobalMapPoints[MapPoints[i].ID].NumVisible++;
 
@@ -223,6 +228,7 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
                 AssociatedMapPointIDs.insert( MapPointID);
 
                 NumTrackedMapPoints++;
+                NumNewMatchedMapPoints++;
 
                 MapPoints[i].NumFound++;
                 GlobalMapPoints[MapPointID].NumFound++;
@@ -230,12 +236,18 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
         }
     }
 
-    LG_Log(LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] Projected %llu/%zu map points, checked %llu image points, %llu had two candidates, %llu matched\n",
+    if(NumProjectedMapPointsOutput != nullptr)
+    {
+        *NumProjectedMapPointsOutput = NumProjectedMapPoints;
+    }
+
+    LG_Log(LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] Projected %llu/%zu map points, checked %llu image points, %llu had two candidates, %llu tracked (%llu newly matched)\n",
         static_cast<unsigned long long>(NumProjectedMapPoints),
         NumMapPoints,
         static_cast<unsigned long long>(NumCandidateImagePoints),
         static_cast<unsigned long long>(NumWithTwoCandidates),
-        static_cast<unsigned long long>(NumTrackedMapPoints));
+        static_cast<unsigned long long>(NumTrackedMapPoints),
+        static_cast<unsigned long long>(NumNewMatchedMapPoints));
 
     return NumTrackedMapPoints;
 }

@@ -3,6 +3,7 @@
 #include <random>
 #include <string>
 #include <cmath>
+#include <array>
 #include "CArenaAlloc.h"
 
 inline std::mt19937& PANTO_GetRandomGenerator(void)
@@ -35,7 +36,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define CERES_NUM_THREADS 4
 #define CERES_HUBER_THRESHOLD 2.5
 
-#define OPENCV_AKAZETHRESHOLD 0.001
+#define OPENCV_AKAZETHRESHOLD 0.0015
 #define OPENCV_AKAZE_NOCTAVES 4
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_ANMS false
@@ -44,12 +45,12 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define PANTO_NUM_BOOTSTRAP_FRAMES 100
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
-#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 30
+#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 10
 #define PANTO_KEYFRAME_MEAN_VELOCITY_THRESHOLD_GAIN 4
-#define PANTO_KEYFRAME_MEAN_TRACKING_HIGH_THRESHOLD_GAIN 0.8f
-#define PANTO_KEYFRAME_MEAN_TRACKING_LOW_THRESHOLD_GAIN 0.2f
+#define PANTO_KEYFRAME_MEAN_TRACKING_HIGH_THRESHOLD_GAIN 0.5f
+#define PANTO_KEYFRAME_MEAN_TRACKING_LOW_THRESHOLD_GAIN 0.1f
 #define PANTO_KEYFRAME_FUZZY_MAX_RULE_THRESHOLD 0.95f
-#define PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD 0.5f
+#define PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD 0.6f
 #define PANTO_TRACKING_MIN_MATCHED_MAP_POINTS 10
 // Same as slam orb, baseline > 1% of median depth of local map relative to a keyframe
 #define PANTO_BASELINE_THRESHOLD 0.01f
@@ -71,7 +72,7 @@ constexpr const char* PANTO_PATH_TO_PYTHON_INTERPRETER = "/Users/Jonathan/Progra
 #define PANTO_MIN_FOUND_RATIO 0.25
 #define PANTO_INIT_MAX_REPROJECTION_ERROR 2.5
 #define PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED 2.5*2.5
-#define PANTO_INIT_MIN_PARALLAX_DEGREES 1.0
+#define PANTO_INIT_MIN_PARALLAX_DEGREES 2.5
 #define PANTO_TOP_N_KF_FOR_LOCAL_MAP 20
 #define PANTO_MAX_LOCAL_TRACKING_MAP_SIZE 80
 #define PANTO_PIXEL_CHI_SQUARED_T 5.991
@@ -82,36 +83,65 @@ constexpr fp64 PANTO_MINIMUMPARALLAX = 1.0 * M_PI / 180.0;
 
 inline const fp64 PANTO_MAXIMUMCOSPARALLAX = std::cos(PANTO_MINIMUMPARALLAX);
 
-
 using PantoClock = std::chrono::steady_clock;
 
 #define PANTO_USE_DATASET true
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
-#define PANTO_ACTIVE_DATASET TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD
+#define PANTO_ACTIVE_DATASET EUROC_MAV_VICON_ROOM1_EASY
 
 #define DATASETS \
     X(TUM_FREIBURG1_XYZ, "/tum/rgbd_dataset_freiburg1_xyz") \
     X(TUM_FREIBURG1_RPY, "/tum/rgbd_dataset_freiburg1_rpy") \
     X(TUM_FREIBURG2_XYZ, "/tum/rgbd_dataset_freiburg2_xyz") \
     X(TUM_FREIBURG2_PIONEER_SLAM, "/tum/rgbd_dataset_freiburg2_pioneer_slam") \
-    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, "/tum/rgbd_dataset_freiburg3_long_office_household") 
+    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, "/tum/rgbd_dataset_freiburg3_long_office_household") \
+    X(EUROC_MAV_VICON_ROOM1_EASY, "/vicon_room1/V1_01_easy/mav0")
 
 #define DATASET_SEQUENCES \
     X(TUM_FREIBURG1_XYZ, RGB_ORDERED, "rgb_ordered") \
     X(TUM_FREIBURG1_RPY, RGB_ORDERED, "rgb_ordered") \
     X(TUM_FREIBURG2_XYZ, RGB_ORDERED, "rgb_ordered") \
     X(TUM_FREIBURG2_PIONEER_SLAM, RGB_ORDERED, "rgb_ordered") \
-    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, RGB_ORDERED, "rgb_ordered") 
+    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, RGB_ORDERED, "rgb_ordered") \
+    X(EUROC_MAV_VICON_ROOM1_EASY, RGB_ORDERED, "/mav0/cam0")
 
-//fx, fy, s, cx, cy //k1, k2, p1, p2, k3
+#define DATASET_IMUS \
+    X(TUM_FREIBURG1_XYZ, IMU_MEASUREMENTS, "") \
+    X(TUM_FREIBURG1_RPY, IMU_MEASUREMENTS, "") \
+    X(TUM_FREIBURG2_XYZ, IMU_MEASUREMENTS, "") \
+    X(TUM_FREIBURG2_PIONEER_SLAM, IMU_MEASUREMENTS, "") \
+    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, IMU_MEASUREMENTS, "") \
+    X(EUROC_MAV_VICON_ROOM1_EASY, IMU_MEASUREMENTS, "/mav0/imu0")
+
+// Sensor extrinsics are T_BS: sensor frame with respect to the body frame.
+#define PANTO_T_BS_IDENTITY \
+    1.0, 0.0, 0.0, 0.0, \
+    0.0, 1.0, 0.0, 0.0, \
+    0.0, 0.0, 1.0, 0.0, \
+    0.0, 0.0, 0.0, 1.0
+
+#define PANTO_T_BS_EUROC_CAM0 \
+     0.0148655429818, -0.999880929698,    0.00414029679422, -0.0216401454975, \
+     0.999557249008,   0.0149672133247,   0.025715529948,   -0.064676986768, \
+    -0.0257744366974,  0.00375618835797,  0.999660727178,    0.00981073058949, \
+     0.0,               0.0,               0.0,                1.0
+
+// fx, fy, s, cx, cy, k1, k2, p1, p2, k3, width, height, rate_hz, T_BS.
+// A zero rate means that the sampling rate has not been configured.
 #define DATASET_INTRINSICS \
-    X(TUM_FREIBURG1_XYZ, 517.3, 516.5, 0.0, 318.6, 255.3, 0.2624, -0.9531, -0.0054, 0.0026, 1.1633) \
-    X(TUM_FREIBURG1_RPY, 517.3, 516.5, 0.0, 318.6, 255.3, 0.2624, -0.9531, -0.0054, 0.0026, 1.1633) \
-    X(TUM_FREIBURG2_XYZ, 520.9, 521.0, 0.0, 325.1, 249.7, 0.2312, -0.7849, -0.0033, -0.0001, 0.9172) \
-    X(TUM_FREIBURG2_PIONEER_SLAM, 520.9, 521.0, 0.0, 325.1, 249.7, 0.2312, -0.7849, -0.0033, -0.0001, 0.9172) \
-    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, 535.4, 539.2, 0.0, 320.1, 247.6, 0.0, 0.0, 0.0, 0.0, 0.0) \
-    X(WEBCAM_JE, 974.7187409387847, 976.5223334221673, 0.0, 666.3249058750432, 337.4737864029501, 0.06475901025911835, -0.1903655376657792, -0.003666863513699757, 0.002119531347424837, 0.1113497353944944)
+    X(TUM_FREIBURG1_XYZ, 517.3, 516.5, 0.0, 318.6, 255.3, 0.2624, -0.9531, -0.0054, 0.0026, 1.1633, 640, 480, 30.0, PANTO_T_BS_IDENTITY) \
+    X(TUM_FREIBURG1_RPY, 517.3, 516.5, 0.0, 318.6, 255.3, 0.2624, -0.9531, -0.0054, 0.0026, 1.1633, 640, 480, 30.0, PANTO_T_BS_IDENTITY) \
+    X(TUM_FREIBURG2_XYZ, 520.9, 521.0, 0.0, 325.1, 249.7, 0.2312, -0.7849, -0.0033, -0.0001, 0.9172, 640, 480, 30.0, PANTO_T_BS_IDENTITY) \
+    X(TUM_FREIBURG2_PIONEER_SLAM, 520.9, 521.0, 0.0, 325.1, 249.7, 0.2312, -0.7849, -0.0033, -0.0001, 0.9172, 640, 480, 30.0, PANTO_T_BS_IDENTITY) \
+    X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, 535.4, 539.2, 0.0, 320.1, 247.6, 0.0, 0.0, 0.0, 0.0, 0.0, 640, 480, 30.0, PANTO_T_BS_IDENTITY) \
+    X(EUROC_MAV_VICON_ROOM1_EASY, 458.654, 457.296, 0.0, 367.215, 248.375, -0.28340811, 0.07395907, 0.00019359, 1.76187114e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM0) \
+    X(WEBCAM_JE, 974.7187409387847, 976.5223334221673, 0.0, 666.3249058750432, 337.4737864029501, 0.06475901025911835, -0.1903655376657792, -0.003666863513699757, 0.002119531347424837, 0.1113497353944944, 640, 480, 0.0, PANTO_T_BS_IDENTITY)
+
+// rate_hz, T_BS, gyroscope noise density, gyroscope random walk,
+// accelerometer noise density, accelerometer random walk
+#define DATASET_IMU_INTRINSICS \
+    X(EUROC_MAV_VICON_ROOM1_EASY, 200.0, PANTO_T_BS_IDENTITY, 1.6968e-04, 1.9393e-05, 2.0000e-3, 3.0000e-3)
 
 enum class Dataset : u8
 {
@@ -130,17 +160,28 @@ DATASETS
 DATASET_SEQUENCES
 #undef X
 
+#define X(dataset, seq, folder) \
+    constexpr const char* IMU_MEASUREMENTS_##dataset##_##seq = folder;
+DATASET_IMUS
+#undef X
+
 #define PANTO_EXPAND_DATASET_PATH_IMPL(dataset) DATASET_PATH_##dataset
 #define PANTO_EXPAND_DATASET_PATH(dataset) PANTO_EXPAND_DATASET_PATH_IMPL(dataset)
 
 #define PANTO_EXPAND_SEQUENCE_PATH_IMPL(dataset) SEQUENCE_PATH_##dataset##_RGB_ORDERED
 #define PANTO_EXPAND_SEQUENCE_PATH(dataset) PANTO_EXPAND_SEQUENCE_PATH_IMPL(dataset)
 
+#define PANTO_EXPAND_IMU_PATH_IMPL(dataset) IMU_MEASUREMENTS_##dataset##_IMU_MEASUREMENTS
+#define PANTO_EXPAND_IMU_PATH(dataset) PANTO_EXPAND_IMU_PATH_IMPL(dataset)
+
 constexpr auto panto_dataset_path =
     PANTO_EXPAND_DATASET_PATH(PANTO_ACTIVE_DATASET);
 
 constexpr auto panto_sequence_path =
     PANTO_EXPAND_SEQUENCE_PATH(PANTO_ACTIVE_DATASET);
+
+constexpr auto panto_imu_path =
+    PANTO_EXPAND_IMU_PATH(PANTO_ACTIVE_DATASET);
 
 const Dataset panto_dataset =
     Dataset::PANTO_ACTIVE_DATASET;
@@ -214,12 +255,29 @@ inline constexpr const char* PANTO_VocabFilePath =
  ******************************************************************                                                  
  */
 
-#define PANTO_IMAGE_WIDTH 640
-#define PANTO_IMAGE_HEIGHT 480
+#define X(name, fx, fy, s, cx, cy, k1, k2, p1, p2, k3, width, height, rate_hz, t_bs) \
+    constexpr u64 DATASET_IMAGE_WIDTH_##name = width; \
+    constexpr u64 DATASET_IMAGE_HEIGHT_##name = height; \
+    constexpr fp64 DATASET_CAMERA_RATE_HZ_##name = rate_hz;
+DATASET_INTRINSICS
+#undef X
 
-#define PANTO_GRID_COLUMNS 20 // 640 / 32
-#define PANTO_GRID_ROWS 15 // 480 / 32
-#define PANTO_NUM_IMAGE_CELLS PANTO_GRID_COLUMNS * PANTO_GRID_ROWS
+#define PANTO_EXPAND_IMAGE_WIDTH_IMPL(dataset) DATASET_IMAGE_WIDTH_##dataset
+#define PANTO_EXPAND_IMAGE_WIDTH(dataset) PANTO_EXPAND_IMAGE_WIDTH_IMPL(dataset)
+#define PANTO_EXPAND_IMAGE_HEIGHT_IMPL(dataset) DATASET_IMAGE_HEIGHT_##dataset
+#define PANTO_EXPAND_IMAGE_HEIGHT(dataset) PANTO_EXPAND_IMAGE_HEIGHT_IMPL(dataset)
+#define PANTO_EXPAND_CAMERA_RATE_HZ_IMPL(dataset) DATASET_CAMERA_RATE_HZ_##dataset
+#define PANTO_EXPAND_CAMERA_RATE_HZ(dataset) PANTO_EXPAND_CAMERA_RATE_HZ_IMPL(dataset)
+
+constexpr u64 PANTO_IMAGE_WIDTH = PANTO_EXPAND_IMAGE_WIDTH(PANTO_ACTIVE_DATASET);
+constexpr u64 PANTO_IMAGE_HEIGHT = PANTO_EXPAND_IMAGE_HEIGHT(PANTO_ACTIVE_DATASET);
+constexpr fp64 PANTO_CAMERA_RATE_HZ = PANTO_EXPAND_CAMERA_RATE_HZ(PANTO_ACTIVE_DATASET);
+
+constexpr u64 PANTO_GRID_COLUMNS =
+    (PANTO_IMAGE_WIDTH + PANTO_CELL_SIZE - 1) / PANTO_CELL_SIZE;
+constexpr u64 PANTO_GRID_ROWS =
+    (PANTO_IMAGE_HEIGHT + PANTO_CELL_SIZE - 1) / PANTO_CELL_SIZE;
+constexpr u64 PANTO_NUM_IMAGE_CELLS = PANTO_GRID_COLUMNS * PANTO_GRID_ROWS;
 
 /*                      
  ******************************************************************                                                  

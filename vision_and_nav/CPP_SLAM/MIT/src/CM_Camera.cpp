@@ -6,14 +6,16 @@ inline typeCameraIntrinsics CM_GetConfigIntrinsics(Dataset DatasetID)
 {
     switch(DatasetID)
     {
-#define X(name, fx_, fy_, s_, cx_, cy_, k1_, k2_, p1_, p2_, k3_) \
+#define X(name, fx_, fy_, s_, cx_, cy_, k1_, k2_, p1_, p2_, k3_, width_, height_, rate_hz_, t_bs_) \
         case Dataset::name: \
         { \
             Eigen::Matrix3d K; \
+            Eigen::Matrix4d T_BS; \
             K << \
                 fx_,  s_,   cx_, \
                 0.0,  fy_,  cy_, \
                 0.0,  0.0,  1.0; \
+            T_BS << t_bs_; \
             \
             return \
             { \
@@ -22,7 +24,11 @@ inline typeCameraIntrinsics CM_GetConfigIntrinsics(Dataset DatasetID)
                 .k2 = k2_, \
                 .p1 = p1_, \
                 .p2 = p2_, \
-                .k3 = k3_ \
+                .k3 = k3_, \
+                .ImageWidth = width_, \
+                .ImageHeight = height_, \
+                .RateHz = rate_hz_, \
+                .T_BS = T_BS \
             }; \
         }
 

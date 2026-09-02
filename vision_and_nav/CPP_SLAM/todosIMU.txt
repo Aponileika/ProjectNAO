@@ -1,9 +1,15 @@
-This is the todo list for IMU integration
+This is the todo list for IMU integration:
 
 -   find appropriate monocular inertial SLAM
--   IMU initialization
--   IMU and visual initialization syncing
--   IMU accumulation based on sampling frequency see SLAM ORB 3
--   IMU integration into bundle adjustment / pose optimization 
+-   IMU data loading
+-   camera and IMU timestamp handling
+-   IMU coordinate/extrinsic handling
+-   SO(3) integration
+-   IMU preintegration
+-   bias representation
+-   velocity in keyframe state
+-   IMU residual factor for Ceres
 -   IMU pose prediction
--   Loop closure
+
+note that since IMU and camera initilization differ greatly depending on
+monocular or stereo, I'm skipping that for now.

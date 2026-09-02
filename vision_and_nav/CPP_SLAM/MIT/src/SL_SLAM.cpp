@@ -458,9 +458,15 @@ void SL_PantoSLAM(i32 num_loops)
     LG_Log(LogSeverity::DATA, "Num tested %lf \n", NumTestedKeyFrames);
     LG_Log(LogSeverity::DATA, "Num accepted %lf \n", NumAcceptedKeyFrames);
 
+    KEY_LogIsKeyFrameStatistics();
+
     LG_Log(LogSeverity::DATA, "[SLAMKeyFrameSummary] ========================================\n");
 
 #if !defined(DEBUG)
+    while(true)
+    {
+        // xd
+    }
     VIZ_StopViewer();
 #endif
 }
