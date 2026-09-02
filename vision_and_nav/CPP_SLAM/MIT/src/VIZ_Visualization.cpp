@@ -4,10 +4,15 @@
 static std::vector<cv::Mat> VIZPriv_KeyFrameImages;
 
 static pid_t VIZPriv_ViewerPID = -1;
+static u64 VIZPriv_SnapshotID = 0;
 
 void VIZ_InitVisualization(void)
 {
     VIZPriv_KeyFrameImages.clear();
+    VIZPriv_SnapshotID = 0;
+
+    const std::string ImagesPath =
+        std::string(PANTO_COLMAP_PATH) + "/images";
 
     const std::string SparsePath =
         std::string(PANTO_COLMAP_PATH) + "/sparse";
@@ -15,27 +20,17 @@ void VIZ_InitVisualization(void)
     const std::string SnapshotPath =
         SparsePath + "/snapshots";
 
-    const std::string LatestPath =
-        SparsePath + "/latest.txt";
-
-    const std::string TemporaryLatestPath =
-        SparsePath + "/latest.txt.tmp";
-
-    if(std::filesystem::exists(SnapshotPath))
+    if(std::filesystem::exists(ImagesPath))
     {
-        std::filesystem::remove_all(SnapshotPath);
+        std::filesystem::remove_all(ImagesPath);
     }
 
-    if(std::filesystem::exists(LatestPath))
+    if(std::filesystem::exists(SparsePath))
     {
-        std::filesystem::remove(LatestPath);
+        std::filesystem::remove_all(SparsePath);
     }
 
-    if(std::filesystem::exists(TemporaryLatestPath))
-    {
-        std::filesystem::remove(TemporaryLatestPath);
-    }
-
+    std::filesystem::create_directories(ImagesPath);
     std::filesystem::create_directories(SnapshotPath);
 
     const pid_t PID = fork();
@@ -96,10 +91,8 @@ void VIZ_SignalHandler(int Signal)
 
 void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory)
 {
-    static u64 SnapshotID = 0;
-
     const std::string SnapshotPath =
-        std::string(PANTO_COLMAP_PATH) + "/sparse/snapshots/" + std::to_string(SnapshotID);
+        std::string(PANTO_COLMAP_PATH) + "/sparse/snapshots/" + std::to_string(VIZPriv_SnapshotID);
 
     std::filesystem::create_directories(SnapshotPath);
 
@@ -112,12 +105,12 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Ve
 
     LG_Log(LogSeverity::DBG,
             "[VIZ_WriteColmap] Publishing snapshot %llu from path %s\n",
-            static_cast<unsigned long long>(SnapshotID),
+            static_cast<unsigned long long>(VIZPriv_SnapshotID),
             SnapshotPath.c_str());
 
-    VIZPriv_PublishSnapshot(SnapshotID);
+    VIZPriv_PublishSnapshot(VIZPriv_SnapshotID);
 
-    SnapshotID++;
+    VIZPriv_SnapshotID++;
 }
 
 void VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& TrackingTrajectory, const std::string& SnapshotPath)

@@ -88,7 +88,7 @@ using PantoClock = std::chrono::steady_clock;
 #define PANTO_USE_DATASET true
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
-#define PANTO_ACTIVE_DATASET EUROC_MAV_VICON_ROOM1_EASY
+#define PANTO_ACTIVE_DATASET TUM_FREIBURG1_XYZ
 
 #define DATASETS \
     X(TUM_FREIBURG1_XYZ, "/tum/rgbd_dataset_freiburg1_xyz") \
