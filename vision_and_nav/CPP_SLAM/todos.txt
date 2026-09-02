@@ -1,4 +1,5 @@
 What to do next:
+make viser not exit
     - (DONE) Finish local mapping pipeline, Matching with DBoW3 feature vectors and feature + ep constraint check.
 
     - (DONE) Finish GRAPH_UpdateCovisibility function, should iterate and sort covisibility scores, needs to search for each keyframe what their current score

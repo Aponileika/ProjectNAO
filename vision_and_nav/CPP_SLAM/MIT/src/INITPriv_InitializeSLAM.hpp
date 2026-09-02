@@ -55,6 +55,8 @@ static void INITPriv_NormalizePoints2D( const Eigen::Matrix<fp64, 3, N>& Points,
 class ImageToImageMapping
 {
 public:
+    fp64 MaxScore = 0.0;
+
     virtual std::vector<fp64> Error(const std::vector<Eigen::Vector2d>& Point1, const std::vector<Eigen::Vector2d>& Point2) const = 0; 
 
     virtual fp64 GetErrorThreshold() const = 0;
@@ -171,6 +173,9 @@ public:
         BestReconstruction.NumPointsInFront = 0;
         BestReconstruction.ChosenInitFrameID = InitFrameIDs;
         BestReconstruction.Valid = false;
+        std::array<u64, 4> NumGood{};
+        std::array<fp64, 4> Parallaxes{};
+        std::array<std::vector<typeInitMapPoint>, 4> HypothesisMapPoints;
 
         /*
          * x2^T F x1 = 0
@@ -363,37 +368,66 @@ public:
                     CosParallaxes.begin(),
                     CosParallaxes.end());
 
-            const std::size_t ParallaxIndex =
-                std::min<std::size_t>(
-                        PANTO_INIT_MIN_STATIONARY_POINTS - 50,
-                        CosParallaxes.size() - 1);
 
-            const fp64 Parallax =
-                std::acos(
-                        CosParallaxes[ParallaxIndex]) *
-                180.0 / M_PI;
-
-            if(Parallax < PANTO_INIT_MIN_PARALLAX_DEGREES)
+            if(CosParallaxes.empty())
             {
                 continue;
             }
 
-            if(NumPointsInFront >
-               BestReconstruction.NumPointsInFront)
+            std::sort( CosParallaxes.begin(),
+                    CosParallaxes.end());
+
+            const std::size_t ParallaxIndex = std::min<std::size_t>(
+                        50,
+                        CosParallaxes.size() - 1);
+
+            const fp64 Parallax =
+                std::acos(CosParallaxes[ParallaxIndex]) *
+                180.0 / M_PI;
+
+            NumGood[HypothesisID] = NumPointsInFront;
+
+            Parallaxes[HypothesisID] = Parallax;
+
+            HypothesisMapPoints[HypothesisID] = std::move(MapPoints);
+        }
+
+        const auto BestIterator = std::max_element( NumGood.begin(), NumGood.end());
+
+        const u64 BestIndex = static_cast<u64>( std::distance( NumGood.begin(), BestIterator));
+
+        const u64 MaxGood = NumGood[BestIndex];
+
+        if(MaxGood == 0)
+        {
+            return BestReconstruction;
+        }
+
+        u64 NumSimilar = 0;
+
+        for(const u64 Good : NumGood)
+        {
+            if(static_cast<fp64>(Good) > 0.7 * static_cast<fp64>(MaxGood))
             {
-                BestReconstruction.R = R;
-                BestReconstruction.t = Translation;
-
-                BestReconstruction.MapPoints =
-                    std::move(MapPoints);
-
-                BestReconstruction.NumPointsInFront =
-                    NumPointsInFront;
-
-                BestReconstruction.Valid = true;
+                ++NumSimilar;
             }
         }
 
+        if(NumSimilar > 1)
+        {
+            return BestReconstruction;
+        }
+
+        if(Parallaxes[BestIndex] < PANTO_INIT_MIN_PARALLAX_DEGREES)
+        {
+            return BestReconstruction;
+        }
+
+        BestReconstruction.R = Rotations[BestIndex];
+        BestReconstruction.t = Translations[BestIndex];
+        BestReconstruction.MapPoints = std::move( HypothesisMapPoints[BestIndex]);
+        BestReconstruction.NumPointsInFront = MaxGood;
+        BestReconstruction.Valid = true;
         return BestReconstruction;
     }
 
@@ -610,6 +644,8 @@ public:
         BestReconstruction.NumPointsInFront = 0;
         BestReconstruction.ChosenInitFrameID = InitFrameIDs;
         BestReconstruction.Valid = false;
+        u64 SecondBestReconstructionPointsInFront = 0;
+        fp64 BestParallax = 0.0f;
 
         const Eigen::Matrix3d A =
             K.inverse() * Homography * K;
@@ -752,8 +788,7 @@ public:
             RPrime(2, 0) = SinPhi[i];
             RPrime(2, 2) = -CosPhi;
 
-            Rotations[i + 4] =
-                s * U * RPrime * V.transpose();
+            Rotations[i + 4] = s * U * RPrime * V.transpose();
 
             Eigen::Vector3d tPrime;
 
@@ -764,8 +799,7 @@ public:
 
             tPrime *= d1 + d3;
 
-            Eigen::Vector3d t =
-                U * tPrime;
+            Eigen::Vector3d t = U * tPrime;
 
             if(t.norm() > 0.0)
             {
@@ -784,9 +818,7 @@ public:
         const Eigen::Matrix<fp64, 3, 4> P1 =
             K * Rt1;
 
-        for(u64 HypothesisID = 0;
-            HypothesisID < 8;
-            ++HypothesisID)
+        for(u64 HypothesisID = 0; HypothesisID < 8; ++HypothesisID)
         {
             const Eigen::Matrix3d& R =
                 Rotations[HypothesisID];
@@ -795,8 +827,7 @@ public:
                 Translations[HypothesisID];
 
             const Eigen::Vector3d CameraCenter1 = Eigen::Vector3d::Zero();
-            const Eigen::Vector3d CameraCenter2 =
-                -R.transpose() * Translation;
+            const Eigen::Vector3d CameraCenter2 = -R.transpose() * Translation;
 
             std::vector<fp64> CosParallaxes;
             CosParallaxes.reserve(Points1.size());
@@ -806,8 +837,7 @@ public:
             Rt2.block<3, 3>(0, 0) = R;
             Rt2.col(3) = Translation;
 
-            const Eigen::Matrix<fp64, 3, 4> P2 =
-                K * Rt2;
+            const Eigen::Matrix<fp64, 3, 4> P2 = K * Rt2;
 
             std::vector<typeInitMapPoint> MapPoints;
             MapPoints.reserve(Points1.size());
@@ -818,16 +848,14 @@ public:
                 i < Points1.size();
                 ++i)
             {
-                const Eigen::Vector4d Point4D =
-                    PROJ_TriangulateDLT( Points1[i], Points2[i], P1, P2);
+                const Eigen::Vector4d Point4D = PROJ_TriangulateDLT( Points1[i], Points2[i], P1, P2);
 
                 if(!Point4D.allFinite())
                 {
                     continue;
                 }
 
-                const Eigen::Vector3d PointCamera1 =
-                    Point4D.head<3>();
+                const Eigen::Vector3d PointCamera1 = Point4D.head<3>();
 
                 if(PointCamera1.z() <= 0.0)
                 {
@@ -909,35 +937,52 @@ public:
                     CosParallaxes.end());
 
             const std::size_t ParallaxIndex =
-                std::min<std::size_t>(
-                        PANTO_INIT_MIN_STATIONARY_POINTS - 50,
-                        CosParallaxes.size() - 1);
+                std::min<std::size_t>(50, CosParallaxes.size() - 1);
 
-            const fp64 Parallax =
-                std::acos(
+            const fp64 Parallax = std::acos(
                         CosParallaxes[ParallaxIndex]) *
                 180.0 / M_PI;
 
-            if(Parallax < PANTO_INIT_MIN_PARALLAX_DEGREES)
-            {
-                continue;
-            }
 
-            if(NumPointsInFront >
-               BestReconstruction.NumPointsInFront)
+            if(NumPointsInFront > BestReconstruction.NumPointsInFront)
             {
                 BestReconstruction.R = R;
                 BestReconstruction.t = Translation;
 
-                BestReconstruction.MapPoints =
-                    std::move(MapPoints);
+                BestReconstruction.MapPoints = std::move(MapPoints);
 
-                BestReconstruction.NumPointsInFront =
-                    NumPointsInFront;
-
-                BestReconstruction.Valid = true;
+                SecondBestReconstructionPointsInFront = BestReconstruction.NumPointsInFront;
+                BestReconstruction.NumPointsInFront = NumPointsInFront;
+                BestParallax = Parallax; 
+            }
+            else if(NumPointsInFront > SecondBestReconstructionPointsInFront)
+            {
+                SecondBestReconstructionPointsInFront = NumPointsInFront;
             }
         }
+
+        if(BestReconstruction.NumPointsInFront == 0)
+        {
+            return BestReconstruction;
+        }
+
+        if(static_cast<fp64>(SecondBestReconstructionPointsInFront) >=
+                0.75 * static_cast<fp64>(BestReconstruction.NumPointsInFront))
+        {
+            return BestReconstruction;
+        }
+
+        if(BestParallax < PANTO_INIT_MIN_PARALLAX_DEGREES)
+        {
+            return BestReconstruction;
+        }
+
+        if(BestReconstruction.NumPointsInFront < PANTO_MIN_NUMBER_INITIAL_MAP_POINTS)
+        {
+            return BestReconstruction;
+        }
+
+        BestReconstruction.Valid = true;
 
         return BestReconstruction;
     }
@@ -1036,6 +1081,7 @@ void INITPriv_MatchHistoricalFrames(void);
 std::vector<u64> INITPriv_STRANSAC(void);
 u64 INITPriv_RandomSeed(void);
 std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::vector<Eigen::Vector2d>& PointFrameNew, const std::vector<Eigen::Vector2d>& PointFrameHistorical);
+std::pair<std::unique_ptr<ImageToImageMapping>, std::unique_ptr<ImageToImageMapping>> INITPriv_FAndHEstimation(const std::vector<Eigen::Vector2d>& PointFrameNew, const std::vector<Eigen::Vector2d>& PointFrameHistorical);
 std::vector<u64> INITPriv_GetCandidateFrameIDs(const std::vector<u64>& StationaryTrackIDs);
 typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFrame, const typeInitFrame& NewFrame, const std::vector<u64>& StationaryTrackIDs);
 typePantoKeypointFrame INITPriv_GetKeyPointFrame(u64 InitFrameID);

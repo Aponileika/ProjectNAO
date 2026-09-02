@@ -76,7 +76,6 @@ void SLPriv_InitializeMap(void)
     OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {}, &PantoSLAM.GlobalMap.KeyFrames.back());
     LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error after tracking\n");
     MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
-
     OP_BundleAdjust(PantoSLAM.GlobalMap, typePoseAndPoints, {}, nullptr);
 
 #if !defined(DEBUG)

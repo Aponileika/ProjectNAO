@@ -41,7 +41,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define PANTO_DESCRIPTOR_ANMS false
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
 #define PANTO_LOCAL_MAP_SAMPLE_STRIDE 2
-#define PANTO_NUM_BOOTSTRAP_FRAMES 50
+#define PANTO_NUM_BOOTSTRAP_FRAMES 100
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
 #define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 30

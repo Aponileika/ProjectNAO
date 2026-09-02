@@ -138,8 +138,7 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
                     i,
                     static_cast<unsigned long long>(CandidateIDs[i]));
 
-                Reconstruction[i] =
-                    INITPriv_Reconstruct(
+                Reconstruction[i] = INITPriv_Reconstruct(
                         InitData.InitFrames[CandidateIDs[i]],
                         InitData.InitFrames.back(),
                         StationaryTrackIDs);
@@ -166,8 +165,7 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
         const std::size_t NumPoints =
             Reconstruction[i].MapPoints.size();
 
-        LG_Log(
-            LogSeverity::DBG,
+        LG_Log(LogSeverity::DBG,
             "[INIT_ProcessNewFrame] Reconstruction %llu has %zu map points\n",
             static_cast<unsigned long long>(i),
             NumPoints);
@@ -590,7 +588,6 @@ std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::v
     LG_Log(LogSeverity::DBG,"[INITPriv_ScoredFAndHEstimation] Fundamental score: %lf, Homography score: %lf\n", Fundamental->MaxScore, Homography->MaxScore);
 
     const fp64 FundamentalScore = Fundamental->MaxScore;
-
     const fp64 HomographyScore = Homography->MaxScore;
 
     const fp64 TotalScore = FundamentalScore + HomographyScore;
@@ -606,12 +603,30 @@ std::unique_ptr<ImageToImageMapping> INITPriv_ScoredFAndHEstimation(const std::v
             "[INITPriv_ScoredFAndHEstimation] " "F score = %.3f, H score = %.3f, H ratio = %.3f\n",
             FundamentalScore, HomographyScore, HomographyRatio);
 
-    if(HomographyRatio > 0.40)
+    if(HomographyRatio > 0.45)
     {
         return Homography;
     }
 
     return Fundamental;
+}
+
+std::pair<std::unique_ptr<ImageToImageMapping>, std::unique_ptr<ImageToImageMapping>> INITPriv_FAndHEstimation(const std::vector<Eigen::Vector2d>& PointFrameNew, const std::vector<Eigen::Vector2d>& PointFrameHistorical)
+{
+    std::unique_ptr<FundamentalMatrixMapping> Fundamental = std::make_unique<FundamentalMatrixMapping>();
+    std::unique_ptr<HomographyMapping> Homography = std::make_unique<HomographyMapping>();
+
+    const u64 Seed = INITPriv_RandomSeed();
+
+    std::thread HomographyThread(&HomographyMapping::Estimate, Homography.get(), std::cref(PointFrameNew), std::cref(PointFrameHistorical), Seed);
+    std::thread FundamentalThread(&FundamentalMatrixMapping::Estimate, Fundamental.get(), std::cref(PointFrameNew), std::cref(PointFrameHistorical), Seed);
+
+    HomographyThread.join();
+    FundamentalThread.join();
+
+    LG_Log(LogSeverity::DBG,"[INITPriv_ScoredFAndHEstimation] Fundamental score: %lf, Homography score: %lf\n", Fundamental->MaxScore, Homography->MaxScore);
+
+    return {std::move(Fundamental), std::move(Homography)};
 }
 
 u64 INITPriv_RandomSeed(void)
@@ -713,11 +728,46 @@ typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFram
      *   Point1 = Historical
      *   Point2 = New
      */
-    std::unique_ptr<ImageToImageMapping> Mapping = INITPriv_ScoredFAndHEstimation(HistoricalPoints, NewPoints);
+
+    std::pair<std::unique_ptr<ImageToImageMapping>, std::unique_ptr<ImageToImageMapping>> Mappings = INITPriv_FAndHEstimation(HistoricalPoints, NewPoints);
 
     const typeCameraIntrinsics* Intrinsics = CM_GetIntrinsics();
 
     const Eigen::Matrix3d& K = Intrinsics->K;
+
+    const fp64 FundamentalScore = Mappings.first->MaxScore;
+    const fp64 HomographyScore = Mappings.second->MaxScore;
+
+    const fp64 TotalScore = FundamentalScore + HomographyScore;
+
+    std::unique_ptr<ImageToImageMapping> Mapping{};
+    std::unique_ptr<ImageToImageMapping> OtherMapping{};
+
+    if(TotalScore <= std::numeric_limits<fp64>::epsilon())
+    {
+        Mapping = std::move(Mappings.first);
+        OtherMapping = std::move(Mappings.second);
+    }
+    else
+    {
+
+        const fp64 HomographyRatio = HomographyScore / TotalScore;
+
+        LG_Log( LogSeverity::DBG,
+                "[INITPriv_ScoredFAndHEstimation] " "F score = %.3f, H score = %.3f, H ratio = %.3f\n",
+                FundamentalScore, HomographyScore, HomographyRatio);
+
+        if(HomographyRatio > 0.45)
+        {
+            Mapping = std::move(Mappings.second);
+            OtherMapping = std::move(Mappings.first);
+        }
+        else
+        {
+            Mapping = std::move(Mappings.first);
+            OtherMapping = std::move(Mappings.second);
+        }
+    }
 
     /*
      * Relative pose from historical camera -> new camera:
@@ -738,6 +788,16 @@ typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFram
             ImagePointIDs,
             FrameIDs,
             K);
+
+    if(!Reconstruction.Valid)
+    {
+        Reconstruction = OtherMapping->Reconstruct(
+            HistoricalPoints,
+            NewPoints,
+            ImagePointIDs,
+            FrameIDs,
+            K);
+    }
 
     return Reconstruction;
 }
