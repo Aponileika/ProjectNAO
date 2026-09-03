@@ -1,13 +1,12 @@
 This is the todo list for IMU integration:
 
--   find appropriate monocular inertial SLAM
--   IMU data loading
--   camera and IMU timestamp handling
--   IMU coordinate/extrinsic handling
--   SO(3) integration
--   IMU preintegration
--   bias representation
--   velocity in keyframe state
+-   (DONE, EuRoC MAV) find appropriate monocular inertial SLAM
+-   (DONE) IMU data loading
+-   (Not done) camera and IMU timestamp handling
+-   (DONE) IMU coordinate/extrinsic handling
+-   (DONE) IMU preintegration
+-   Keyframe should contain Navstate, not just pose.
+-   Optional GT initialization, so choose two initial keyframes that are read from GT.
 -   IMU residual factor for Ceres
 -   IMU pose prediction
 

@@ -58,49 +58,29 @@ typeCameraIntrinsics* CM_GetIntrinsics()
 
 void CM_SetParametrization(typeCamera& Camera)
 {
-    /*We use the reparametrization based on
-     * R^t[I -t], since the parametrization 
-     * [R t] will lead to drastic changes in camera
-     * center when t is large and R is small,
-     * for example when going straight forward
-     * see TSBB33 lecture 5. 
-     */
-    Eigen::Quaterniond q(Camera.Pose.R.transpose());
-    q.normalize();
-    Camera.Parameters.q = q;
-
-    Camera.Parameters.t = -Camera.Pose.R.transpose() * Camera.Pose.t;
+    Camera.Pose.UpdateParametrization();
 }
 
 typeCamera CM_CreateCam(Eigen::Matrix3d R, Eigen::Vector3d t, fp64 TimeStamp)
 {
-    typePoseParameters Param = {};
-    typeCameraPose Pose = {
-        R,
-        t
-    };
 
-    typeCamera Camera = {
-        CM_GetIntrinsics(),
-        Pose,
-        Param,
-        TimeStamp
+    typeCamera Camera
+    {
+        .Intrinsics = CM_GetIntrinsics(),
+        .Pose = typeCameraPose(R, t),
+        .TimeStamp = TimeStamp
     };
-    CM_SetParametrization(Camera);
     return Camera;
 }
 
 void CM_SetRtfromParam(typeCamera* Camera)
 {
-    const Eigen::Matrix3d RTransposed = Camera->Parameters.q.toRotationMatrix().transpose();
-    const Eigen::Vector3d TW2C = -RTransposed * Camera->Parameters.t;
-    Camera->Pose.R = RTransposed;
-    Camera->Pose.t = TW2C;
+    Camera->Pose.UpdateRt();
 }
 
 Eigen::Vector3d CM_GetCameraCenter(const typeCamera& Camera)
 {
-    return -Camera.Pose.R.transpose() * Camera.Pose.t;
+    return Camera.Pose.GetCameraCenter();
 }
 
 typeCamera CM_PredictPose(const typeCameraPose& TPreviousFrame, const typeCameraPose& TPreviousPreviousFrame)
@@ -116,28 +96,40 @@ typeCamera CM_PredictPose(const typeCameraPose& TPreviousFrame, const typeCamera
     TPreviousPreviousInverse.block<3, 1>(0, 3) = -RPreviousPreviousT*TPreviousPreviousFrame.t;
 
     const Eigen::Matrix4d& TRelative = TPrevious * TPreviousPreviousInverse;
-
     const Eigen::Matrix4d& TPredicted = TRelative * TPrevious;
 
-    typeCameraPose TPrediction = {
-        .R = static_cast<Eigen::Matrix3d>(TPredicted.block<3,3>(0,0)),
-        .t = static_cast<Eigen::Vector3d>(TPredicted.block<3,1>(0,3))
-    };
+    const Eigen::Matrix3d RPred = static_cast<Eigen::Matrix3d>(TPredicted.block<3,3>(0,0));
+    const Eigen::Vector3d tPred = static_cast<Eigen::Vector3d>(TPredicted.block<3,1>(0,3));
+
+    typeCameraPose TPrediction(RPred, tPred);
 
     typeCameraIntrinsics* Intrinsics = &ci;
-    typePoseParameters Parameters;
+
     std::string image_name;
     
     typeCamera Prediction = 
     {
         .Intrinsics = Intrinsics,
         .Pose = TPrediction,
-        .Parameters = {},
         .TimeStamp = PANTO_TIMESTAMP_NOT_SET
 
     };
 
-    CM_SetParametrization(Prediction);
-
     return Prediction;
+}
+
+typePose CM_GetBodyToSensor(const typeCamera& Camera)
+{
+    const Eigen::Matrix3d R = Camera.Intrinsics->T_BS.block<3,3>(0,0);
+    const Eigen::Vector3d t = Camera.Intrinsics->T_BS.block<3,1>(0,3);
+
+    return typePose{R, t};
+}
+
+typePose CM_GetBodyToSensor(const typeCameraIntrinsics* Intrinsics)
+{
+    const Eigen::Matrix3d R = Intrinsics->T_BS.block<3,3>(0,0);
+    const Eigen::Vector3d t = Intrinsics->T_BS.block<3,1>(0,3);
+
+    return typePose{R, t};
 }

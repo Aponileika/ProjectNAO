@@ -118,14 +118,18 @@ static bool IMUTest_SynchronizeFrameAndGroundTruth(
 
 static typeNavigationState IMUTest_GetNavigationState(const typeGroundTruth& GroundTruth)
 {
-    return
-    {
-        .Rwb = GroundTruth.Orientation.normalized().toRotationMatrix(),
-        .Velocity = GroundTruth.Velocity,
-        .Position = GroundTruth.Position,
-        .GyroBias = GroundTruth.GyroBias,
-        .AccelorometerBias = GroundTruth.AccelBias
-    };
+    typeNavigationState NavigationState;
+    NavigationState.Rwb =
+        GroundTruth.Orientation.normalized().toRotationMatrix();
+    NavigationState.Velocity = GroundTruth.Velocity;
+    NavigationState.Position = GroundTruth.Position;
+    NavigationState.GyroBias = GroundTruth.GyroBias;
+    NavigationState.AccelorometerBias = GroundTruth.AccelBias;
+    NavigationState.q = Eigen::Quaterniond(
+            NavigationState.Rwb.transpose()).normalized();
+    NavigationState.t =
+        -NavigationState.Rwb.transpose() * NavigationState.Position;
+    return NavigationState;
 }
 
 struct typeIMUTestOptions

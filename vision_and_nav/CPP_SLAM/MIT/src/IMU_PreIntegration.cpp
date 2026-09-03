@@ -3,6 +3,8 @@
 
 typePreIntegration IntegrationState = typePreIntegration(); 
 
+static Eigen::Vector3d g{};
+
 void IMU_NewNavigationStateArrival(const typeNavigationState& NavigationState)
 {
     IntegrationState.Reset(NavigationState);
@@ -55,3 +57,23 @@ void IMU_GetPreIntegratedRt(Eigen::Matrix3d& Rwb, Eigen::Vector3d& twb)
         0.5 * Gravity * IntegrationState.DeltaT * IntegrationState.DeltaT +
         InitialState.Rwb * IntegrationState.DeltaPosition;
 }
+
+typePreIntegrationData IMU_GetLatestPreIntegrationData(void)
+{
+    return IntegrationState;
+}
+
+typeNavigationState IMU_PredictNavigationState(const typeNavigationState& PreviousNavigationState,
+        const typePreIntegrationData& PreIntegrationData)
+{
+    const Eigen::Matrix3d& PredictedR = PreviousNavigationState.Rwb * PreIntegrationData.DeltaR;
+    const Eigen::Vector3d& PredictedVelocity = PreviousNavigationState.Velocity + 
+        g * PreIntegrationData.DeltaT + PreviousNavigationState.Rwb * PreIntegrationData.DeltaVelocity;
+    const Eigen::Vector3d& PredictedPosition = PreviousNavigationState.Position + PreviousNavigationState.Velocity * PreIntegrationData.DeltaT
+        + 0.5 * g * PreIntegrationData.DeltaT * PreIntegrationData.DeltaT + PreviousNavigationState.Rwb * PreIntegrationData.DeltaPosition;
+
+    typeNavigationState Prediction(PredictedR, PredictedVelocity, PredictedPosition, PreviousNavigationState.GyroBias, PreviousNavigationState.AccelorometerBias);
+
+    return Prediction;
+}
+

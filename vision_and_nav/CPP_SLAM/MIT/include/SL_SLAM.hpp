@@ -24,6 +24,7 @@
 #include "GRAPH_PantoGraph.hpp"
 #include "INIT_InitializeSLAM.hpp"
 #include "PANTOVEC_PantoVector.hpp"
+#include "GT_ReadGroundTruth.hpp"
 
 typedef struct
 {

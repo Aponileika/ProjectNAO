@@ -262,7 +262,7 @@ void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const 
             PANTO_CAMERA_MODEL_ID;
 
         const typeCameraIntrinsics* Intrinsics =
-            KeyFrame.Pose.Intrinsics;
+            KeyFrame.Camera.Intrinsics;
 
         assert(Intrinsics != nullptr);
 
@@ -333,10 +333,10 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
         fwrite( &ImageID, sizeof(i32), 1, fp);
 
         const Eigen::Matrix3d& Rcw =
-            KeyFrame.Pose.Pose.R;
+            KeyFrame.Camera.Pose.R;
 
         const Eigen::Vector3d& tcw =
-            KeyFrame.Pose.Pose.t;
+            KeyFrame.Camera.Pose.t;
 
         Eigen::Quaterniond Quaternion(Rcw);
 

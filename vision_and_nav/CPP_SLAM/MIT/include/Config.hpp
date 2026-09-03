@@ -40,6 +40,8 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define OPENCV_AKAZE_NOCTAVES 4
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_ANMS false
+//Initializes with Ground truth frame data, to avoid having to code monocular IMU initialization
+#define PANTO_GROUNDTRUTH_INIT true
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
 #define PANTO_LOCAL_MAP_SAMPLE_STRIDE 2
 #define PANTO_NUM_BOOTSTRAP_FRAMES 100

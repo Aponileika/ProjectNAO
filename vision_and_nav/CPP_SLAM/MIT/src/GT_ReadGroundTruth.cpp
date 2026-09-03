@@ -8,9 +8,7 @@ static std::string GTPriv_GetGroundTruthPath(void)
         "/data.csv";
 }
 
-static bool GTPriv_ReadMeasurement(
-        FILE* GroundTruthFile,
-        typeGroundTruth& GroundTruth)
+static bool GTPriv_ReadMeasurement(FILE* GroundTruthFile, typeGroundTruth& GroundTruth)
 {
     char Buffer[1024];
 
@@ -62,15 +60,10 @@ static bool GTPriv_ReadMeasurement(
     GroundTruth =
     {
         .TimeStamp = static_cast<fp64>(TimeStampNS) * 1e-9,
-
         .Position = Eigen::Vector3d(Px, Py, Pz),
-
         .Orientation = Eigen::Quaterniond(Qw, Qx, Qy, Qz),
-
         .Velocity = Eigen::Vector3d(Vx, Vy, Vz),
-
         .GyroBias = Eigen::Vector3d(Bgx, Bgy, Bgz),
-
         .AccelBias = Eigen::Vector3d(Bax, Bay, Baz)
     };
 
@@ -90,17 +83,12 @@ typeGroundTruth GT_GetMeasurement(void)
         assert(GroundTruthFile != nullptr);
 
         char Header[1024];
-        assert(std::fgets(
-            Header,
-            sizeof(Header),
-            GroundTruthFile) != nullptr);
+        assert(std::fgets(Header, sizeof(Header), GroundTruthFile) != nullptr);
     }
 
     typeGroundTruth GroundTruth{};
 
-    return GTPriv_ReadMeasurement(GroundTruthFile, GroundTruth)
-        ? GroundTruth
-        : typeGroundTruth{};
+    return GTPriv_ReadMeasurement(GroundTruthFile, GroundTruth) ? GroundTruth : typeGroundTruth{};
 }
 
 std::vector<typeGroundTruth> GT_GetAllMeasurements(void)
@@ -112,10 +100,7 @@ std::vector<typeGroundTruth> GT_GetAllMeasurements(void)
     assert(GroundTruthFile != nullptr);
 
     char Header[1024];
-    assert(std::fgets(
-        Header,
-        sizeof(Header),
-        GroundTruthFile) != nullptr);
+    assert(std::fgets( Header, sizeof(Header), GroundTruthFile) != nullptr);
 
     std::vector<typeGroundTruth> Measurements;
     typeGroundTruth GroundTruth{};

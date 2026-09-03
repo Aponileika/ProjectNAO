@@ -304,7 +304,7 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
             .Points = ImagePoints[0],
             .BowVector = InitData.InitFrames[FirstFrameID].BoWVector,
             .FeatureVector = InitData.InitFrames[FirstFrameID].FeatureVector,
-            .Pose = FirstCamera,
+            .Camera = FirstCamera,
             .ID = 0,
             .ImagePath = InitData.InitFrames[FirstFrameID].ImagePath
         });
@@ -314,7 +314,7 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
             .Points = ImagePoints[1],
             .BowVector = InitData.InitFrames[SecondFrameID].BoWVector,
             .FeatureVector = InitData.InitFrames[SecondFrameID].FeatureVector,
-            .Pose = SecondCamera,
+            .Camera = SecondCamera,
             .ID = 1,
             .ImagePath = InitData.InitFrames[SecondFrameID].ImagePath
         });

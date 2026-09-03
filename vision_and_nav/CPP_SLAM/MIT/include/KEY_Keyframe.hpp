@@ -4,6 +4,7 @@
 #include "PT_Types.hpp"
 #include "DBOW3_DeepBagofWords.hpp"
 #include "Config.hpp"
+#include "FR_Frames.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 #include <PT_PantoMapPoints.hpp>
 #include <DBoW3/DBoW3.h>
@@ -14,6 +15,8 @@
 #include <Eigen/Dense>
 #include <PT_PantoImagePoint.hpp>
 #include <PT_PantoMapPoints.hpp>
+#include <IMU_IMUReader.hpp>
+#include <IMU_PreIntegration.hpp>
 #include <CM_Camera.hpp>
 #include <queue>
 #include <cmath>
@@ -37,11 +40,13 @@ typedef struct
     typePantoKeypointFrame Points;
     DBoW3::BowVector BowVector;
     DBoW3::FeatureVector FeatureVector;
-    typeCamera Pose;
+    typeCamera Camera;
+    typeNavigationState NavigationState;
     u64 ID;
     std::string ImagePath;
 }typeKeyFrame;
 
+typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame);
 typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints);
 typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints,
         typePantoVector<typePantoMapPoint>& GlobalMapPoints);
@@ -55,5 +60,6 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
         const u64 MapAge);
 void KEY_NonValidKeyFrame(void);
 fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints);
+void KEY_IntegrationStep(void);
 
 #endif //__KEY_KEYFRAME_HPP_

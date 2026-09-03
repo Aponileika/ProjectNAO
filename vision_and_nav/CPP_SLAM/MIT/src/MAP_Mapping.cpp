@@ -1,5 +1,6 @@
 #include "MAP_Mapping.hpp"
 #include "MAPPriv_Mapping.hpp"
+#include "Vocabulary.h"
 #include <unordered_map>
 
 typeMappingData MappingData = 
@@ -15,17 +16,14 @@ typeMappingData MappingData =
     .SquaredSumPixelErrorRemovedPixels = 0.0
 };
 
-    u64 RecentMapPointsCulled;
+typeGlobalMap MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNavigationState& SecondNavState,
+        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame)
+{
+    typeKeyFrame FirstKF = KEY_CreateKeyFrame(FirstNavState, FirstFrame);
+    typeKeyFrame SecondKF = KEY_CreateKeyFrame(SecondNavState, SecondFrame);
+    // Todo, triangulate points.
+}
 
-    u64 KeyFramesCulled;
-
-    u64 MapPointsCulled;
-
-    u64 ObservationEdgesCulled;
-    u64 NumObservationEdgesPixelErrorHigh;
-    u64 NumObservationEdgesFailedProjection;
-    fp64 SumPixelErrorRemovedPixels;
-    fp64 SquaredSumPixelErrorRemovedPixels;
 u64 MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame)
 {
     const u64 ID = GlobalMap.KeyFrames.push_back(KeyFrame);
@@ -208,13 +206,13 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMa
     LG_Log(LogSeverity::DBG, "[MAP_MatchMapPointLocalMap] Getting median scene depth");
     const fp64 MedianDepth = KEY_GetLocalMapMedianDepth(NewKeyFrame, LocalMapPoints);
 
-    const typeCamera& Pose = NewKeyFrame.Pose;
+    const typeCamera& Camera = NewKeyFrame.Camera;
     LG_Log(LogSeverity::DBG, "[MAP_MatchMapPointLocalMap] Matching mappoints to keyframe");
     u64 NumProjectedMapPoints = 0;
     const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(
             NewKeyFrame.Points,
             LocalMapPoints,
-            Pose,
+            Camera,
             GlobalMap.MapPoints,
             &NumProjectedMapPoints);
 
@@ -466,7 +464,7 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
 
             typePantoImagePoint& ImagePoint = KeyFrame.Points.ImagePoints[ImagePointID];
 
-            if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
+            if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Camera))
             {
                 LG_Log( LogSeverity::DBG,
                         "[MAP_CullObservationEdges] MP %llu observation KF %llu IP %llu rejected: projection failed\n",
@@ -663,7 +661,7 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& 
         }
     }
 
-    Eigen::Vector3d NewCameraCenter = CM_GetCameraCenter(NewKeyFrame.Pose);
+    Eigen::Vector3d NewCameraCenter = CM_GetCameraCenter(NewKeyFrame.Camera);
     std::vector<u64> NewPointIndexes;
     for(const typeKeyFrame& KeyFrameLocal : LocalMapKeyFrames)
     {
@@ -673,7 +671,7 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& 
             continue;
         }
 
-        const Eigen::Vector3d CameraCenter = CM_GetCameraCenter(KeyFrameLocal.Pose);
+        const Eigen::Vector3d CameraCenter = CM_GetCameraCenter(KeyFrameLocal.Camera);
 
         const fp64 BaseLine = (NewCameraCenter - CameraCenter).norm();
 
@@ -704,19 +702,19 @@ void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap)
 
     for(const typeKeyFrame& KeyFrame : GlobalMap.KeyFrames)
     {
-        const typeCamera& Pose = KeyFrame.Pose;
+        const typeCamera& Camera = KeyFrame.Camera;
 
         LG_Log(
             LogSeverity::DBG,
             "[MAP_LogGlobalMapPoses] KeyFrame %llu q = (%f, %f, %f, %f), t = (%f, %f, %f)\n",
             static_cast<unsigned long long>(KeyFrame.ID),
-            Pose.Parameters.q.w(),
-            Pose.Parameters.q.x(),
-            Pose.Parameters.q.y(),
-            Pose.Parameters.q.z(),
-            Pose.Parameters.t[0],
-            Pose.Parameters.t[1],
-            Pose.Parameters.t[2]);
+            Camera.Pose.Quaternion.w(),
+            Camera.Pose.Quaternion.x(),
+            Camera.Pose.Quaternion.y(),
+            Camera.Pose.Quaternion.z(),
+            Camera.Pose.tParametrization[0],
+            Camera.Pose.tParametrization[1],
+            Camera.Pose.tParametrization[2]);
     }
 }
 
@@ -746,7 +744,7 @@ void MAP_LogKeyFrameProjectionError(const typeKeyFrame& KeyFrame, const typePant
 
         Eigen::Vector2d ProjectedPoint{};
 
-        if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
+        if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Camera))
         {
             NumFailedProjection++;
             continue;
@@ -901,10 +899,10 @@ void MAP_RetriangulateLOST(typeGlobalMap& GlobalMap)
                 Eigen::Matrix4d::Identity();
 
             Transform.block<3, 3>(0, 0) =
-                KeyFrame.Pose.Pose.R;
+                KeyFrame.Camera.Pose.R;
 
             Transform.block<3, 1>(0, 3) =
-                KeyFrame.Pose.Pose.t;
+                KeyFrame.Camera.Pose.t;
 
             MapPointPixelCoords.push_back(PixelCoord);
             MapPointTransforms.push_back(Transform);
@@ -921,10 +919,10 @@ void MAP_RetriangulateLOST(typeGlobalMap& GlobalMap)
     }
 
     assert(!GlobalMap.KeyFrames.empty());
-    assert(GlobalMap.KeyFrames[0].Pose.Intrinsics != nullptr);
+    assert(GlobalMap.KeyFrames[0].Camera.Intrinsics != nullptr);
 
     const Eigen::Matrix3d K =
-        GlobalMap.KeyFrames[0].Pose.Intrinsics->K;
+        GlobalMap.KeyFrames[0].Camera.Intrinsics->K;
 
     const std::vector<Eigen::Vector4d> RetriangulatedPoints =
         PROJ_TriangulateLOST(
@@ -1064,7 +1062,7 @@ void MAP_LogGlobalMap(const typeGlobalMap& GlobalMap)
                 KeyFrame.ID,
                 KeyFrame.Points.ImagePoints.active_size(),
                 KeyFrame.Points.ImagePoints.size(),
-                KeyFrame.Pose.TimeStamp);
+                KeyFrame.Camera.TimeStamp);
 
         if(KeyFrame.ID != i)
         {

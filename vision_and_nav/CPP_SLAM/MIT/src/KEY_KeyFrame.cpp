@@ -84,6 +84,36 @@ typeFuzzyKeyFrameInference FuzzyInference =
     .SpatialTrackingThreshold = NAN
 };
 
+typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame)
+{
+    typeKeyFrame KeyFrame{};
+
+    DBoW3::Vocabulary* Vocab = DBOW3_GetVocabulary();
+    const typePose BodyToCamera = CM_GetBodyToSensor(CM_GetIntrinsics());
+    DescRet Desc = EP_GetDescriptors(Frame.Frame);
+    std::vector<cv::Mat> DescriptorVector;
+    DescriptorVector.reserve(Desc.Descriptors.rows);
+    for(i32 i{}; i < Desc.Descriptors.rows; i++)
+    {
+        DescriptorVector.push_back(Desc.Descriptors.row(i));
+    }
+
+    const i32 Levels = PANTO_DBOW_LEVELSUP;
+
+    Vocab->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
+
+    KeyFrame.ID = 0;
+    KeyFrame.ImagePath = Frame.Path;
+    KeyFrame.NavigationState = NavState;
+
+    const Eigen::Matrix3d& CameraR = BodyToCamera.R * NavState.Rwb.transpose();
+    const Eigen::Vector3d& Camerat = BodyToCamera.R * NavState.t + BodyToCamera.t;
+
+    KeyFrame.Camera = CM_CreateCam(CameraR, Camerat, Frame.TimeStamp);
+
+    return KeyFrame;
+}
+
 typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints)
 {
     typePantoFrame Frame = FR_GetFrame();
@@ -108,7 +138,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
     typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePointsNoMatch(Descriptors.Points, Descriptors.Descriptors);
 
-    typeCamera PredictedPose = LastKeyFrame.Pose;
+    typeCamera PredictedPose = LastKeyFrame.Camera;
     PredictedPose.TimeStamp = Frame.TimeStamp;
 
     typeKeyFrame KeyFrame = 
@@ -116,7 +146,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
         .Points = ImagePoints,
         .BowVector = NewBowVector,
         .FeatureVector = NewFeatureVector,
-        .Pose = PredictedPose,
+        .Camera = PredictedPose,
         .ID = 2,
         .ImagePath = Frame.Path
     };
@@ -169,7 +199,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
                     // Eigen::Vector2d ProjectedPoint{};
 
-                    // if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
+                    // if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Camera))
                     // {
                     //     continue;
                     // }
@@ -247,13 +277,13 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
     const PantoClock::time_point GetKeyFrameStartTime = PantoClock::now();
 
     LG_Log(LogSeverity::DBG, "[KEY_GetKeyFrame] Predicted q = (%f, %f, %f, %f), t = (%f, %f, %f)\n",
-        PredictedPose.Parameters.q.w(),
-        PredictedPose.Parameters.q.x(),
-        PredictedPose.Parameters.q.y(),
-        PredictedPose.Parameters.q.z(),
-        PredictedPose.Parameters.t[0],
-        PredictedPose.Parameters.t[1],
-        PredictedPose.Parameters.t[2]);
+        PredictedPose.Pose.Quaternion.w(),
+        PredictedPose.Pose.Quaternion.x(),
+        PredictedPose.Pose.Quaternion.y(),
+        PredictedPose.Pose.Quaternion.z(),
+        PredictedPose.Pose.tParametrization[0],
+        PredictedPose.Pose.tParametrization[1],
+        PredictedPose.Pose.tParametrization[2]);
 
     const PantoClock::time_point GetFrameStartTime = PantoClock::now();
     typePantoFrame Frame = FR_GetFrame();
@@ -281,7 +311,7 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
             .Points = typePantoKeypointFrame{},
             .BowVector = {},
             .FeatureVector = {},
-            .Pose = PredictedPose,
+            .Camera = PredictedPose,
             .ID = PANTO_ID_NOT_SET,
             .ImagePath = "" 
         };
@@ -310,7 +340,7 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
         .Points = ImagePoints,
         .BowVector = {},
         .FeatureVector = {},
-        .Pose = PredictedPose,
+        .Camera = PredictedPose,
         .ID = PANTO_ID_NOT_SET,
         .ImagePath = Frame.Path
     };
@@ -469,9 +499,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
         }
 
         const u64 ImagePointID = ImagePoint.ID;
-
         typePantoMapPoint& MapPoint = GlobalMapPoints[MapPointID];
-
         for(const u64 ExistingKeyFrameID : MapPoint.KeyFrameIDs)
         {
             if(ExistingKeyFrameID == ID)
@@ -541,7 +569,6 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
     }
 
     Vocabulary->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
-
     CurrentDescriptors.pop();
 }
 
@@ -599,7 +626,7 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
     std::size_t NumReprojectionRejectedTwentyPlus = 0;
     std::size_t NumCheiralityRejected = 0;
 
-    const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Pose.Pose, KeyFrame2.Pose.Pose);
+    const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Camera.Pose, KeyFrame2.Camera.Pose);
     const Eigen::Matrix3d F12 = F21.transpose();
 
     typePantoVector<typePantoImagePoint>& AllImagePoints1 = KeyFrame1.Points.ImagePoints;
@@ -613,13 +640,13 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
     std::pair<u64, u64> KeyFrameIDs(KeyFrame1.ID, KeyFrame2.ID);
 
-    const typeCamera& Camera1 = KeyFrame1.Pose;
-    const typeCamera& Camera2 = KeyFrame2.Pose;
+    const typeCamera& Camera1 = KeyFrame1.Camera;
+    const typeCamera& Camera2 = KeyFrame2.Camera;
 
     const Eigen::Matrix3d K = CM_GetIntrinsics()->K;
 
-    Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Pose);
-    Eigen::Matrix<fp64, 3, 4> Rt2 = CM_GetRt(KeyFrame2.Pose);
+    Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Camera);
+    Eigen::Matrix<fp64, 3, 4> Rt2 = CM_GetRt(KeyFrame2.Camera);
 
     const Eigen::Matrix<fp64, 3, 4> P1 = K * Rt1;
 
@@ -1172,7 +1199,7 @@ fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<
     LocalDepth.reserve((LocalMapPoints.size() + PANTO_LOCAL_MAP_SAMPLE_STRIDE - 1) /
         PANTO_LOCAL_MAP_SAMPLE_STRIDE);
 
-    const typeCameraPose& LocalMapPose = KeyFrame.Pose.Pose;
+    const typeCameraPose& LocalMapPose = KeyFrame.Camera.Pose;
 
     for(std::size_t i{}; i < LocalMapPoints.size(); i += PANTO_LOCAL_MAP_SAMPLE_STRIDE)
     {
@@ -1203,6 +1230,18 @@ fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<
             LocalDepth.end());
 
     return LocalDepth[Middle];
+}
+
+void KEY_IntegrationStep()
+{
+    typeIMUMeasurement Measurement = IMU_GetMeasurement();
+    IMU_IngegrationStep(Measurement);
+}
+
+typeNavigationState KEY_PredictPose(typeKeyFrame& PreviousKeyFrame)
+{
+    typePreIntegrationData PreIntegrationData = IMU_GetLatestPreIntegrationData();
+    return IMU_PredictNavigationState(PreviousKeyFrame.NavigationState, PreIntegrationData);
 }
 
 void KEYPriv_SolveBootStrapData(void)

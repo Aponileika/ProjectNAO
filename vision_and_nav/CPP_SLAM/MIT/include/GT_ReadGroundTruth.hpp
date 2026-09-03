@@ -14,8 +14,7 @@ typedef struct
 
     Eigen::Vector3d GyroBias;        // b_w_RS_S [rad/s]
     Eigen::Vector3d AccelBias;       // b_a_RS_S [m/s^2]
-
-} typeGroundTruth;
+}typeGroundTruth;
 
 typeGroundTruth GT_GetMeasurement(void);
 std::vector<typeGroundTruth> GT_GetAllMeasurements(void);

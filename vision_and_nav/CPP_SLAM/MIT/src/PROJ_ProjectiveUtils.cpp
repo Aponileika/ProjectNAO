@@ -44,6 +44,13 @@ void PROJ_NormalizeToSpherical(Eigen::Vector4d& Vec)
     Vec /= Vec.norm();
 }
 
+Eigen::Vector4d PROJ_GetMetricx(const Eigen::Vector4d& Vec)
+{
+    // Assumes IMU is integrated into the system and 3d points are triangulated
+    // from frames with metric pose.
+    return Vec / Vec.w();
+}
+
 Eigen::Vector4d PROJ_NormalizeToSpherical(const Eigen::Vector4d& Point)
 {
     return Point / Point.norm();

@@ -48,20 +48,20 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
     ceres::Solve(options, &Problem, &summary);
     if(Target == typeTracking)
     {
-        CM_SetRtfromParam(&(NewKeyFrame->Pose));
+        CM_SetRtfromParam(&(NewKeyFrame->Camera));
     }
     else if(Target == typeLocal)
     {
         for(const u64 KeyFrameID : LocalMap.KeyFrameIDs)
         {
-            CM_SetRtfromParam(&Map.KeyFrames[KeyFrameID].Pose);
+            CM_SetRtfromParam(&Map.KeyFrames[KeyFrameID].Camera);
         }
     }
     else
     {
         for(typeKeyFrame& KeyFrame : Map.KeyFrames)
         {
-            CM_SetRtfromParam(&KeyFrame.Pose);
+            CM_SetRtfromParam(&KeyFrame.Camera);
         }
     }
 
@@ -81,18 +81,18 @@ void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
     //Set the first camera constant
     for (typeKeyFrame& KeyFrame : Map.KeyFrames) 
     {
-        typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+        typeCameraPose& Parameters = KeyFrame.Camera.Pose;
 
-        Problem.AddParameterBlock(Parameters.q.coeffs().data(), 4);
-        Problem.SetManifold(Parameters.q.coeffs().data(),
+        Problem.AddParameterBlock(Parameters.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold(Parameters.Quaternion.coeffs().data(),
                              new ceres::EigenQuaternionManifold());
 
-        Problem.AddParameterBlock(Parameters.t.data(), 3);
+        Problem.AddParameterBlock(Parameters.tParametrization.data(), 3);
 
         if (KeyFrame.ID == 0) 
         {
-            Problem.SetParameterBlockConstant(Parameters.q.coeffs().data());
-            Problem.SetParameterBlockConstant(Parameters.t.data());
+            Problem.SetParameterBlockConstant(Parameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant(Parameters.tParametrization.data());
         }
     }
 
@@ -125,12 +125,12 @@ void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
 
                 ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
 
-                typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+                typeCameraPose& Parameters = KeyFrame.Camera.Pose;
 
                 Problem.AddResidualBlock(costfunc,
                                           lossfunc,
-                                          Parameters.q.coeffs().data(),
-                                          Parameters.t.data(),
+                                          Parameters.Quaternion.coeffs().data(),
+                                          Parameters.tParametrization.data(),
                                           Map.MapPoints[MapPointID].Point.data());
             }
         }
@@ -150,18 +150,18 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
     //Set the first camera constant
     for (typeKeyFrame& KeyFrame : Map.KeyFrames) 
     {
-        typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+        typeCameraPose& Parameters = KeyFrame.Camera.Pose;
 
-        Problem.AddParameterBlock(Parameters.q.coeffs().data(), 4);
-        Problem.SetManifold(Parameters.q.coeffs().data(),
+        Problem.AddParameterBlock(Parameters.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold(Parameters.Quaternion.coeffs().data(),
                              new ceres::EigenQuaternionManifold());
 
-        Problem.AddParameterBlock(Parameters.t.data(), 3);
+        Problem.AddParameterBlock(Parameters.tParametrization.data(), 3);
 
         if (KeyFrame.ID == 0) 
         {
-            Problem.SetParameterBlockConstant(Parameters.q.coeffs().data());
-            Problem.SetParameterBlockConstant(Parameters.t.data());
+            Problem.SetParameterBlockConstant(Parameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant(Parameters.tParametrization.data());
         }
     }
 
@@ -194,12 +194,12 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
 
                 ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
 
-                typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+                typeCameraPose& Parameters = KeyFrame.Camera.Pose;
 
                 Problem.AddResidualBlock(costfunc,
                                           lossfunc,
-                                          Parameters.q.coeffs().data(),
-                                          Parameters.t.data(),
+                                          Parameters.Quaternion.coeffs().data(),
+                                          Parameters.tParametrization.data(),
                                           Map.MapPoints[MapPointID].Point.data());
             }
         }
@@ -219,13 +219,13 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, type
     //Set the first camera constant
 
     typeKeyFrame* KeyFrame = NewKeyFrame;
-    typePoseParameters& Parameters = KeyFrame->Pose.Parameters;
+    typeCameraPose& Parameters = KeyFrame->Camera.Pose;
 
-    Problem.AddParameterBlock(Parameters.q.coeffs().data(), 4);
-    Problem.SetManifold(Parameters.q.coeffs().data(),
+    Problem.AddParameterBlock(Parameters.Quaternion.coeffs().data(), 4);
+    Problem.SetManifold(Parameters.Quaternion.coeffs().data(),
                          new ceres::EigenQuaternionManifold());
 
-    Problem.AddParameterBlock(Parameters.t.data(), 3);
+    Problem.AddParameterBlock(Parameters.tParametrization.data(), 3);
 
     u64 NumAssociatedMapPoints = 0;
 
@@ -272,8 +272,8 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, type
             Problem.AddResidualBlock(
                     CostFunc,
                     LossFunc,
-                    Parameters.q.coeffs().data(),
-                    Parameters.t.data(),
+                    Parameters.Quaternion.coeffs().data(),
+                    Parameters.tParametrization.data(),
                     MapPoint.Point.data());
         }
     }
@@ -293,15 +293,15 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
     {
         assert(Map.KeyFrames.contains(KeyFrameID));
 
-        typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
-        Problem.AddParameterBlock( Parameters.q.coeffs().data(), 4);
-        Problem.SetManifold( Parameters.q.coeffs().data(), new ceres::EigenQuaternionManifold());
-        Problem.AddParameterBlock( Parameters.t.data(), 3);
+        typeCameraPose& Parameters = Map.KeyFrames[KeyFrameID].Camera.Pose;
+        Problem.AddParameterBlock( Parameters.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold( Parameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
+        Problem.AddParameterBlock( Parameters.tParametrization.data(), 3);
 
         if(KeyFrameID == 0)
         {
-            Problem.SetParameterBlockConstant( Parameters.q.coeffs().data());
-            Problem.SetParameterBlockConstant( Parameters.t.data());
+            Problem.SetParameterBlockConstant( Parameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant( Parameters.tParametrization.data());
             FixedKeyFrames.insert(KeyFrameID);
         }
     }
@@ -310,13 +310,13 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
     {
         assert(Map.KeyFrames.contains(KeyFrameID));
 
-        typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
+        typeCameraPose& Parameters = Map.KeyFrames[KeyFrameID].Camera.Pose;
 
-        Problem.AddParameterBlock( Parameters.q.coeffs().data(), 4);
-        Problem.SetManifold( Parameters.q.coeffs().data(), new ceres::EigenQuaternionManifold());
-        Problem.AddParameterBlock( Parameters.t.data(), 3);
-        Problem.SetParameterBlockConstant( Parameters.q.coeffs().data());
-        Problem.SetParameterBlockConstant( Parameters.t.data());
+        Problem.AddParameterBlock( Parameters.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold( Parameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
+        Problem.AddParameterBlock( Parameters.tParametrization.data(), 3);
+        Problem.SetParameterBlockConstant( Parameters.Quaternion.coeffs().data());
+        Problem.SetParameterBlockConstant( Parameters.tParametrization.data());
 
         FixedKeyFrames.insert(KeyFrameID);
     }
@@ -330,9 +330,9 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
                 continue;
             }
 
-            typePoseParameters& Parameters = Map.KeyFrames[KeyFrameID].Pose.Parameters;
-            Problem.SetParameterBlockConstant( Parameters.q.coeffs().data());
-            Problem.SetParameterBlockConstant( Parameters.t.data());
+            typeCameraPose& Parameters = Map.KeyFrames[KeyFrameID].Camera.Pose;
+            Problem.SetParameterBlockConstant( Parameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant( Parameters.tParametrization.data());
             FixedKeyFrames.insert(KeyFrameID);
 
             if(FixedKeyFrames.size() == 2)
@@ -383,11 +383,11 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
 
                 ceres::LossFunction* lossfunc = new ceres::HuberLoss( CERES_HUBER_THRESHOLD);
 
-                typePoseParameters& Parameters = KeyFrame.Pose.Parameters;
+                typeCameraPose& Parameters = KeyFrame.Camera.Pose;
 
                 Problem.AddResidualBlock(costfunc, lossfunc,
-                        Parameters.q.coeffs().data(),
-                        Parameters.t.data(),
+                        Parameters.Quaternion.coeffs().data(),
+                        Parameters.tParametrization.data(),
                         Map.MapPoints[MapPointID].Point.data());
             }
         }
@@ -419,15 +419,14 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
 
                 ceres::LossFunction* lossfunc = new ceres::HuberLoss( CERES_HUBER_THRESHOLD);
 
-                typePoseParameters& Parameters =
-                    KeyFrame.Pose.Parameters;
+                typeCameraPose& Parameters =
+                    KeyFrame.Camera.Pose;
 
                 Problem.AddResidualBlock(costfunc, lossfunc,
-                        Parameters.q.coeffs().data(),
-                        Parameters.t.data(),
+                        Parameters.Quaternion.coeffs().data(),
+                        Parameters.tParametrization.data(),
                         Map.MapPoints[MapPointID].Point.data());
             }
         }
     }
 }
-

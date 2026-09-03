@@ -1,4 +1,5 @@
 #include "../include/SL_SLAM.hpp"
+#include <cmath>
 
 typeSLAM PantoSLAM;
 
@@ -6,6 +7,59 @@ typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameDat
         const typeLocalMapInfo& LocalMapInfo);
 void SLPriv_ResetMapAndTracking(void);
 void SLPriv_InitializeMap(void);
+static std::vector<typeGroundTruth> GroundTruth;
+
+static bool SLPriv_GetNextGroundTruthFrame(
+        typePantoFrame& Frame,
+        typeGroundTruth& Measurement,
+        std::size_t& GroundTruthIndex,
+        const fp64 MinimumTimeStamp)
+{
+    constexpr fp64 TimeStampTolerance = 1e-6;
+
+    while(GroundTruthIndex < GroundTruth.size() &&
+          GroundTruth[GroundTruthIndex].TimeStamp < MinimumTimeStamp)
+    {
+        GroundTruthIndex++;
+    }
+
+    while(GroundTruthIndex < GroundTruth.size())
+    {
+        Frame = FR_GetFrame();
+
+        if(Frame.TimeStamp < 0.0)
+        {
+            return false;
+        }
+
+        if(Frame.TimeStamp < MinimumTimeStamp)
+        {
+            continue;
+        }
+
+        while(GroundTruthIndex < GroundTruth.size() &&
+              GroundTruth[GroundTruthIndex].TimeStamp <
+                  Frame.TimeStamp - TimeStampTolerance)
+        {
+            GroundTruthIndex++;
+        }
+
+        if(GroundTruthIndex == GroundTruth.size())
+        {
+            return false;
+        }
+
+        if(std::abs(GroundTruth[GroundTruthIndex].TimeStamp -
+                    Frame.TimeStamp) <= TimeStampTolerance)
+        {
+            Measurement = GroundTruth[GroundTruthIndex];
+            GroundTruthIndex++;
+            return true;
+        }
+    }
+
+    return false;
+}
 
 void SL_InitSlam()
 {
@@ -35,57 +89,114 @@ void SLPriv_ResetMapAndTracking(void)
 
 void SLPriv_InitializeMap(void)
 {
-    INIT_CreateInitData();
-
-    typeInitReconstruction Reconstruction{};
-
-    while(!Reconstruction.Valid)
+    if(PANTO_GROUNDTRUTH_INIT)
     {
-        Reconstruction = INIT_ProcessNewFrame();
-    }
+        GroundTruth = GT_GetAllMeasurements();
 
-    PantoSLAM.GlobalMap = INIT_ConstructInitialMap(Reconstruction);
-    PantoSLAM.RecentMapPointIndexes.reserve(PantoSLAM.GlobalMap.MapPoints.size());
-    for(const typePantoMapPoint& MapPoint : PantoSLAM.GlobalMap.MapPoints)
+        if(GroundTruth.empty())
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "[SLPriv_InitializeMap] No ground-truth measurements available\n");
+            return;
+        }
+
+        std::size_t GroundTruthIndex = 0;
+        typePantoFrame FirstFrame{};
+        typeGroundTruth FirstGT{};
+
+        if(!SLPriv_GetNextGroundTruthFrame(
+                    FirstFrame,
+                    FirstGT,
+                    GroundTruthIndex,
+                    GroundTruth.front().TimeStamp))
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "[SLPriv_InitializeMap] Could not find a first frame with a matching ground-truth timestamp\n");
+            return;
+        }
+
+        constexpr fp64 InitializationInterval = 5.0;
+        typePantoFrame SecondFrame{};
+        typeGroundTruth SecondGT{};
+
+        if(!SLPriv_GetNextGroundTruthFrame(
+                    SecondFrame,
+                    SecondGT,
+                    GroundTruthIndex,
+                    FirstFrame.TimeStamp + InitializationInterval))
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "[SLPriv_InitializeMap] Could not find a second synchronized frame at least %.3f s after the first\n",
+                    InitializationInterval);
+            return;
+        }
+
+        LG_Log(LogSeverity::DATA,
+                "[SLAMGTInitialization] First timestamp = %.9f; second timestamp = %.9f; interval = %.6f s\n",
+                FirstFrame.TimeStamp,
+                SecondFrame.TimeStamp,
+                SecondFrame.TimeStamp - FirstFrame.TimeStamp);
+
+        typeNavigationState First(FirstGT.Orientation, FirstGT.Velocity,
+                FirstGT.Position, FirstGT.GyroBias, FirstGT.AccelBias);
+
+        typeNavigationState Second(SecondGT.Orientation, SecondGT.Velocity,
+                SecondGT.Position, SecondGT.GyroBias, SecondGT.AccelBias);
+    }
+    else
     {
-        PantoSLAM.RecentMapPointIndexes.push_back(MapPoint.ID);
-    }
+        INIT_CreateInitData();
 
-    INIT_DestroyInitData();
+        typeInitReconstruction Reconstruction{};
 
-    OP_BundleAdjust(PantoSLAM.GlobalMap, typePoseAndPoints, {}, nullptr);
+        while(!Reconstruction.Valid)
+        {
+            Reconstruction = INIT_ProcessNewFrame();
+        }
 
-    typeKeyFrame ThirdKeyFrame = KEY_GetThirdKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints);
+        PantoSLAM.GlobalMap = INIT_ConstructInitialMap(Reconstruction);
+        PantoSLAM.RecentMapPointIndexes.reserve(PantoSLAM.GlobalMap.MapPoints.size());
+        for(const typePantoMapPoint& MapPoint : PantoSLAM.GlobalMap.MapPoints)
+        {
+            PantoSLAM.RecentMapPointIndexes.push_back(MapPoint.ID);
+        }
 
-    MAP_AppendKeyFrame(PantoSLAM.GlobalMap, ThirdKeyFrame);
+        INIT_DestroyInitData();
 
-    for(const typeKeyFrame& KeyFrame : PantoSLAM.GlobalMap.KeyFrames)
-    {
-        GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap.MapPoints, KeyFrame.ID);
-        PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Pose));
-    }
+        OP_BundleAdjust(PantoSLAM.GlobalMap, typePoseAndPoints, {}, nullptr);
+
+        typeKeyFrame ThirdKeyFrame = KEY_GetThirdKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints);
+
+        MAP_AppendKeyFrame(PantoSLAM.GlobalMap, ThirdKeyFrame);
+
+        for(const typeKeyFrame& KeyFrame : PantoSLAM.GlobalMap.KeyFrames)
+        {
+            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap.MapPoints, KeyFrame.ID);
+            PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Camera));
+        }
 
 #if defined(DEBUG)
-    MAP_LogGlobalMap(PantoSLAM.GlobalMap);
-    MAP_LogGraphConsistency(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
-    GRAPH_Log(PantoSLAM.CovisibilityGraph);
+        MAP_LogGlobalMap(PantoSLAM.GlobalMap);
+        MAP_LogGraphConsistency(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
+        GRAPH_Log(PantoSLAM.CovisibilityGraph);
 #endif
 
-    LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error before tracking\n");
-    MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
-    OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {}, &PantoSLAM.GlobalMap.KeyFrames.back());
-    LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error after tracking\n");
-    MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
-    OP_BundleAdjust(PantoSLAM.GlobalMap, typePoseAndPoints, {}, nullptr);
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error before tracking\n");
+        MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
+        OP_BundleAdjust(PantoSLAM.GlobalMap, typeTracking, {}, &PantoSLAM.GlobalMap.KeyFrames.back());
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error after tracking\n");
+        MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
+        OP_BundleAdjust(PantoSLAM.GlobalMap, typePoseAndPoints, {}, nullptr);
 
 #if !defined(DEBUG)
-    VIZ_WriteColmap(PantoSLAM.GlobalMap, PantoSLAM.TrackingTrajectory);
+        VIZ_WriteColmap(PantoSLAM.GlobalMap, PantoSLAM.TrackingTrajectory);
 #endif
 
-    PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
-    PantoSLAM.PreviousFrameData.PreviousPreviousFramePose = PantoSLAM.GlobalMap.KeyFrames[1].Pose;
-    PantoSLAM.PreviousFrameData.PreviousFramePose = PantoSLAM.GlobalMap.KeyFrames.back().Pose;
-    PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFramePose.Pose, PantoSLAM.PreviousFrameData.PreviousPreviousFramePose.Pose);
+        PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
+        PantoSLAM.PreviousFrameData.PreviousPreviousFramePose = PantoSLAM.GlobalMap.KeyFrames[1].Camera;
+        PantoSLAM.PreviousFrameData.PreviousFramePose = PantoSLAM.GlobalMap.KeyFrames.back().Camera;
+        PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFramePose.Pose, PantoSLAM.PreviousFrameData.PreviousPreviousFramePose.Pose);
+    }
 }
 
 void SL_PantoSLAM(i32 num_loops)
@@ -142,7 +253,7 @@ void SL_PantoSLAM(i32 num_loops)
 
         typeKeyFrame CurrentFrame = KEY_GetKeyFrame(PantoSLAM.NextFramePosePrediction, PantoSLAM.PreviousFrameData.PreviousFrameMapPoints, PantoSLAM.GlobalMap.MapPoints);
 
-        if(CurrentFrame.Pose.TimeStamp < 0.0f)
+        if(CurrentFrame.Camera.TimeStamp < 0.0f)
         {
             // Invalid timestamp means failure to read image
             break;
@@ -189,9 +300,9 @@ void SL_PantoSLAM(i32 num_loops)
         const PantoClock::time_point FirstTrackingStartTime = PantoClock::now();
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Running first tracking optimization\n");
         const Eigen::Matrix3d RBefore =
-            CurrentFrame.Pose.Pose.R;
+            CurrentFrame.Camera.Pose.R;
         const Eigen::Vector3d tBefore =
-            CurrentFrame.Pose.Pose.t;
+            CurrentFrame.Camera.Pose.t;
 
         OP_BundleAdjust( PantoSLAM.GlobalMap, typeTracking, {}, &CurrentFrame);
 
@@ -199,9 +310,9 @@ void SL_PantoSLAM(i32 num_loops)
          * Compare optimized pose against predicted/input pose.
          */
         const Eigen::Matrix3d& RAfter =
-            CurrentFrame.Pose.Pose.R;
+            CurrentFrame.Camera.Pose.R;
         const Eigen::Vector3d& tAfter =
-            CurrentFrame.Pose.Pose.t;
+            CurrentFrame.Camera.Pose.t;
         /*
          * Relative rotation:
          *
@@ -281,10 +392,10 @@ void SL_PantoSLAM(i32 num_loops)
         const typePreviousFrameData PreviousFrameDataCopy = PantoSLAM.PreviousFrameData;
         PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, CurrentFrame);
         PantoSLAM.PreviousFrameData.PreviousPreviousFramePose = PantoSLAM.PreviousFrameData.PreviousFramePose;
-        PantoSLAM.PreviousFrameData.PreviousFramePose = CurrentFrame.Pose;
+        PantoSLAM.PreviousFrameData.PreviousFramePose = CurrentFrame.Camera;
         PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFramePose.Pose, PantoSLAM.PreviousFrameData.PreviousPreviousFramePose.Pose);
 
-        PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(CurrentFrame.Pose));
+        PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(CurrentFrame.Camera));
 
         const PantoClock::time_point KeyFrameEvaluationStartTime = PantoClock::now();
         typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, CurrentFrame, LocalMapInfo);
@@ -488,14 +599,14 @@ typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameDat
     const typeCamera PreviousFramePose = PreviousFrameDataCopy.PreviousFramePose;
 
     const fp64 Delta01 = PreviousFramePose.TimeStamp - PreviousPreviousFramePose.TimeStamp;
-    const fp64 Delta12 = NewKeyFrame.Pose.TimeStamp - PreviousFramePose.TimeStamp;
+    const fp64 Delta12 = NewKeyFrame.Camera.TimeStamp - PreviousFramePose.TimeStamp;
 
     LG_Log(
         LogSeverity::DBG,
         "[SLPriv_GetKeyFrameInformation] TimeStamps: PreviousPrevious = %f, Previous = %f, Current = %f\n",
         PreviousPreviousFramePose.TimeStamp,
         PreviousFramePose.TimeStamp,
-        NewKeyFrame.Pose.TimeStamp);
+        NewKeyFrame.Camera.TimeStamp);
 
     LG_Log(
         LogSeverity::DBG,
@@ -507,7 +618,7 @@ typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameDat
 
     const Eigen::Vector3d C0 = CM_GetCameraCenter(PreviousPreviousFramePose);
     const Eigen::Vector3d C1 = CM_GetCameraCenter(PreviousFramePose);
-    const Eigen::Vector3d C2 = CM_GetCameraCenter(NewKeyFrame.Pose);
+    const Eigen::Vector3d C2 = CM_GetCameraCenter(NewKeyFrame.Camera);
 
     LG_Log(
         LogSeverity::DBG,

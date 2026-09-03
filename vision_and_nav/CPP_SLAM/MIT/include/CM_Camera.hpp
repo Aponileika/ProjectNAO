@@ -25,24 +25,76 @@ typedef struct
     Eigen::Matrix4d T_BS;
 }typeCameraIntrinsics;
 
-typedef struct 
-{
-    Eigen::Quaterniond q;
-    Eigen::Vector3d t;
-}typePoseParameters;
 
-typedef struct
+class typePose
 {
-    Eigen::Matrix3d R;
-    Eigen::Vector3d t;
-}typeCameraPose;
+    public:
+        Eigen::Matrix3d R;
+        Eigen::Vector3d t;
+};
+
+/*We use the reparametrization based on
+ * R^t[I -t], since the parametrization
+ * [R t] will lead to drastic changes in camera
+ * center when t is large and R is small,
+ * for example when going straight forward
+ * see TSBB33 lecture 5.
+ */
+class typeCameraPose : public typePose
+{
+    public:
+        Eigen::Quaterniond Quaternion;
+        Eigen::Vector3d tParametrization;
+
+        typeCameraPose() = default;
+
+        typeCameraPose(const Eigen::Matrix3d& RNew, const Eigen::Vector3d& tNew)
+            : typePose{RNew, tNew},
+              Quaternion(RNew.transpose()),
+              tParametrization(-RNew.transpose() * tNew)
+        {
+            Quaternion.normalize();
+        };
+
+        void SetPose(const Eigen::Matrix3d& RNew, const Eigen::Vector3d& tNew)
+        {
+            R = RNew;
+            t = tNew;
+            Eigen::Quaterniond q(R.transpose());
+            q.normalize();
+            Quaternion = q;
+
+            tParametrization = -R.transpose() * t;
+        }
+
+        void UpdateParametrization(void)
+        {
+            Eigen::Quaterniond q(R.transpose());
+            q.normalize();
+            Quaternion = q;
+
+            tParametrization = -R.transpose() * t;
+        }
+
+        void UpdateRt(void)
+        {
+            const Eigen::Matrix3d RTransposed = Quaternion.toRotationMatrix().transpose();
+            const Eigen::Vector3d TW2C = -RTransposed * tParametrization;
+            R = RTransposed;
+            t = TW2C;
+        }
+
+        const Eigen::Vector3d GetCameraCenter(void) const
+        {
+            return tParametrization;
+        }
+};
 
 typedef struct 
 {
     //reference to global params
     typeCameraIntrinsics* Intrinsics;
     typeCameraPose Pose;
-    typePoseParameters Parameters;
     fp64 TimeStamp;
 }typeCamera;
 
@@ -54,6 +106,8 @@ void CM_SetParametrization(typeCamera* cam);
 void CM_SetRtfromParam(typeCamera* cam);
 Eigen::Vector3d CM_GetCameraCenter(const typeCamera& Camera);
 typeCamera CM_PredictPose(const typeCameraPose& TPreviousFrame, const typeCameraPose& TPreviousPreviousFrame);
+typePose CM_GetBodyToSensor(const typeCamera& Camera);
+typePose CM_GetBodyToSensor(const typeCameraIntrinsics* Intrinsics);
 
 inline Eigen::Matrix<fp64, 3, 4>CM_GetRt(const typeCamera& CameraPose)
 {

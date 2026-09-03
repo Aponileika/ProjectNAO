@@ -1,5 +1,7 @@
 #include "../include/FR_Frames.hpp"
 #include <chrono>
+#include <fstream>
+#include <sstream>
 
 namespace 
 {
@@ -16,9 +18,9 @@ namespace
 {
     struct dataset_read 
     {
-        std::string path;
-        i32 CurrentFrameIndex;
-        i32 frame_idx;
+        std::string ImagePath;
+        std::ifstream TimeStampFile;
+        u64 OutputFrameIndex;
     };
     struct dataset_read reader;
 }
@@ -35,12 +37,36 @@ int FR_InitFrameGetter()
 {
     if(PANTO_USE_DATASET == true)
     {
-        reader.path = std::string(PANTO_DATASET_BASE_PATH) +
-        std::string(panto_dataset_path) + "/" +
-        std::string(panto_sequence_path) + "/";
-        reader.CurrentFrameIndex = 1;
-        reader.frame_idx = 0;
-        LG_Log(LogSeverity::DBG, "[FR_InitFrameGetter] Dataset path: %s\n", reader.path.c_str());
+        const std::string DatasetPath =
+            std::string(PANTO_DATASET_BASE_PATH) +
+            std::string(panto_dataset_path);
+
+        reader.ImagePath = DatasetPath + "/" +
+            std::string(panto_sequence_path);
+        reader.OutputFrameIndex = 0;
+
+        const std::string TimeStampPath =
+            DatasetPath + "/cam0/data.csv";
+
+        if(reader.TimeStampFile.is_open())
+        {
+            reader.TimeStampFile.close();
+        }
+
+        reader.TimeStampFile.open(TimeStampPath);
+
+        if(!reader.TimeStampFile.is_open())
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "[FR_InitFrameGetter] Failed to open timestamp file: %s\n",
+                    TimeStampPath.c_str());
+            return 1;
+        }
+
+        LG_Log(LogSeverity::DBG,
+                "[FR_InitFrameGetter] Dataset images: %s, timestamps: %s\n",
+                reader.ImagePath.c_str(),
+                TimeStampPath.c_str());
     }
     else
     {
@@ -104,28 +130,91 @@ cv::Mat __FR_GetFrameWebCam(void)
 
 typePantoFrame __FR_GetFrameDataSet()
 {
-    std::string FramePath = reader.path + "frame" + std::to_string(reader.CurrentFrameIndex) + ".png";
+    if(!reader.TimeStampFile.is_open())
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[__FR_GetFrameDataSet] Frame getter is not initialized\n");
+        return
+        {
+            .Frame = cv::Mat{},
+            .TimeStamp = -1.0,
+            .Path = ""
+        };
+    }
+
+    std::string Line;
+    std::string FramePath;
+    fp64 TimeStamp = -1.0;
+
+    while(std::getline(reader.TimeStampFile, Line))
+    {
+        if(Line.empty() || Line[0] == '#')
+        {
+            continue;
+        }
+
+        if(!Line.empty() && Line.back() == '\r')
+        {
+            Line.pop_back();
+        }
+
+        std::stringstream Stream(Line);
+        std::string TimeStampToken;
+        std::string FileName;
+
+        if(!std::getline(Stream, TimeStampToken, ',') ||
+           !std::getline(Stream, FileName))
+        {
+            continue;
+        }
+
+        TimeStamp =
+            static_cast<fp64>(std::stoull(TimeStampToken)) * 1e-9;
+        FramePath = reader.ImagePath + "/" + FileName;
+
+        break;
+    }
+
+    if(TimeStamp < 0.0 || FramePath.empty())
+    {
+        LG_Log(LogSeverity::DBG,
+                "[__FR_GetFrameDataSet] Reached the end of the timestamp file\n");
+        return
+        {
+            .Frame = cv::Mat{},
+            .TimeStamp = -1.0,
+            .Path = ""
+        };
+    }
+
     LG_Log(LogSeverity::DBG, "[__FR_GetFrameDataSet] Getting frame %s\n", FramePath.c_str());
     cv::Mat Frame = cv::imread(FramePath, cv::IMREAD_COLOR);
-    const PantoClock::time_point CurrentTime = PantoClock::now();
-    const fp64 TimeStamp = std::chrono::duration<fp64>(CurrentTime - StartTime).count();
+
     if(Frame.empty())
     {
-        LG_Log(LogSeverity::DBG, "[__FR_GetFrameDataSet] cv::imread returned empty frame\n");
+        LG_Log(LogSeverity::DBG,
+                "[__FR_GetFrameDataSet] cv::imread returned empty frame for %s\n",
+                FramePath.c_str());
         return 
         {
             .Frame = cv::Mat{},
-            .TimeStamp = -1.0f,
+            .TimeStamp = -1.0,
             .Path = "" 
         };
     }
 
-    std::string WritePath= "./colmap/images/frame" + std::to_string(reader.frame_idx) + ".png";
+    const std::string WritePath =
+        "./colmap/images/frame" +
+        std::to_string(reader.OutputFrameIndex) +
+        ".png";
+
     cv::imwrite(WritePath, Frame);
+
     cv::Mat Gray;
     cv::cvtColor(Frame, Gray, cv::COLOR_BGR2GRAY);
-    reader.CurrentFrameIndex++;
-    reader.frame_idx++;
+
+    reader.OutputFrameIndex++;
+
     return 
     {
         .Frame = Gray,

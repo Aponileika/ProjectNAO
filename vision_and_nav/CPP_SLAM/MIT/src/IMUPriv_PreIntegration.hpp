@@ -2,16 +2,9 @@
 #define IMUPRIV_PREINTEGRATION_HPP
 #include "IMU_PreIntegration.hpp"
 
-class typePreIntegration
+class typePreIntegration : public typePreIntegrationData
 {
     public:
-        Eigen::Matrix3d DeltaR;
-        Eigen::Vector3d DeltaVelocity;
-        Eigen::Vector3d DeltaPosition;
-        fp64 DeltaT;
-
-        Eigen::Vector3d GyroBias;
-        Eigen::Vector3d AccelBias;
         typeNavigationState InitialNavigationState;
 
         Eigen::Matrix3d JRg;

@@ -1,5 +1,6 @@
 #ifndef __MAP_MAPPING_HPP_
 #define __MAP_MAPPING_HPP_
+#include "IMU_PreIntegration.hpp"
 #include "PT_Types.hpp"
 #include <KEY_KeyFrame.hpp>
 #include <unordered_set>
@@ -7,6 +8,7 @@
 #include "Config.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 #include "GRAPH_PantoGraph.hpp"
+#include "FR_Frames.hpp"
 
 typedef struct
 {
@@ -34,6 +36,8 @@ typedef struct
     fp64 MedianDepth;
 }typeLocalMapInfo;
 
+typeGlobalMap MAP_InitializeFromGT(const typeNavigationState& First, const typeNavigationState& Second,
+        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame);
 u64 MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame);
 typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame);
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const u64 LatestKeyFrameID);
