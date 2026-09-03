@@ -105,7 +105,11 @@ typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typeP
 
     KeyFrame.ID = ID;
     KeyFrame.ImagePath = Frame.Path;
+#if defined(CONFIG_IMU)
     KeyFrame.NavigationState = NavState;
+#else
+    (void)NavState;
+#endif
 
     const Eigen::Matrix3d& Rbw = NavState.Rwb.transpose();
     const Eigen::Vector3d& tbw = -Rbw * NavState.t;
@@ -307,9 +311,27 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
     return KeyFrame;
 }
 
-typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints,
+#if !defined(CONFIG_IMU)
+typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose,
+        std::vector<typePantoMapPoint>& LastFrameMapPoints,
         typePantoVector<typePantoMapPoint>& GlobalMapPoints)
+#else
+typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
+        std::vector<typePantoMapPoint>& LastFrameMapPoints,
+        typePantoVector<typePantoMapPoint>& GlobalMapPoints)
+#endif
 {
+#if defined(CONFIG_IMU)
+    const typePose BodyToCamera = CM_GetBodyToSensor(CM_GetIntrinsics());
+    const Eigen::Matrix3d Rbw = PredictedNavigationState.Rwb.transpose();
+    const Eigen::Vector3d tbw = -Rbw * PredictedNavigationState.Position;
+    const Eigen::Matrix3d CameraR = BodyToCamera.R.transpose() * Rbw;
+    const Eigen::Vector3d Camerat = BodyToCamera.R.transpose() *
+        (tbw - BodyToCamera.t);
+    typeCamera PredictedPose = CM_CreateCam(
+            CameraR, Camerat, PANTO_TIMESTAMP_NOT_SET);
+#endif
+
     const PantoClock::time_point GetKeyFrameStartTime = PantoClock::now();
 
     LG_Log(LogSeverity::DBG, "[KEY_GetKeyFrame] Predicted q = (%f, %f, %f, %f), t = (%f, %f, %f)\n",
@@ -323,8 +345,7 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
 
     const PantoClock::time_point GetFrameStartTime = PantoClock::now();
     typePantoFrame Frame = FR_GetFrame();
-    const fp64 GetFrameTime =
-        std::chrono::duration<fp64>(PantoClock::now() - GetFrameStartTime).count();
+    const fp64 GetFrameTime = std::chrono::duration<fp64>(PantoClock::now() - GetFrameStartTime).count();
 
     KEYPriv_AddTimingSample(GetFrameTiming, GetFrameTime);
 
@@ -332,15 +353,13 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
     {
         PredictedPose.TimeStamp = -1.0f;
 
-        const fp64 GetKeyFrameTotalTime =
-            std::chrono::duration<fp64>(PantoClock::now() - GetKeyFrameStartTime).count();
+        const fp64 GetKeyFrameTotalTime = std::chrono::duration<fp64>(PantoClock::now() - GetKeyFrameStartTime).count();
 
         KEYPriv_AddTimingSample(GetKeyFrameTotalTiming, GetKeyFrameTotalTime);
 
         LG_Log(LogSeverity::DBG,
                 "[KEY_GetKeyFrameTiming] total = %.6f s, FR_GetFrame = %.6f s, frame invalid\n",
-                GetKeyFrameTotalTime,
-                GetFrameTime);
+                GetKeyFrameTotalTime, GetFrameTime);
 
         return
         {
@@ -348,6 +367,9 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
             .BowVector = {},
             .FeatureVector = {},
             .Camera = PredictedPose,
+#if defined(CONFIG_IMU)
+            .NavigationState = PredictedNavigationState,
+#endif
             .ID = PANTO_ID_NOT_SET,
             .ImagePath = "" 
         };
@@ -377,6 +399,9 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
         .BowVector = {},
         .FeatureVector = {},
         .Camera = PredictedPose,
+#if defined(CONFIG_IMU)
+        .NavigationState = PredictedNavigationState,
+#endif
         .ID = PANTO_ID_NOT_SET,
         .ImagePath = Frame.Path
     };
@@ -1259,6 +1284,7 @@ fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<
     return LocalDepth[Middle];
 }
 
+#if defined(CONFIG_IMU)
 void KEY_IntegrationStep()
 {
     typeIMUMeasurement Measurement = IMU_GetMeasurement();
@@ -1270,6 +1296,32 @@ typeNavigationState KEY_PredictPose(typeKeyFrame& PreviousKeyFrame)
     typePreIntegrationData PreIntegrationData = IMU_GetLatestPreIntegrationData();
     return IMU_PredictNavigationState(PreviousKeyFrame.NavigationState, PreIntegrationData);
 }
+#endif
+
+#if defined(CONFIG_IMU)
+void KEY_UpdateNavState(typeKeyFrame* KeyFrame)
+{
+    const Eigen::Matrix4d& TBS = KeyFrame->Camera.Intrinsics->T_BS;
+
+    const Eigen::Matrix3d Rbs = TBS.block<3,3>(0,0);
+    const Eigen::Vector3d Tbs = TBS.block<3,1>(0,3);
+
+    const Eigen::Matrix3d& Rsw = KeyFrame->Camera.Pose.R;
+    const Eigen::Vector3d& Tsw = KeyFrame->Camera.Pose.t;
+
+    // T_BW = T_BS * T_SW. The navigation state stores the inverse
+    // convention: body-to-world rotation and the body origin in world.
+    const Eigen::Matrix3d Rbw = Rbs * Rsw;
+    const Eigen::Vector3d Tbw = Rbs * Tsw + Tbs;
+
+    typeNavigationState& NavigationState = KeyFrame->NavigationState;
+    NavigationState.Rwb = Rbw.transpose();
+    NavigationState.Position = -NavigationState.Rwb * Tbw;
+
+    NavigationState.q = Eigen::Quaterniond(NavigationState.Rwb).normalized();
+    NavigationState.t = NavigationState.Position;
+}
+#endif
 
 void KEYPriv_SolveBootStrapData(void)
 {

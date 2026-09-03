@@ -5,9 +5,9 @@ This is the todo list for IMU integration:
 -   (Not done) camera and IMU timestamp handling
 -   (DONE) IMU coordinate/extrinsic handling
 -   (DONE) IMU preintegration
--   Keyframe should contain Navstate, not just pose.
--   Optional GT initialization, so choose two initial keyframes that are read from GT.
--   IMU residual factor for Ceres
+-   (DONE) Keyframe should contain Navstate, not just pose.
+-   (DONE) Optional GT initialization, so choose two initial keyframes that are read from GT.
+-   IMU residual factor for Ceres, in progress, currently making residual.
 -   IMU pose prediction
 
 note that since IMU and camera initilization differ greatly depending on

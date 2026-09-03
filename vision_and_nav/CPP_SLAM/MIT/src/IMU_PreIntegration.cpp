@@ -10,6 +10,36 @@ void IMU_NewNavigationStateArrival(const typeNavigationState& NavigationState)
     IntegrationState.Reset(NavigationState);
 }
 
+bool IMU_InitializeGravity(const typeNavigationState& NavigationState,
+        const typeIMUMeasurement& Measurement,
+        const Eigen::Vector3d& WorldAcceleration)
+{
+    constexpr fp64 GravityMagnitude = 9.81;
+
+    const Eigen::Vector3d SpecificForce =
+        Measurement.Acceleration - NavigationState.AccelorometerBias;
+
+    // Accelerometers measure specific force:
+    //     f_B = R_BW * (a_W - g_W)
+    // Therefore, with the GT body-to-world rotation and GT acceleration:
+    //     g_W = a_W - R_WB * f_B
+    const Eigen::Vector3d GravityEstimate =
+        WorldAcceleration - NavigationState.Rwb * SpecificForce;
+
+    if(!GravityEstimate.allFinite() || GravityEstimate.norm() < 1e-6)
+    {
+        return false;
+    }
+
+    g = GravityMagnitude * GravityEstimate.normalized();
+
+    LG_Log(LogSeverity::DATA,
+            "[IMUGravityInitialization] g_W = (%.6f, %.6f, %.6f), |g| = %.6f\n",
+            g.x(), g.y(), g.z(), g.norm());
+
+    return true;
+}
+
 void IMU_IngegrationStep(const typeIMUMeasurement& Current)
 {
     static typeIMUMeasurement Previous
@@ -76,4 +106,3 @@ typeNavigationState IMU_PredictNavigationState(const typeNavigationState& Previo
 
     return Prediction;
 }
-

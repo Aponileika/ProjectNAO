@@ -6,6 +6,7 @@
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
 #include "Config.hpp"
+#include "IMU_PreIntegration.hpp"
 #include "MAP_Mapping.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 
@@ -33,10 +34,8 @@ struct typeOPCameraIntrinsics
 
 struct OP_ReprojectionError
 {
-    OP_ReprojectionError(fp64 ObservedX, fp64 ObservedY, 
-            const struct typeOPCameraIntrinsics* Intrinsics)
-        : ObservedX_(ObservedX), ObservedY_(ObservedY),
-            Intrinsics_(Intrinsics){}
+    OP_ReprojectionError(fp64 ObservedX, fp64 ObservedY, const struct typeOPCameraIntrinsics* Intrinsics)
+        : ObservedX_(ObservedX), ObservedY_(ObservedY), Intrinsics_(Intrinsics){}
 
     template <typename T>
     bool operator()(const T* const qp,
@@ -89,6 +88,24 @@ struct OP_ReprojectionError
 
     fp64 ObservedX_, ObservedY_;
     const struct typeOPCameraIntrinsics* Intrinsics_;
+};
+
+struct OP_IMUError
+{
+    typePreIntegrationData PreIntegration;
+    Eigen::Matrix<fp64, 15, 15> SqrtInformation;
+    Eigen::Vector3d Gravity;
+
+    OP_IMUError(typePreIntegrationData PreIntegrationData, Eigen::Matrix<fp64, 15, 15> SqrtInfo, Eigen::Vector3d Grav)
+        : PreIntegration(PreIntegrationData), SqrtInformation(SqrtInfo), Gravity(Grav){}
+
+
+    static ceres::CostFunction* Create(const typePreIntegrationData PreIntegrationData, const Eigen::Matrix<fp64, 15, 15> SqrtInfo, const Eigen::Vector3d Grav)
+    {
+        return new ceres::AutoDiffCostFunction<OP_ReprojectionError, 2, 4, 3, 4>(
+            new OP_ReprojectionError(ObservedX, ObservedY, Intrinsics));
+    }
+
 };
 
 void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame);

@@ -46,9 +46,9 @@ typedef struct
 #if !defined(CONFIG_IMU)
     typeCamera NextFramePosePrediction;
 #else 
-    typeNtypeNavigationState NextFramePosePrediction;
+    typeNavigationState NextFramePosePrediction;
 #endif // CONFIG_IMU 
-       //
+
     typePreviousFrameData PreviousFrameData;
 
     fp64 AccumulatedDistance;

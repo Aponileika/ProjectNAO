@@ -51,8 +51,8 @@
 #if defined(CONFIG_IMU)
 #include "IMU_IMUReader.cpp"
 #include "IMU_PreIntegration.cpp"
-#include "GT_ReadGroundTruth.cpp"
 #endif
+#include "GT_ReadGroundTruth.cpp"
 
 int main(int argc, char* argv[])
 {

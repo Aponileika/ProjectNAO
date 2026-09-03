@@ -21,6 +21,7 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
     ceres::Solver::Options options;
     options.max_num_iterations = CERES_MAX_ITER;
     options.minimizer_progress_to_stdout = false;
+    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
 
     options.num_threads = CERES_NUM_THREADS;
 
@@ -40,7 +41,7 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
             break;
         case OptimizationTypeLocal:
             __OP_BuildProblemLocal(Map, Problem, LocalMap);
-            options.linear_solver_type = ceres::DENSE_SCHUR;
+            options.linear_solver_type = ceres::SPARSE_SCHUR;
             break;
     }
 
@@ -49,12 +50,18 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
     if(Target == OptimizationTypeTracking)
     {
         CM_SetRtfromParam(&(NewKeyFrame->Camera));
+#if defined(CONFIG_IMU)
+        KEY_UpdateNavState(NewKeyFrame);
+#endif
     }
     else if(Target == OptimizationTypeLocal)
     {
         for(const u64 KeyFrameID : LocalMap.KeyFrameIDs)
         {
             CM_SetRtfromParam(&Map.KeyFrames[KeyFrameID].Camera);
+#if defined(CONFIG_IMU)
+            KEY_UpdateNavState(&Map.KeyFrames[KeyFrameID]);
+#endif
         }
     }
     else
@@ -62,6 +69,9 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
         for(typeKeyFrame& KeyFrame : Map.KeyFrames)
         {
             CM_SetRtfromParam(&KeyFrame.Camera);
+#if defined(CONFIG_IMU)
+            KEY_UpdateNavState(&KeyFrame);
+#endif
         }
     }
 

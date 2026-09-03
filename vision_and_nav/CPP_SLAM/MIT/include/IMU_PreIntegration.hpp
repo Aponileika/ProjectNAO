@@ -76,6 +76,9 @@ class typePreIntegrationData
 };
 
 void IMU_NewNavigationStateArrival(const typeNavigationState& NavigationState);
+bool IMU_InitializeGravity(const typeNavigationState& NavigationState,
+        const typeIMUMeasurement& Measurement,
+        const Eigen::Vector3d& WorldAcceleration);
 void IMU_IngegrationStep(const typeIMUMeasurement& Current);
 void IMU_GetPreIntegratedRt(Eigen::Matrix3d& Rwb, Eigen::Vector3d& twb);
 typePreIntegrationData IMU_GetLatestPreIntegrationData(void);
