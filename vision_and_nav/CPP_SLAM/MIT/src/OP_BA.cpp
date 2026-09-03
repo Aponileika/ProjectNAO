@@ -306,6 +306,7 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         }
     }
 
+    u64 countFixed = 0;
     for(const u64 KeyFrameID : LocalMap.FixedKeyFrameIDs)
     {
         assert(Map.KeyFrames.contains(KeyFrameID));
@@ -319,7 +320,10 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         Problem.SetParameterBlockConstant( Parameters.t.data());
 
         FixedKeyFrames.insert(KeyFrameID);
+        countFixed++;
     }
+
+    LG_Log(LogSeverity::DBG, "[__OP_BuildProblemLocal] Has %llu fixed keyframes",  countFixed);
 
     if(FixedKeyFrames.size() < 2)
     {

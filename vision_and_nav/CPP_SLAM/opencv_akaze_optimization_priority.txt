@@ -1,0 +1,1064 @@
+OpenCV AKAZE Optimization Opportunities (from chat gpt)
+========================================
+
+Ordered from HIGHEST expected computational-time gain to LOWEST.
+
+Important:
+- This ordering is about expected END-TO-END AKAZE runtime impact, not how easy each change is.
+- Actual ranking depends on image resolution, number of octaves/sublevels, descriptor type, feature count, CPU, and thread count.
+- For a SLAM/video pipeline, persistent allocation and scale-space optimizations become more valuable because the same AKAZE configuration is used frame after frame.
+- OpenCV's important dense loops already generally iterate row -> column, which is the correct order for cv::Mat's row-major storage. Reversing these loops is unlikely to help and usually hurts cache locality.
+
+
+1. FUSE THE FED DIFFUSION STEP AND Lt UPDATE USING PING-PONG BUFFERS
+===================================================================
+
+Current pattern:
+
+    non_linear_diffusion_step(Lt, Lflow, Lstep, step_size);
+    add(Lt, Lstep, Lt);
+
+This causes two complete image passes for every FED timestep:
+
+    Pass 1:
+        read Lt
+        read conductivity
+        write Lstep
+
+    Pass 2:
+        read Lt
+        read Lstep
+        write Lt
+
+Instead use two Lt buffers:
+
+    LtA -> LtB
+    LtB -> LtA
+    LtA -> LtB
+    ...
+
+Compute directly:
+
+    LtNew[x] =
+        LtOld[x]
+        + 0.5f * step_size *
+          (xpos - xneg + ypos - yneg);
+
+This removes:
+- the full-sized Lstep buffer
+- one complete image read/write pass for EVERY FED timestep
+- the cv::add() operation after every diffusion step
+
+Why high priority:
+The nonlinear diffusion is performed repeatedly at every scale and the stencil has relatively low arithmetic intensity, so memory traffic matters heavily.
+
+Do NOT update Lt in place because neighboring pixels need values from the previous timestep.
+
+Expected gain:
+HIGH.
+
+
+2. REDESIGN KEYPOINT DETECTION FROM DENSE MASKS TO SPARSE CANDIDATE LISTS
+========================================================================
+
+Current OpenCV-style pipeline effectively does:
+
+    Hessian response
+        ->
+    full-size keypoint mask
+        ->
+    full image scan
+        ->
+    neighborhood suppression
+        ->
+    cross-scale full image scan
+        ->
+    subpixel-refinement full image scan
+
+Only a tiny fraction of pixels are actual keypoints, yet multiple later stages inspect every pixel.
+
+Instead:
+
+    Hessian response
+        ->
+    dense local-max detection
+        ->
+    Candidate[] vector
+        ->
+    spatial suppression on candidates
+        ->
+    cross-scale candidate comparison
+        ->
+    subpixel refinement directly on candidates
+
+Example candidate structure:
+
+    struct Candidate
+    {
+        uint16_t x;
+        uint16_t y;
+        float response;
+        uint8_t level;
+    };
+
+Benefits:
+- removes full-sized CV_8U masks for each level
+- removes repeated full-image mask scans
+- avoids repeatedly processing millions of zero/non-keypoint entries
+- makes later processing proportional to number of candidate extrema instead of image size
+- reduces memset/Mat::zeros cost
+- improves cache locality
+
+For a 2 MP image with perhaps ~500-2000 actual extrema, this can reduce large amounts of unnecessary work.
+
+Expected gain:
+HIGH.
+
+
+3. SIMD/VECTORIZE THE INITIAL 3x3 HESSIAN LOCAL-MAXIMUM TEST
+============================================================
+
+The local extrema test compares every Hessian response against:
+
+    threshold
+    left
+    right
+    upper-left
+    upper
+    upper-right
+    lower-left
+    lower
+    lower-right
+
+This maps very well to SIMD.
+
+Instead of branch-heavy scalar code:
+
+    if (value <= threshold)
+        continue;
+
+    if (value <= left || ...)
+        continue;
+
+process e.g. 4 or 8 pixels at once:
+
+    mask =
+        center > threshold
+        AND center > left
+        AND center > right
+        AND center > upper-left
+        ...
+        AND center > lower-right;
+
+Then enumerate only the set bits and append candidates.
+
+Especially suitable for ARM NEON on Apple Silicon.
+
+This combines particularly well with item 2:
+SIMD dense scan -> sparse Candidate[].
+
+Expected gain:
+HIGH.
+
+
+4. MAKE AKAZE INTERNAL STATE AND WORKING BUFFERS PERSISTENT ACROSS FRAMES
+=========================================================================
+
+OpenCV constructs an AKAZEFeatures implementation during detectAndCompute(), which means internal setup and memory-management work can happen repeatedly.
+
+For SLAM/video, create a persistent object:
+
+    class PantoAKAZE
+    {
+        PyramidBuffers pyramid;
+        ScratchBuffers scratch;
+        FEDSchedules fed;
+        DerivativeKernels kernels;
+        DescriptorPattern pattern;
+    };
+
+Allocate once and reuse:
+
+    Lt
+    Lsmooth
+    Lflow
+    ping-pong diffusion buffer
+    temporary derivative buffers
+    candidate buffers
+    descriptor scratch
+    FED timestep vectors
+    descriptor sampling tables
+
+Benefits:
+- fewer malloc/free operations
+- fewer cv::Mat create/reallocation operations
+- fewer descriptor-pattern/setup calculations
+- predictable memory layout
+- better cache reuse
+- particularly useful over thousands of SLAM frames
+
+Expected gain:
+HIGH to MEDIUM-HIGH, depending on current allocation cost and frame size.
+
+
+5. REDUCE THE NUMBER OF SCALE-SPACE LEVELS IF SLAM DOES NOT NEED THEM
+====================================================================
+
+This is algorithm/configuration-level rather than a micro-optimization.
+
+Removing one unnecessary AKAZE level avoids all work for that level:
+
+    Gaussian smoothing
+    Scharr derivatives
+    conductivity calculation
+    FED diffusion iterations
+    Hessian derivatives
+    determinant
+    extrema detection
+    descriptor-related storage
+
+Benchmark configurations such as:
+
+    4 octaves x 4 sublevels
+    3 octaves x 4 sublevels
+    4 octaves x 3 sublevels
+
+and measure:
+
+    runtime
+    number of retained matches
+    spatial feature distribution
+    tracking survival
+    pose/reprojection error
+
+A whole scale-space level saved is usually more valuable than a 10-20% micro-optimization in one kernel.
+
+Expected gain:
+POTENTIALLY VERY HIGH, but changes detector configuration/behavior.
+
+
+6. FUSE Scharr X/Y GRADIENT CALCULATION WITH CONDUCTIVITY CALCULATION
+=====================================================================
+
+Current scale-space construction roughly does:
+
+    GaussianBlur(Lt -> Lsmooth)
+    Scharr(Lsmooth -> Lx)
+    Scharr(Lsmooth -> Ly)
+    compute_diffusivity(Lx, Ly -> Lflow)
+
+This materializes:
+
+    Lsmooth
+    Lx
+    Ly
+    Lflow
+
+For diffusion construction, Lx and Ly are only temporary inputs to:
+
+    Lflow = f(Lx^2 + Ly^2)
+
+A custom fused kernel could load each 3x3 neighborhood once and compute:
+
+    gx
+    gy
+    g2 = gx*gx + gy*gy
+    conductivity = 1 / (1 + g2/k^2)
+
+without storing temporary Lx and Ly matrices.
+
+Potential benefits:
+- fewer full-image writes
+- fewer later full-image reads
+- lower memory footprint
+- better cache behavior
+- same input neighborhood used for both derivatives
+
+Risk:
+OpenCV's Scharr/sepFilter implementations are already highly optimized. A custom fused implementation must be very well vectorized to win.
+
+Expected gain:
+MEDIUM-HIGH to HIGH if implemented well.
+
+
+7. REDUCE HESSIAN TEMPORARIES / TILE THE SECOND-DERIVATIVE COMPUTATION
+======================================================================
+
+Current Hessian computation produces roughly:
+
+    Lx
+    Ly
+    Lxx
+    Lxy
+    Lyy
+    Ldet
+
+The determinant is:
+
+    Ldet = Lxx * Lyy - Lxy * Lxy
+
+Lxx, Lxy, and Lyy are temporary and are only needed to form Ldet.
+
+A more aggressive implementation could operate in tiles/rows:
+
+    compute temporary Lxx tile
+    compute temporary Lxy tile
+    compute temporary Lyy tile
+    immediately calculate Ldet tile
+    discard derivative temporaries
+
+Potential benefits:
+- much smaller working set
+- less DRAM traffic
+- improved cache residency
+- fewer full-sized cv::Mat buffers
+
+This is more invasive because OpenCV's sepFilter2D naturally materializes its outputs.
+
+Expected gain:
+MEDIUM-HIGH.
+
+
+8. SPECIALIZE ROTATED MLDB DESCRIPTOR EXTRACTION
+=================================================
+
+Rotated MLDB contains a very expensive inner loop mixing:
+
+    coordinate generation
+    scale multiplication
+    sin/cos rotation
+    rounding
+    boundary tests
+    cv::Mat access
+    gradient rotation
+    accumulation
+    descriptor-channel branches
+
+This is difficult for the compiler to vectorize.
+
+Refactor heavily.
+
+Precompute:
+
+    scale*cos(angle)
+    scale*sin(angle)
+
+and use incremental coordinates rather than repeatedly evaluating:
+
+    sample_y = yf + l*scale*cos + k*scale*sin;
+    sample_x = xf - l*scale*sin + k*scale*cos;
+
+Instead:
+
+    start_x/start_y
+
+    for each sample:
+        use(x, y)
+        x += dx
+        y += dy
+
+This replaces repeated multiply/add coordinate calculations with mostly additions.
+
+Also specialize descriptor channel count at compile time:
+
+    template<int Channels>
+    MLDBFill(...)
+
+rather than:
+
+    if (chan > 1)
+    if (chan == 2)
+
+inside the sample loop.
+
+Expected gain:
+MEDIUM-HIGH when descriptor extraction is a substantial fraction of runtime.
+
+
+9. REPLACE cv::Mat::at() IN ORIENTATION/DESCRIPTOR HOT LOOPS WITH RAW POINTER/OFFSET ACCESS
+===========================================================================================
+
+Dense OpenCV kernels already generally use ptr<float>().
+
+Descriptor/orientation code contains many scattered accesses such as:
+
+    Lx.at<float>(y, x)
+    Ly.at<float>(y, x)
+    Lt.at<float>(y, x)
+
+For known internal matrices and already-validated coordinates, use:
+
+    const float* row = mat.ptr<float>(y);
+    value = row[x];
+
+Better still, precompute linear sample offsets:
+
+    offset = dy * mat.step1() + dx;
+
+Then for a keypoint:
+
+    const float* baseX = Lx.ptr<float>(y0) + x0;
+
+    value = baseX[offset];
+
+Benefits:
+- avoids repeated Mat address calculations
+- removes abstraction/checking overhead
+- makes descriptor sampling loops simpler
+- better compiler optimization opportunity
+
+Expected gain:
+MEDIUM.
+
+
+10. ADD AN UNCHECKED FAST DESCRIPTOR PATH FOR INTERNALLY DETECTED KEYPOINTS
+===========================================================================
+
+Descriptor loops repeatedly perform bounds checks:
+
+    if (x < 0 || y < 0 || x >= cols || y >= rows)
+        continue;
+
+OpenCV needs these because its public API supports externally supplied keypoints.
+
+Internally detected AKAZE keypoints are already rejected near borders according to descriptor support radius.
+
+Use:
+
+    if (keypoint safely inside descriptor region)
+        DescriptorUnchecked(...)
+    else
+        DescriptorChecked(...)
+
+The common internal path then has no per-sample bounds branches.
+
+Benefits:
+- fewer branches
+- easier vectorization
+- cleaner inner loops
+
+Expected gain:
+MEDIUM.
+
+
+11. USE INTEGRAL IMAGES FOR UPRIGHT MLDB
+=========================================
+
+For MLDB_UPRIGHT, descriptor regions are axis-aligned rectangles.
+
+MLDB computes sums/averages over 29 cells:
+
+    2x2 grid  -> 4 cells
+    3x3 grid  -> 9 cells
+    4x4 grid  -> 16 cells
+
+Instead of looping over every sample inside each rectangle, build integral images for:
+
+    Lt
+    Lx
+    Ly
+
+Then each rectangular sum takes only four integral-image reads:
+
+    sum =
+        I[y2,x2]
+      - I[y1,x2]
+      - I[y2,x1]
+      + I[y1,x1];
+
+Changes descriptor work from approximately area-dependent work per keypoint to almost constant work per cell.
+
+Potentially enormous if:
+- MLDB_UPRIGHT is used
+- many keypoints are described
+
+Does not directly apply to rotated MLDB.
+
+Expected gain:
+VERY HIGH for upright MLDB specifically, otherwise not applicable.
+
+
+12. REPLACE ORIENTATION SAMPLE SORTING WITH DIRECT ANGULAR-BIN ACCUMULATION
+============================================================================
+
+Current orientation calculation approximately:
+
+    sample ~109 gradient positions
+    calculate angle
+    quantize into angular slices
+    counting-sort/index samples
+    slide angular window
+    repeatedly sum selected gradient vectors
+
+Instead accumulate directly:
+
+    float binX[42] = {};
+    float binY[42] = {};
+
+    for each sample:
+        bin = quantized_angle(gx, gy);
+        binX[bin] += gx;
+        binY[bin] += gy;
+
+Then slide over the 42 angular bins.
+
+Benefits:
+- removes sample sorting/index arrays
+- fewer indirect accesses
+- small fixed working set
+- good L1-cache behavior
+
+Need to verify exact equivalence with OpenCV's orientation semantics.
+
+Expected gain:
+MEDIUM.
+
+
+13. SPLIT ROTATED DESCRIPTOR WORK INTO SIMD-FRIENDLIER STAGES
+==============================================================
+
+The current descriptor inner loop mixes too many operations.
+
+Possible structure:
+
+    Stage A:
+        generate sample integer indices
+
+    Stage B:
+        gather Lt/Lx/Ly
+
+    Stage C:
+        rotate gradients and reduce values
+
+Stage C becomes contiguous arithmetic and should vectorize much more easily.
+
+Caution:
+ARM NEON does not have arbitrary gathers as convenient as some x86 SIMD extensions, so fully separating gather from arithmetic may increase temporary memory traffic.
+
+A good compromise is cell-local processing:
+
+    for each descriptor cell:
+        generate small coordinate/index arrays
+        gather into small stack arrays
+        SIMD transform/reduce
+
+Expected gain:
+MEDIUM.
+
+
+14. REMOVE FULL-IMAGE CLONE AND EXTRA SCALING PASS IN compute_kcontrast()
+=========================================================================
+
+Current approach approximately:
+
+    magnitude(Lx, Ly -> modgs)
+    scan modgs for maximum
+    clone modgs
+    scale every cloned magnitude
+    scan scaled image for histogram
+
+The clone and scaling pass are unnecessary.
+
+Instead:
+
+    scale = nbins / hmax
+
+    for each magnitude:
+        bin = int(magnitude * scale)
+        hist[bin]++
+
+Eliminates:
+- one full image allocation
+- one full image memcpy
+- one full image write pass
+- one full image read pass
+
+Expected gain:
+SMALL-MEDIUM overall because kcontrast is normally computed only once per image, but very easy and low-risk.
+
+
+15. POSSIBLY REMOVE THE modgs MAGNITUDE MATRIX FROM compute_kcontrast()
+======================================================================
+
+Instead of:
+
+    magnitude(Lx, Ly -> modgs)
+
+then reading modgs repeatedly, use two direct derivative passes.
+
+Pass 1:
+
+    g2 = gx*gx + gy*gy
+    hmax2 = max(g2)
+
+Then:
+
+    hmax = sqrt(hmax2)
+
+Pass 2:
+
+    magnitude = sqrt(gx*gx + gy*gy)
+    bin = magnitude * scale
+    hist[bin]++
+
+This trades recomputation for less memory traffic and removes a full float image.
+
+On modern CPUs, especially Apple Silicon, extra arithmetic can be cheaper than storing/reloading large temporary arrays.
+
+Expected gain:
+SMALL-MEDIUM.
+
+
+16. PRECOMPUTE DERIVATIVE KERNELS
+=================================
+
+Derivative kernels depend on known scale parameters and can repeat across frames.
+
+Instead of regenerating derivative kernels during every frame/level computation, create them once in the persistent AKAZE object.
+
+Store e.g.:
+
+    struct DerivativeKernel
+    {
+        Mat dxKx;
+        Mat dxKy;
+        Mat dyKx;
+        Mat dyKy;
+    };
+
+Expected gain:
+SMALL, but simple.
+
+
+17. PRECOMPUTE / COMPACT MLDB DESCRIPTOR PATTERN DATA
+======================================================
+
+Subset MLDB uses descriptor sample tables/pattern information that remains constant for an AKAZE configuration.
+
+Instead of generic cv::Mat integer rows, store a compact native structure:
+
+    struct SampleRegion
+    {
+        int8_t level;
+        int8_t x;
+        int8_t y;
+        int8_t size;
+    };
+
+Benefits:
+- less pattern-memory traffic
+- fewer ptr<int>() calls
+- smaller cache footprint
+- simpler inner-loop indexing
+
+Expected gain:
+SMALL-MEDIUM depending on descriptor count.
+
+
+18. PACK MLDB COMPARISONS ONE OUTPUT BYTE AT A TIME
+====================================================
+
+Instead of updating descriptor bits one by one with repeated:
+
+    byteIndex = bit >> 3
+    bitIndex = bit & 7
+    descriptor[byteIndex] |= ...
+
+precompute comparison index pairs and create each byte directly:
+
+    out =
+        ((v[a0] > v[b0]) << 0)
+      | ((v[a1] > v[b1]) << 1)
+      | ...
+      | ((v[a7] > v[b7]) << 7);
+
+Benefits:
+- fewer address calculations
+- avoids repeated read-modify-write of same output byte
+- compiler can optimize fixed comparisons better
+
+Expected gain:
+SMALL-MEDIUM.
+
+
+19. PRECOMPUTE GAUSSIAN WEIGHTS USED BY DESCRIPTORS
+====================================================
+
+Some descriptor paths calculate Gaussian weights repeatedly inside nested sample loops.
+
+If relative descriptor geometry is fixed, normalized Gaussian weights can often be precomputed because both distance and sigma scale proportionally with keypoint scale.
+
+Replace repeated expensive Gaussian/exp calculations with lookup tables where mathematically valid.
+
+Expected gain:
+SMALL-MEDIUM, potentially more important for KAZE descriptor variants than MLDB.
+
+
+20. FLATTEN CONTINUOUS cv::Mat LOOPS AND PROVIDE ALIASING INFORMATION
+=====================================================================
+
+For internal buffers that are guaranteed continuous:
+
+    assert(mat.isContinuous());
+
+then process:
+
+    float* data = mat.ptr<float>();
+    size_t total = rows * cols;
+
+Use compiler alias hints where appropriate:
+
+    const float* __restrict src;
+    float* __restrict dst;
+
+This can improve automatic vectorization and reduce repeated row-pointer work.
+
+Do not replace cv::Mat wholesale just for performance:
+cv::Mat can already expose raw aligned storage efficiently.
+
+Expected gain:
+SMALL-MEDIUM.
+
+
+21. EXPLICITLY TEST SINGLE-THREADED EXECUTION ON SMALL OCTAVES
+==============================================================
+
+FED steps use parallel row processing.
+
+Small pyramid levels can become so small that:
+
+    thread scheduling
+    task creation
+    synchronization/barriers
+
+cost more than the actual stencil calculation.
+
+Use a pixel threshold:
+
+    if (pixels > PARALLEL_THRESHOLD)
+        parallel_for(...)
+    else
+        scalar_loop(...)
+
+This is especially worth benchmarking because every FED timestep creates a synchronization point before the next timestep.
+
+Expected gain:
+SMALL-MEDIUM, mostly on small octaves / high thread counts.
+
+
+22. EXPLICIT NEON IMPLEMENTATION OF FED STENCIL
+===============================================
+
+The FED stencil is naturally SIMD-friendly because all accesses are neighboring contiguous floats:
+
+    c[x-1], c[x], c[x+1]
+    Lt[x-1], Lt[x], Lt[x+1]
+    previous row
+    next row
+
+On Apple Silicon, explicit NEON could process 4 floats at once.
+
+However FIRST make the scalar loop auto-vectorizer-friendly and inspect Clang output using:
+
+    -O3
+    -mcpu=native
+    -Rpass=loop-vectorize
+    -Rpass-missed=loop-vectorize
+    -Rpass-analysis=loop-vectorize
+
+Only hand-write NEON if Clang fails to generate good vector code.
+
+Expected gain:
+MEDIUM if auto-vectorization currently fails; LOW if compiler already vectorizes well.
+
+
+23. EXPLICIT NEON IMPLEMENTATION OF EXTREMA DETECTION
+======================================================
+
+Same reasoning as FED.
+
+The 3x3 max test is an excellent sequence of:
+
+    vector loads
+    vector comparisons
+    bitwise ANDs
+
+Use explicit NEON only if auto-vectorization fails.
+
+Expected gain:
+MEDIUM if compiler-generated code is poor, otherwise LOW.
+
+
+24. REDUCE COPY BETWEEN INITIAL SMOOTHED IMAGE AND FIRST Lt WHERE POSSIBLE
+=========================================================================
+
+The initial scale can involve:
+
+    GaussianBlur(...)
+    Lsmooth.copyTo(Lt)
+
+This is a full image copy.
+
+Potentially avoid through carefully managed buffer ownership/aliasing.
+
+Caution:
+cv::Mat assignment aliases storage rather than providing copy-on-write semantics for later direct modifications. Lt will later be modified, so buffer lifetimes must be designed correctly.
+
+Expected gain:
+SMALL.
+
+
+25. REDUCE SAME-OCTAVE Lt copyTo() OPERATIONS IF DATA LIFETIMES CAN BE REDESIGNED
+================================================================================
+
+Each new nonlinear scale starts from the previous level's Lt, which can require a full image copy before diffusion.
+
+This copy is mathematically necessary if every old Lt must remain available for later descriptor computation.
+
+Potential solutions require a more substantial redesign of:
+- pyramid buffer ownership
+- when descriptors are generated
+- which scale images must remain resident
+
+Expected gain:
+SMALL-MEDIUM, but difficult without changing pipeline scheduling.
+
+
+26. PACK Lx/Ly TOGETHER ONLY IF DESCRIPTOR/ORIENTATION DOMINATES
+================================================================
+
+Currently gradients are structure-of-arrays:
+
+    Lx[]
+    Ly[]
+
+Descriptor/orientation commonly accesses them together.
+
+An interleaved form:
+
+    struct Gradient
+    {
+        float x;
+        float y;
+    };
+
+could improve locality for those stages.
+
+However:
+- filtering naturally prefers separate matrices
+- packing requires another full-image pass
+- may hurt Hessian/filter operations
+
+Likely only worthwhile if descriptor/orientation dominates runtime.
+
+Expected gain:
+LOW / workload-dependent.
+
+
+27. REMOVE REDUNDANT Mat::create() CALLS
+========================================
+
+Some helper functions call create() on destination storage more than necessary.
+
+If the matrix already has identical dimensions/type, cv::Mat::create generally does not actually reallocate, so the cost is tiny.
+
+Clean up for code quality, not as a major optimization.
+
+Expected gain:
+VERY LOW.
+
+
+28. DO NOT REVERSE ROW/COLUMN LOOP ORDER
+========================================
+
+Important non-optimization.
+
+Current important dense loops already generally use:
+
+    for (row)
+    {
+        ptr = mat.ptr<float>(row);
+
+        for (column)
+        {
+            ...
+        }
+    }
+
+This matches cv::Mat row-major storage.
+
+Changing to:
+
+    for (column)
+        for (row)
+
+would access memory with a stride approximately equal to the image row width and severely hurt cache locality.
+
+Expected gain:
+NEGATIVE.
+
+
+29. DO NOT REPLACE ALL cv::Mat OBJECTS WITH std::vector/raw malloc JUST FOR SPEED
+================================================================================
+
+cv::Mat itself is not the main performance problem.
+
+When using:
+
+    float* ptr = mat.ptr<float>();
+
+the inner loop is already operating on ordinary memory.
+
+The more important issues are:
+- number of full-image passes
+- temporary image materialization
+- allocations
+- dense scans of sparse data
+- scattered descriptor sampling
+- inner-loop branches
+- missed SIMD opportunities
+
+Replace cv::Mat only where a custom layout/lifetime provides a specific advantage.
+
+Expected gain:
+VERY LOW by itself.
+
+
+30. DO NOT HAND-WRITE GaussianBlur / resize / sepFilter2D FIRST
+===============================================================
+
+These are mature OpenCV kernels with existing architecture-specific optimization.
+
+Replacing them with naïve custom loops is likely to make AKAZE slower.
+
+Only replace/fuse them when profiling proves that eliminating intermediate buffers outweighs losing OpenCV's optimized implementation.
+
+Expected gain:
+LIKELY NEGATIVE unless part of a carefully optimized fused kernel.
+
+
+RECOMMENDED IMPLEMENTATION ORDER FOR PANTO AKAZE
+=================================================
+
+This order balances expected speedup with implementation risk:
+
+Phase 1 - Low-risk structural wins
+----------------------------------
+
+1. Profile the current implementation by stage.
+2. Make AKAZE buffers/state persistent across frames.
+3. Remove compute_kcontrast clone/scaling pass.
+4. Replace descriptor/orientation Mat::at() with pointer access.
+5. Add unchecked descriptor fast path.
+6. Move constant descriptor branches outside hot loops.
+7. Precompute derivative kernels and descriptor geometry.
+
+Phase 2 - Detector redesign
+---------------------------
+
+8. Make local-max extraction return Candidate[] instead of dense masks.
+9. Perform cross-scale suppression on candidates.
+10. Perform subpixel refinement directly on candidates.
+11. Remove zero-filled keypoint masks/full-image rescans.
+12. Make local-max scan auto-vectorizer friendly.
+13. Add explicit NEON only if compiler output is poor.
+
+Phase 3 - Diffusion optimization
+--------------------------------
+
+14. Replace Lstep + cv::add with ping-pong Lt buffers.
+15. Make the fused FED stencil auto-vectorizer friendly.
+16. Verify generated ARM64 SIMD assembly.
+17. Tune parallel/scalar threshold for small pyramid levels.
+18. Consider explicit NEON if still worthwhile.
+
+Phase 4 - Descriptor optimization
+---------------------------------
+
+19. Specialize MLDB by:
+        upright/rotated
+        channel count
+        full/subset descriptor
+
+20. Incrementally generate rotated sample coordinates.
+21. Precompute linear offsets/geometry where possible.
+22. Pack binary comparisons by output byte.
+23. Replace orientation sorting with angular-bin accumulation if equivalent.
+24. Test integral-image MLDB if using upright descriptors.
+
+Phase 5 - More invasive image-kernel fusion
+-------------------------------------------
+
+25. Fuse Scharr X/Y + conductivity.
+26. Reduce Hessian temporary matrices using tiles/row buffers.
+27. Reevaluate scale-space buffer ownership/copies.
+28. Reduce number of pyramid levels if tracking quality permits.
+
+
+PROFILING PRIORITY
+==================
+
+Before making major changes, time these independently:
+
+    1. initial smoothing + kcontrast
+    2. nonlinear scale-space / FED
+    3. Hessian derivative computation
+    4. determinant
+    5. same-scale extrema
+    6. cross-scale suppression
+    7. subpixel refinement
+    8. orientation
+    9. descriptor extraction
+
+Also record:
+
+    image resolution
+    number of octaves
+    number of sublevels
+    number of FED iterations per level
+    keypoints before suppression
+    keypoints after suppression
+    final descriptor count
+
+This will tell whether descriptor work or dense scale-space work actually dominates your configuration.
+
+
+MOST PROMISING TOP 10
+=====================
+
+If only testing ten changes, use this order:
+
+1. Fuse FED diffusion + Lt update using ping-pong buffers.
+2. Replace dense keypoint masks/rescans with sparse candidate vectors.
+3. SIMD/vectorize local Hessian extrema extraction.
+4. Persist all AKAZE working buffers/state between video frames.
+5. Reduce unnecessary pyramid levels if tracking quality permits.
+6. Fuse Scharr X/Y + conductivity calculation.
+7. Reduce/tile Hessian derivative temporaries.
+8. Specialize and simplify rotated MLDB inner loops.
+9. Replace descriptor/orientation Mat::at() with raw pointer/offset access.
+10. Remove repeated bounds checks from the internal descriptor fast path.
+
+
+KEY GENERAL PRINCIPLE
+=====================
+
+The largest remaining opportunities are generally NOT:
+
+    "make this scalar arithmetic instruction slightly faster"
+
+but instead:
+
+    "stop moving/processing this image-sized amount of data at all"
+
+For AKAZE, prioritize:
+
+    fewer full-image passes
+    fewer image-sized temporaries
+    fewer copies
+    sparse processing after extrema detection
+    persistent buffers
+    fused kernels
+    SIMD only after simplifying data flow
+
+Those changes have a much better chance of producing significant end-to-end improvement than changing row/column loop order or replacing cv::Mat itself.

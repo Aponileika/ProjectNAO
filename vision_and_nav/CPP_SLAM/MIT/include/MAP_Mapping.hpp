@@ -1,7 +1,7 @@
 #ifndef __MAP_MAPPING_HPP_
 #define __MAP_MAPPING_HPP_
 #include "PT_Types.hpp"
-#include <KEY_KeyFrame.hpp>
+#include <KEY_Keyframe.hpp>
 #include <unordered_set>
 #include "EP_CorrespondingPoints.hpp"
 #include "Config.hpp"

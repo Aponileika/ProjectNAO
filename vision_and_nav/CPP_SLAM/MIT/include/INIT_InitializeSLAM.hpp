@@ -29,7 +29,7 @@
 #include "EP_CorrespondingPoints.hpp"
 #include "DBOW3_DeepBagofWords.hpp"
 #include "PANTO_Utils.hpp"
-#include "KEY_KeyFrame.hpp"
+#include "KEY_Keyframe.hpp"
 #include "PT_Types.hpp"
 #include "PT_PantoImagePoint.hpp"
 #include "PANTOVEC_PantoVector.hpp"

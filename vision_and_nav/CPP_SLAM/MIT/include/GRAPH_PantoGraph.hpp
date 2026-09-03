@@ -2,7 +2,7 @@
 #define __GRAPH_PANTOGRAPH_HPP__
 #include "CArenaAlloc.h"
 #include <vector>
-#include "KEY_KeyFrame.hpp"
+#include "KEY_Keyframe.hpp"
 #include <map>
 #include <algorithm>
 #include "PT_Types.hpp"
