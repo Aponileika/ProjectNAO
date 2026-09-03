@@ -26,19 +26,19 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
 
     switch(Target)
     {
-        case typePoseAndPoints:
+        case OptimizationTypePoseAndPoints:
             __OP_BuildProblem(Map, Problem);
             options.linear_solver_type = ceres::SPARSE_SCHUR;
             break;
-        case typePose:
+        case OptimizationTypePose:
             __OP_BuildProblemPoseOnly(Map, Problem);
             options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
             break;
-        case typeTracking:
+        case OptimizationTypeTracking:
             __OP_BuildProblemTracking(Map, Problem, NewKeyFrame);
             options.linear_solver_type = ceres::DENSE_QR;
             break;
-        case typeLocal:
+        case OptimizationTypeLocal:
             __OP_BuildProblemLocal(Map, Problem, LocalMap);
             options.linear_solver_type = ceres::DENSE_SCHUR;
             break;
@@ -46,11 +46,11 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, &Problem, &summary);
-    if(Target == typeTracking)
+    if(Target == OptimizationTypeTracking)
     {
         CM_SetRtfromParam(&(NewKeyFrame->Camera));
     }
-    else if(Target == typeLocal)
+    else if(Target == OptimizationTypeLocal)
     {
         for(const u64 KeyFrameID : LocalMap.KeyFrameIDs)
         {

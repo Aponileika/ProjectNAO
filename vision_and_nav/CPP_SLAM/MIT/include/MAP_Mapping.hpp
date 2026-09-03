@@ -9,6 +9,7 @@
 #include "PANTOVEC_PantoVector.hpp"
 #include "GRAPH_PantoGraph.hpp"
 #include "FR_Frames.hpp"
+#include "DBOW3_DeepBagofWords.hpp"
 
 typedef struct
 {

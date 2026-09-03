@@ -1,6 +1,5 @@
 #include "MAP_Mapping.hpp"
 #include "MAPPriv_Mapping.hpp"
-#include "Vocabulary.h"
 #include <unordered_map>
 
 typeMappingData MappingData = 
@@ -19,9 +18,22 @@ typeMappingData MappingData =
 typeGlobalMap MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNavigationState& SecondNavState,
         const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame)
 {
-    typeKeyFrame FirstKF = KEY_CreateKeyFrame(FirstNavState, FirstFrame);
-    typeKeyFrame SecondKF = KEY_CreateKeyFrame(SecondNavState, SecondFrame);
-    // Todo, triangulate points.
+    typeKeyFrame FirstKF = KEY_CreateKeyFrame(FirstNavState, FirstFrame, 0);
+    typeKeyFrame SecondKF = KEY_CreateKeyFrame(SecondNavState, SecondFrame, 1);
+
+    typeGlobalMap GlobalMap
+    {
+        .KeyFrames{},
+        .MapPoints{},
+        .Age = 0
+    }; 
+
+    const std::vector<u64> Indexes = KEY_InsertNewMapPoints(FirstKF, SecondKF, GlobalMap.MapPoints, GlobalMap.Age);
+
+    (void) MAP_AppendKeyFrame(GlobalMap, FirstKF);
+    (void) MAP_AppendKeyFrame(GlobalMap, SecondKF);
+
+    return GlobalMap;
 }
 
 u64 MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame)
@@ -636,6 +648,7 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& 
     }
 
     std::unordered_set<u64> LocalMapPointIDs;
+
     for(const typeKeyFrame& KeyFrame : LocalMapKeyFrames)
     {
         for(const typePantoImagePoint& ImagePoint :

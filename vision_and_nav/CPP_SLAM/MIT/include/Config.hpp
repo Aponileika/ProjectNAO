@@ -36,7 +36,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define CERES_NUM_THREADS 4
 #define CERES_HUBER_THRESHOLD 2.5
 
-#define OPENCV_AKAZETHRESHOLD 0.0015
+#define OPENCV_AKAZETHRESHOLD 0.0001
 #define OPENCV_AKAZE_NOCTAVES 4
 #define OPENCV_AKAZE_NOCTAVELAYERS 4
 #define PANTO_DESCRIPTOR_ANMS false
@@ -91,7 +91,7 @@ using PantoClock = std::chrono::steady_clock;
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
 #ifndef PANTO_ACTIVE_DATASET
-    #define PANTO_ACTIVE_DATASET TUM_FREIBURG1_XYZ
+    #define PANTO_ACTIVE_DATASET EUROC_MAV_VICON_ROOM1_EASY 
 #endif
 
 #define DATASETS \

@@ -84,7 +84,8 @@ typeFuzzyKeyFrameInference FuzzyInference =
     .SpatialTrackingThreshold = NAN
 };
 
-typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame)
+typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame,
+        const u64 ID)
 {
     typeKeyFrame KeyFrame{};
 
@@ -102,14 +103,49 @@ typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typeP
 
     Vocab->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
 
-    KeyFrame.ID = 0;
+    KeyFrame.ID = ID;
     KeyFrame.ImagePath = Frame.Path;
     KeyFrame.NavigationState = NavState;
 
-    const Eigen::Matrix3d& CameraR = BodyToCamera.R * NavState.Rwb.transpose();
-    const Eigen::Vector3d& Camerat = BodyToCamera.R * NavState.t + BodyToCamera.t;
+    const Eigen::Matrix3d& Rbw = NavState.Rwb.transpose();
+    const Eigen::Vector3d& tbw = -Rbw * NavState.t;
+
+    const Eigen::Matrix3d& CameraR = BodyToCamera.R.transpose() * Rbw;
+    const Eigen::Vector3d& Camerat = BodyToCamera.R.transpose() * tbw - BodyToCamera.R.transpose() * BodyToCamera.t;
 
     KeyFrame.Camera = CM_CreateCam(CameraR, Camerat, Frame.TimeStamp);
+    const std::vector<cv::Point2d>& Points = Desc.Points;
+    const cv::Mat& Descriptors = Desc.Descriptors;
+
+    typePantoKeypointFrame ImagePoints;
+    ImagePoints.ImagePoints.reserve(Points.size());
+
+    for(std::size_t i{}; i < DescriptorVector.size(); i++)
+    {
+        Eigen::Vector2d Point(Points[i].x, Points[i].y);
+        u64 CellX = static_cast<u64>(Point[0]) / PANTO_CELL_SIZE;
+        u64 CellY = static_cast<u64>(Point[1]) / PANTO_CELL_SIZE;
+
+        u64 CellIndex = CellY * PANTO_GRID_COLUMNS + CellX;
+
+        typeDescriptor Descriptor;
+
+        std::memcpy(Descriptor.data(), Descriptors.ptr<u8>(i), PANTO_DESCRIPTOR_SIZE);
+
+        typePantoImagePoint CandidateImagePoint = 
+        {
+            .Point = Point,
+            .Descriptor = Descriptor,
+            .MapPointID = PANTO_ID_NOT_SET,
+            .ID = static_cast<u64>(i),
+            .CellID = CellIndex
+        };
+
+        ImagePoints.ImagePoints.push_back(CandidateImagePoint);
+        ImagePoints.CellIndexingArray[CellIndex].push_back(i);
+    }
+
+    KeyFrame.Points = ImagePoints;
 
     return KeyFrame;
 }
@@ -781,8 +817,7 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
                     const fp64 CosParallax = Ray1World.normalized().dot(Ray2World.normalized());
 
-                    if(CosParallax <= 0 ||
-                        CosParallax > PANTO_MAXIMUMCOSPARALLAX)
+                    if(CosParallax <= 0 || CosParallax > PANTO_MAXIMUMCOSPARALLAX)
                     {
                         NumParallaxRejected++;
                         continue;
@@ -808,15 +843,13 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
                 NumBestHammingDistanceSamples++;
                 SumBestHammingDistance += static_cast<fp64>(BestDistance);
-                SquaredSumBestHammingDistance +=
-                    static_cast<fp64>(BestDistance) * static_cast<fp64>(BestDistance);
+                SquaredSumBestHammingDistance += static_cast<fp64>(BestDistance) * static_cast<fp64>(BestDistance);
 
                 if(SecondBestDistance != std::numeric_limits<u32>::max())
                 {
                     NumSecondBestHammingDistanceSamples++;
                     SumSecondBestHammingDistance += static_cast<fp64>(SecondBestDistance);
-                    SquaredSumSecondBestHammingDistance +=
-                        static_cast<fp64>(SecondBestDistance) * static_cast<fp64>(SecondBestDistance);
+                    SquaredSumSecondBestHammingDistance += static_cast<fp64>(SecondBestDistance) * static_cast<fp64>(SecondBestDistance);
                 }
 
                 if(BestDistance >= PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW)
@@ -827,8 +860,7 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
                 if(SecondBestDistance != std::numeric_limits<u32>::max())
                 {
-                    if(static_cast<fp64>(BestDistance) >= PANTO_MATCHRATIO *
-                            static_cast<fp64>(SecondBestDistance))
+                    if(static_cast<fp64>(BestDistance) >= PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance))
                     {
                         NumRatioRejected++;
                         continue;
@@ -897,22 +929,18 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                     Projected2.y() / Projected2.z()
                 };
 
-                const fp64 ReprojectionError1 =
-                    (ReprojectedPoint1 - ImagePoint1.Point).squaredNorm();
+                const fp64 ReprojectionError1 = (ReprojectedPoint1 - ImagePoint1.Point).squaredNorm();
 
-                const fp64 ReprojectionError2 =
-                    (ReprojectedPoint2 - ImagePoint2.Point).squaredNorm();
+                const fp64 ReprojectionError2 = (ReprojectedPoint2 - ImagePoint2.Point).squaredNorm();
 
-                const fp64 MaxReprojectionPixelError =
-                    sqrt(std::max(ReprojectionError1, ReprojectionError2));
+                const fp64 MaxReprojectionPixelError = sqrt(std::max(ReprojectionError1, ReprojectionError2));
 
-                if(ReprojectionError1 > PANTO_INIT_MAX_REPROJECTION_ERROR ||
-                   ReprojectionError2 > PANTO_INIT_MAX_REPROJECTION_ERROR)
+                if(ReprojectionError1 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED ||
+                   ReprojectionError2 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED)
                 {
                     NumReprojectionRejected++;
                     SumRejectedReprojectionPixelError += MaxReprojectionPixelError;
-                    SquaredSumRejectedReprojectionPixelError +=
-                        MaxReprojectionPixelError * MaxReprojectionPixelError;
+                    SquaredSumRejectedReprojectionPixelError += MaxReprojectionPixelError * MaxReprojectionPixelError;
 
                     if(MaxReprojectionPixelError < PANTO_INIT_MAX_REPROJECTION_ERROR + 2.0)
                     {

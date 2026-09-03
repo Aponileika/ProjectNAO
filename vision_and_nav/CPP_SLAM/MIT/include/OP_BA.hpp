@@ -11,10 +11,10 @@
 
 typedef enum 
 {
-    typePoseAndPoints = 0,
-    typePose = 1,
-    typeTracking = 2,
-    typeLocal = 3
+    OptimizationTypePoseAndPoints = 0,
+    OptimizationTypePose = 1,
+    OptimizationTypeTracking = 2,
+    OptimizationTypeLocal = 3
 }typeOptimizationTarget;
 
 /*see https://ceres-solver.googlesource.com/ceres-solver/+/master/examples/simple_bundle_adjuster.cc
