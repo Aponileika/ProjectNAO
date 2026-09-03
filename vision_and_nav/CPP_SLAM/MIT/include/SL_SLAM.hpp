@@ -25,12 +25,13 @@
 #include "INIT_InitializeSLAM.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 #include "GT_ReadGroundTruth.hpp"
+#include "IMU_PreIntegration.hpp"
 
 typedef struct
 {
-    typeCamera PreviousFramePose;
+    typeKeyFrame PreviousFrame;
     std::vector<typePantoMapPoint> PreviousFrameMapPoints;
-    typeCamera PreviousPreviousFramePose;
+    typeKeyFrame PreviousPreviousFrame;
 }typePreviousFrameData;
 
 typedef struct 
@@ -42,7 +43,12 @@ typedef struct
     typeLocalMapTracking LocalMapTracking;
     u64 CurrentFrameID;
 
+#if !defined(CONFIG_IMU)
     typeCamera NextFramePosePrediction;
+#else 
+    typeNtypeNavigationState NextFramePosePrediction;
+#endif // CONFIG_IMU 
+       //
     typePreviousFrameData PreviousFrameData;
 
     fp64 AccumulatedDistance;

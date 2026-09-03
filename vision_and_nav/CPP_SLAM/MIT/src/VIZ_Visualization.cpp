@@ -150,13 +150,19 @@ static void VIZPriv_WriteIMUTestSnapshot(void)
     VIZPriv_SnapshotID++;
 }
 
-void VIZ_SetIMUTestGroundTruth(
+void VIZ_SetGroundTruth(
         const std::vector<Eigen::Vector3d>& GroundTruthTrajectory)
 {
     VIZPriv_WriteTrajectoryFile(
             GroundTruthTrajectory,
             std::string(PANTO_COLMAP_PATH) +
-            "/sparse/imu_ground_truth.bin");
+            "/sparse/ground_truth.bin");
+}
+
+void VIZ_SetIMUTestGroundTruth(
+        const std::vector<Eigen::Vector3d>& GroundTruthTrajectory)
+{
+    VIZ_SetGroundTruth(GroundTruthTrajectory);
 }
 
 void VIZ_WriteIMUTest(const Eigen::Vector3d& Position)

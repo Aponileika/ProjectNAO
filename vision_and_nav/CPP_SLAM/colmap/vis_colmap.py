@@ -127,12 +127,12 @@ def load_snapshot(root: Path, snapshot_id: int):
         points3d = {}
         print("[VISER] points3D.bin omitted")
 
-    ground_truth_path = root / "sparse" / "imu_ground_truth.bin"
+    ground_truth_path = root / "sparse" / "ground_truth.bin"
 
     if ground_truth_path.exists():
-        print("[VISER] Reading IMU ground-truth trajectory")
+        print("[VISER] Reading ground-truth trajectory")
         ground_truth = read_tracking_binary(ground_truth_path)
-        print(f"[VISER] IMU ground truth OK: {len(ground_truth)}")
+        print(f"[VISER] Ground truth OK: {len(ground_truth)}")
     else:
         ground_truth = np.empty((0, 3), dtype=np.float64)
 

@@ -33,6 +33,9 @@ BASE_CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -std=c++20 \
 ifeq ($(DEBUG),1)
 	CXXFLAGS := $(BASE_CXXFLAGS) -O0 -g -fsanitize=address -fno-omit-frame-pointer -DDEBUG
 	SANITIZER_LDFLAGS := -fsanitize=address
+else ifeq($(CONFIG_IMU, 1))
+	CXXFLAGS := $(BASE_CXXFLAGS) -O2 -DCONFIG_IMU
+	SANITIZER_LDFLAGS :=
 else
 	CXXFLAGS := $(BASE_CXXFLAGS) -O2
 	SANITIZER_LDFLAGS :=

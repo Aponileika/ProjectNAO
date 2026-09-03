@@ -212,40 +212,16 @@ bool PROJ_Project(const Eigen::Vector4d& MapPoint, Eigen::Vector2d& ImagePoint, 
 
     const typeCameraIntrinsics Intrinsics = *Camera.Intrinsics;
 
-    fp64 x = NormalizedMapPoint.x() / NormalizedMapPoint.z();
-    fp64 y = NormalizedMapPoint.y() / NormalizedMapPoint.z();
+    fp64 u = NormalizedMapPoint.x() / NormalizedMapPoint.z();
+    fp64 v = NormalizedMapPoint.y() / NormalizedMapPoint.z();
 
-    const fp64 r2 = x*x + y*y;
-    const fp64 r4 = r2*r2;
-    const fp64 r6 = r4*r2;
-
-    const fp64 Radial =
-        1.0 +
-        Intrinsics.k1 * r2 +
-        Intrinsics.k2 * r4 +
-        Intrinsics.k3 * r6;
-
-    const fp64 xd =
-        x * Radial +
-        2.0 * Intrinsics.p1 * x * y +
-        Intrinsics.p2 * (r2 + 2.0*x*x);
-
-    const fp64 yd =
-        y * Radial +
-        Intrinsics.p1 * (r2 + 2.0*y*y) +
-        2.0 * Intrinsics.p2 * x * y;
-
-    const Eigen::Vector3d Pixel =
-        Intrinsics.K *
-        Eigen::Vector3d{xd, yd, 1.0};
+    const Eigen::Vector3d Pixel = Intrinsics.K * Eigen::Vector3d{u, v, 1.0};
 
     ImagePoint = Pixel.head<2>();
 
 
-    if (ImagePoint.x() < 0.0 ||
-    ImagePoint.x() >= PANTO_IMAGE_WIDTH ||
-    ImagePoint.y() < 0.0 ||
-    ImagePoint.y() >= PANTO_IMAGE_HEIGHT)
+    if (ImagePoint.x() < 0.0 || ImagePoint.x() >= PANTO_IMAGE_WIDTH ||
+    ImagePoint.y() < 0.0 || ImagePoint.y() >= PANTO_IMAGE_HEIGHT)
     {
         return false;
     }

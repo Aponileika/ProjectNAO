@@ -535,7 +535,7 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
                     CulledIndexes.size());
         }
 
-        if(RemainingObservations < 1)
+        if(RemainingObservations < 2)
         {
             LG_Log( LogSeverity::DBG, "[MAP_CullObservationEdges] MP %llu marked for full deletion: remaining observations = %llu\n",
                     MapPoint.ID, RemainingObservations);

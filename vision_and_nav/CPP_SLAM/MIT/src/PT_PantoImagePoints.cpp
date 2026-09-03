@@ -213,12 +213,12 @@ u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<ty
                     }
                 }
             }
+            NumWithTwoCandidates++;
+
             if(SecondBestDistance > PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD)
             {
-                continue;
+                NumWithTwoCandidates--;
             }
-
-            NumWithTwoCandidates++;
 
             if( static_cast<fp64>(BestDistance) < PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance)
                     && BestDistance < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD)

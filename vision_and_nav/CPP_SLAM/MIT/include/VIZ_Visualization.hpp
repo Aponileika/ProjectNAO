@@ -21,6 +21,8 @@ void VIZ_InitVisualization(void);
 void VIZ_StopViewer();
 void VIZ_SignalHandler(int Signal);
 void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory);
+void VIZ_SetGroundTruth(
+        const std::vector<Eigen::Vector3d>& GroundTruthTrajectory);
 void VIZ_SetIMUTestGroundTruth(
         const std::vector<Eigen::Vector3d>& GroundTruthTrajectory);
 void VIZ_WriteIMUTest(const Eigen::Vector3d& Position);

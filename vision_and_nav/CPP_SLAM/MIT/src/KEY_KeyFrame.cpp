@@ -969,7 +969,6 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                     const u64 Index = GlobalMapPoints.push_back(NewPoint);
                     GlobalMapPoints[Index].ID = Index;
                     Indexes.push_back(Index);
-
                     ImagePoint1.MapPointID = Index;
                     ImagePoint2.MapPointID = Index;
                 }
