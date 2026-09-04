@@ -9,7 +9,7 @@
 #include "../include/LG_Logging.hpp"
 #include "../include/CArenaAlloc.h"
 #include "../include/EP_CorrespondingPoints.hpp"
-#include "../include/KEY_KeyFrame.hpp"
+#include "../include/KEY_Keyframe.hpp"
 #include "../include/PT_PantoImagePoint.hpp"
 #include "../include/PT_PantoMapPoints.hpp"
 #include "../include/MAP_Mapping.hpp"

@@ -13,7 +13,7 @@
 #include "VIZ_Visualization.hpp"
 #include "PANTO_Utils.hpp"
 #include "MAP_Mapping.hpp"
-#include "KEY_KeyFrame.hpp"
+#include "KEY_Keyframe.hpp"
 #include "PT_PantoImagePoint.hpp"
 #include "PT_PantoMapPoints.hpp"
 #include "PT_Types.hpp"

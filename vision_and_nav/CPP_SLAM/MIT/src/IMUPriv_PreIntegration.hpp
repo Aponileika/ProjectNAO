@@ -7,16 +7,6 @@ class typePreIntegration : public typePreIntegrationData
     public:
         typeNavigationState InitialNavigationState;
 
-        Eigen::Matrix3d JRg;
-        Eigen::Matrix3d JVg;
-        Eigen::Matrix3d JVa;
-        Eigen::Matrix3d JPg;
-        Eigen::Matrix3d JPa;
-
-        Eigen::Matrix<fp64, 12, 12> Qc;
-
-        Eigen::Matrix<fp64, 15, 15> Covariance;
-
         typePreIntegration()
         {
             DeltaR = Eigen::Matrix3d::Identity();

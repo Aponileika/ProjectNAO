@@ -73,6 +73,17 @@ class typePreIntegrationData
         Eigen::Vector3d GyroBias;
         Eigen::Vector3d AccelBias;
 
+        Eigen::Matrix3d JRg;
+        Eigen::Matrix3d JVg;
+        Eigen::Matrix3d JVa;
+        Eigen::Matrix3d JPg;
+        Eigen::Matrix3d JPa;
+
+        Eigen::Matrix<fp64, 12, 12> Qc;
+
+        Eigen::Matrix<fp64, 15, 15> Covariance;
+
+
 };
 
 void IMU_NewNavigationStateArrival(const typeNavigationState& NavigationState);
