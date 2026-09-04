@@ -184,6 +184,15 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
         }
     }
 
+    // Add the parameters for IMU, velocity, and biases, pose is shared
+    // Calculate sqrtinfo S where S^T * S = P^-1, using cholesky decomp:
+    // P = LL^T, S = L^-1, since S^T * S = L^(-T) * L ^(-1) = P^-1,
+    // Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(Covariance);
+    // Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
+    // Eigen::Matrix<fp64, 15, 15> SqrtInfo = L.triangularView<Eigen::Lower>.solve(
+    // Eigen::Matrix<fp64, 15, 15>::Identity), avoid direct inverse, also use the fact that L
+    // is lower triangular with L.triangularView<Eigen::Lower>
+    
     for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
     {
         for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)

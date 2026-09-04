@@ -8,7 +8,7 @@ This is the todo list for IMU integration:
 -   (DONE) Keyframe should contain Navstate, not just pose.
 -   (DONE) Optional GT initialization, so choose two initial keyframes that are read from GT.
 -   (DONE) IMU residual factor for Ceres, in progress, currently making residual, residual done
--   Calculate SQRT information for the residual, S^T * S = P^-1 (for whitening);
+-   Calculate SQRT information for the residual, S^T * S = P^-1 (for whitening), cholesky decomp.
 -   both residuals take in R and t from typeCameras pose, (the same pointer) thats how they are connected
 -   IMU pose prediction
 
