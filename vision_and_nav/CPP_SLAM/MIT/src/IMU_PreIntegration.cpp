@@ -11,8 +11,7 @@ void IMU_NewNavigationStateArrival(const typeNavigationState& NavigationState)
 }
 
 bool IMU_InitializeGravity(const typeNavigationState& NavigationState,
-        const typeIMUMeasurement& Measurement,
-        const Eigen::Vector3d& WorldAcceleration)
+        const typeIMUMeasurement& Measurement, const Eigen::Vector3d& WorldAcceleration)
 {
     constexpr fp64 GravityMagnitude = 9.81;
 
@@ -38,6 +37,11 @@ bool IMU_InitializeGravity(const typeNavigationState& NavigationState,
             g.x(), g.y(), g.z(), g.norm());
 
     return true;
+}
+
+Eigen::Vector3d* IMU_GetGravity(void)
+{
+    return &g;
 }
 
 void IMU_IngegrationStep(const typeIMUMeasurement& Current)
@@ -70,6 +74,40 @@ void IMU_IngegrationStep(const typeIMUMeasurement& Current)
     IntegrationState.UpdateJacobians(dR, Jr, Acc, dT);
     IntegrationState.UpdateCovariance(Omega, Acc, dT);
     IntegrationState.PreIntegrate(Acc, dR, dT);
+
+    Previous = Current;
+}
+
+void IMU_IngegrationStep(const typeIMUMeasurement& Current, typePreIntegration& PreIntegratioState)
+{
+    static typeIMUMeasurement Previous
+    {
+        .TimeStamp = 0.0,
+        .AngularVelocity = {},
+        .Acceleration = {}
+    };
+
+    static bool IsFirst =  true;
+    if(IsFirst)
+    {
+        Previous = Current;
+        IsFirst = false;
+        return;
+    }
+
+    const fp64 dT = Current.TimeStamp - Previous.TimeStamp;
+    // Remove bias
+    const Eigen::Vector3d Omega = Current.AngularVelocity - PreIntegratioState.GyroBias;
+    const Eigen::Vector3d Acc = Current.Acceleration - PreIntegratioState.AccelBias;
+
+    const Eigen::Vector3d Phi = Omega*dT;
+    const Eigen::Matrix3d dR = Sophus::SO3d::exp(Phi).matrix();
+
+    const Eigen::Matrix3d Jr = Sophus::SO3d::leftJacobian(-Phi);
+
+    PreIntegratioState.UpdateJacobians(dR, Jr, Acc, dT);
+    PreIntegratioState.UpdateCovariance(Omega, Acc, dT);
+    PreIntegratioState.PreIntegrate(Acc, dR, dT);
 
     Previous = Current;
 }

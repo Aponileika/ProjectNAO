@@ -98,8 +98,8 @@ struct OP_IMUResidual
     Eigen::Quaterniond CameraToBodyRotation;
     Eigen::Vector3d CameraToBodyTranslation;
 
-    OP_IMUResidual(typePreIntegrationData PreIntegrationData, Eigen::Matrix<fp64, 15, 15> SqrtInfo, Eigen::Vector3d Grav,
-            Eigen::Matrix4d* TBS)
+    OP_IMUResidual(const typePreIntegrationData& PreIntegrationData, const Eigen::Matrix<fp64, 15, 15>& SqrtInfo, const Eigen::Vector3d& Grav,
+            const Eigen::Matrix4d* TBS)
         : PreIntegration(PreIntegrationData), SqrtInformation(SqrtInfo), Gravity(Grav),
           CameraToBodyRotation(TBS->block<3,3>(0,0)), CameraToBodyTranslation(TBS->block<3,1>(0,3))
     {
@@ -196,7 +196,7 @@ struct OP_IMUResidual
     }
 
     static ceres::CostFunction* Create(const typePreIntegrationData PreIntegrationData, const Eigen::Matrix<fp64, 15, 15> SqrtInfo, const Eigen::Vector3d Grav,
-            Eigen::Matrix4d* TBS)
+            const Eigen::Matrix4d* TBS)
     {
         return new ceres::AutoDiffCostFunction<OP_IMUResidual, 
                15,

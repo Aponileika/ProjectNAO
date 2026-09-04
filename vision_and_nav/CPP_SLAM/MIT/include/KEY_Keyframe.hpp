@@ -44,6 +44,7 @@ typedef struct
 #if defined(CONFIG_IMU)
     typeNavigationState NavigationState;
     typePreIntegrationData PreIntegrationData;
+    u64 PreviousKFID;
 #endif
     u64 ID;
     std::string ImagePath;
