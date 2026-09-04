@@ -9,6 +9,7 @@
 
 //read only intrinsics for residual calculation
 static const struct typeOPCameraIntrinsics OPCameraIntrinsics(CM_GetIntrinsics()->K);
+static const Eigen::Matrix4d* TBS = &CM_GetIntrinsics()->T_BS;
 
 void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem);
 void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem);
@@ -184,7 +185,7 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
         }
     }
 
-    // Add the parameters for IMU, velocity, and biases, pose is shared
+    // Add the parameters for IMU, velocity, and biases, pose is shared.
     // Calculate sqrtinfo S where S^T * S = P^-1, using cholesky decomp:
     // P = LL^T, S = L^-1, since S^T * S = L^(-T) * L ^(-1) = P^-1,
     // Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(Covariance);
