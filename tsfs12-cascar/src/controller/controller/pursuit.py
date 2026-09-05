@@ -65,7 +65,10 @@ class PurePursuit(Node):
 
         self.distanceTraveled = 0
 
+        #For debugging
+        self.lastDist = self.distanceTraveled
         self.infoCounter = 0
+
         self.last_time = None
         self.timer = self.create_timer(self.Ts, self.control_loop)
 
@@ -131,7 +134,9 @@ class PurePursuit(Node):
 
             self.get_next_node()
 
-            self.infoCounter += 1
+            if self.lastDist != self.distanceTraveled:
+                self.lastDist = self.distanceTraveled
+                self.infoCounter += 1
 
 
     def control_system(self, ed, ey, etheta):
