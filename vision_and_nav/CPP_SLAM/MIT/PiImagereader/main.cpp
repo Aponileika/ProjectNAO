@@ -10,11 +10,13 @@
 #include <opencv2/highgui.hpp>
 
 #include <cstdlib>
+#include <cerrno>
 #include <cstring>
 #include <vector>
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 const char* PantoSSH = "ssh pantopilot@pantopilotstereoraspberry.local";
@@ -26,6 +28,26 @@ struct typeFrameHeader
     uint32_t Width;
     uint32_t Height;
     uint32_t PayloadSize;
+};
+
+static constexpr uint64_t CLOCK_SYNC_MAGIC = 0x50414E544F434C4BULL;
+static constexpr uint32_t CLOCK_SYNC_SAMPLES = 8;
+
+struct typeClockSyncRequest
+{
+    uint64_t Magic;
+    uint32_t Sequence;
+    uint32_t Reserved;
+    uint64_t MacSendTimeNs;
+};
+
+struct typeClockSyncResponse
+{
+    uint64_t Magic;
+    uint32_t Sequence;
+    uint32_t Reserved;
+    uint64_t PiReceiveTimeNs;
+    uint64_t PiSendTimeNs;
 };
 
 struct typeStats
@@ -88,7 +110,15 @@ bool RecvAll(int SocketFD, void* Data, size_t Size)
         ssize_t BytesReceived =
             recv(SocketFD, Ptr, Size, 0);
 
-        if(BytesReceived <= 0)
+        if(BytesReceived < 0)
+        {
+            if(errno == EINTR)
+                continue;
+
+            return false;
+        }
+
+        if(BytesReceived == 0)
             return false;
 
         Ptr  += BytesReceived;
@@ -96,6 +126,97 @@ bool RecvAll(int SocketFD, void* Data, size_t Size)
     }
 
     return true;
+}
+
+bool SendAll(int SocketFD, const void* Data, size_t Size)
+{
+    const uint8_t* Ptr = static_cast<const uint8_t*>(Data);
+
+    while(Size > 0)
+    {
+        const ssize_t BytesSent = send(SocketFD, Ptr, Size, 0);
+
+        if(BytesSent < 0)
+        {
+            if(errno == EINTR)
+                continue;
+
+            return false;
+        }
+
+        if(BytesSent == 0)
+            return false;
+
+        Ptr += static_cast<size_t>(BytesSent);
+        Size -= static_cast<size_t>(BytesSent);
+    }
+
+    return true;
+}
+
+uint64_t MonotonicTimeNs()
+{
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+bool SynchronizeClocks(int SocketFD, double& PiMinusMacOffsetNs,
+        double& BestRoundTripTimeMs)
+{
+    uint64_t BestRoundTripTimeNs = std::numeric_limits<uint64_t>::max();
+    double BestOffsetNs = 0.0;
+
+    for(uint32_t Sequence = 0; Sequence < CLOCK_SYNC_SAMPLES; ++Sequence)
+    {
+        const uint64_t MacSendTimeNs = MonotonicTimeNs();
+        const typeClockSyncRequest Request
+        {
+            .Magic = CLOCK_SYNC_MAGIC,
+            .Sequence = Sequence,
+            .Reserved = 0,
+            .MacSendTimeNs = MacSendTimeNs
+        };
+
+        if(!SendAll(SocketFD, &Request, sizeof(Request)))
+            return false;
+
+        typeClockSyncResponse Response{};
+        if(!RecvAll(SocketFD, &Response, sizeof(Response)))
+            return false;
+
+        const uint64_t MacReceiveTimeNs = MonotonicTimeNs();
+
+        if(Response.Magic != CLOCK_SYNC_MAGIC ||
+           Response.Sequence != Sequence ||
+           Response.PiSendTimeNs < Response.PiReceiveTimeNs)
+        {
+            return false;
+        }
+
+        const uint64_t PiProcessingTimeNs =
+            Response.PiSendTimeNs - Response.PiReceiveTimeNs;
+        const uint64_t TotalTimeNs = MacReceiveTimeNs - MacSendTimeNs;
+        const uint64_t RoundTripTimeNs =
+            TotalTimeNs >= PiProcessingTimeNs ?
+            TotalTimeNs - PiProcessingTimeNs : 0;
+
+        const double OffsetNs = 0.5 *
+            (static_cast<double>(Response.PiReceiveTimeNs) -
+             static_cast<double>(MacSendTimeNs) +
+             static_cast<double>(Response.PiSendTimeNs) -
+             static_cast<double>(MacReceiveTimeNs));
+
+        if(RoundTripTimeNs < BestRoundTripTimeNs)
+        {
+            BestRoundTripTimeNs = RoundTripTimeNs;
+            BestOffsetNs = OffsetNs;
+        }
+    }
+
+    PiMinusMacOffsetNs = BestOffsetNs;
+    BestRoundTripTimeMs = static_cast<double>(BestRoundTripTimeNs) / 1e6;
+    return BestRoundTripTimeNs != std::numeric_limits<uint64_t>::max();
 }
 
 int CreateServerSocket(uint16_t Port)
@@ -195,13 +316,33 @@ int main()
 
     std::cout << "Pi connected\n";
 
+    double PiMinusMacOffsetNs = 0.0;
+    double ClockSyncRoundTripTimeMs = 0.0;
+    if(!SynchronizeClocks(
+                PiFD,
+                PiMinusMacOffsetNs,
+                ClockSyncRoundTripTimeMs))
+    {
+        std::cerr << "Clock synchronization failed\n";
+        close(PiFD);
+        close(ServerFD);
+        return 1;
+    }
+
+    std::cout
+        << "Clock synchronized; best RTT = "
+        << ClockSyncRoundTripTimeMs
+        << " ms\n";
+
     int NumFrames = 0;
 
     std::vector<double> ArrivalIntervalsMs;
     std::vector<double> CameraIntervalsMs;
+    std::vector<double> CaptureToMatLatencyMs;
 
     ArrivalIntervalsMs.reserve(NUM_FRAMES - 1);
     CameraIntervalsMs.reserve(NUM_FRAMES - 1);
+    CaptureToMatLatencyMs.reserve(NUM_FRAMES);
 
     std::chrono::steady_clock::time_point PreviousArrivalTime;
     uint64_t PreviousCameraTimestampNs = 0;
@@ -236,6 +377,19 @@ int main()
         }
 
         const auto CurrentArrivalTime = std::chrono::steady_clock::now();
+        const uint64_t CurrentArrivalTimeNs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                CurrentArrivalTime.time_since_epoch()).count());
+
+        const double LatencyMs =
+            (static_cast<double>(CurrentArrivalTimeNs) -
+             static_cast<double>(Header.TimestampNs) +
+             PiMinusMacOffsetNs) / 1e6;
+
+        if(std::isfinite(LatencyMs))
+        {
+            CaptureToMatLatencyMs.push_back(LatencyMs);
+        }
 
         if(NumFrames > 0)
         {
@@ -277,6 +431,7 @@ int main()
 
     const typeStats ArrivalStats = CalculateStats( ArrivalIntervalsMs);
     const typeStats CameraStats = CalculateStats( CameraIntervalsMs);
+    const typeStats LatencyStats = CalculateStats(CaptureToMatLatencyMs);
 
     constexpr double TARGET_FPS = 20.0;
     constexpr double TARGET_INTERVAL_MS = 1000.0 / TARGET_FPS;
@@ -321,6 +476,20 @@ int main()
         << " Equivalent FPS:           "
         << ArrivalFPS
         << " Hz\n"
+        << '\n'
+        << " CAPTURE TO CV::MAT LATENCY\n"
+        << " Clock sync best RTT:      "
+        << ClockSyncRoundTripTimeMs
+        << " ms\n"
+        << " Mean latency:             "
+        << LatencyStats.Mean
+        << " ms\n"
+        << " Std. dev.:                "
+        << LatencyStats.StdDev
+        << " ms\n"
+        << " Samples:                  "
+        << CaptureToMatLatencyMs.size()
+        << '\n'
         << "========================================\n";
     return 0;
 }
