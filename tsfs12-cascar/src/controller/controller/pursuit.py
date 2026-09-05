@@ -103,7 +103,7 @@ class PurePursuit(Node):
         dt = (now - self.last_time).nanoseconds / 1e9
         self.last_time = now
 
-        if self.path != None:
+        if self.path:
             ed, ey, etheta = self.get_errors()
 
             #Motverka integraluppvridning
