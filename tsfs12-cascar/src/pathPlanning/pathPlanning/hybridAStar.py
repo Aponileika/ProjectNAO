@@ -44,7 +44,7 @@ class HybridAStar():
 
         self.L = 0.285
         self.track = 0.15
-        self.radius = 1.2*max(self.L, self.track)/2
+        self.radius = 1.0*max(self.L, self.track)/2
 
         self.propogationDistance = 0.2
         self.propogationInterval = 0.04

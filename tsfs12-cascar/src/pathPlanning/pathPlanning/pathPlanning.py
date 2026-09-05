@@ -87,24 +87,23 @@ class dubinsPath(Node):
             grid[y0:y1, x0:x1] = 1
             return grid
 
-        xlim = (-5,5)
-        ylim = xlim
-        xy_resolution = 0.05
+        # xlim = (-5,5)
+        # ylim = xlim
+        # xy_resolution = 0.05
 
-        size = int((xlim[1]-xlim[0])/xy_resolution)
-        map = np.zeros((size,size))
+        # size = int((xlim[1]-xlim[0])/xy_resolution)
+        # map = np.zeros((size,size))
 
-        obstacles = [
-            (-0.16, 0.16, -0.16, 0.16)
-        ]
-        for obstacle in obstacles:
-            map = add_rectangle_obstacle(map, obstacle, xlim, ylim, xy_resolution)
+        # obstacles = [
+        #     (-0.16, 0.16, -0.16, 0.16)
+        # ]
+        # for obstacle in obstacles:
+        #     map = add_rectangle_obstacle(map, obstacle, xlim, ylim, xy_resolution)
 
 
         self.plannedPath = self.pathPlanner.search((self.x, self.y, self.theta), 
                                                    (self.xGoal, self.yGoal, self.thetaGoal), 
                                                    map=map, xlim=xlim, ylim=ylim)
-        print(self.plannedPath)
         self.publishPath()
         self.get_logger().info("PATH PLANNED")
 

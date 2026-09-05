@@ -98,7 +98,7 @@ class Localization(Node):
             self.bw = bwS / len(self.calibData)
 
             self.calibDone = True
-            self.get_logger().info("CALIBRATION COMPLETE")
+            self.get_logger().info("IMU CALIBRATION COMPLETE")
             self.get_logger().info(f"Found biases: bw={self.bw:.3f}")
 
 
@@ -129,7 +129,7 @@ class Localization(Node):
             theta = self.theta + self.w * dt
             self.theta = atan2(sin(theta), cos(theta))
 
-        self.get_logger().info(f"dt={dt:.4f}s, x={self.x:.3f}, y={self.y:.3f}, vodo={self.Vodo:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
+        #self.get_logger().info(f"dt={dt:.4f}s, x={self.x:.3f}, y={self.y:.3f}, vodo={self.Vodo:.3f}, theta={self.theta:.3f}, w={self.w:.3f}")
 
         return
 
