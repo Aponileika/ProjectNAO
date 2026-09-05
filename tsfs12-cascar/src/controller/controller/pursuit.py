@@ -114,9 +114,9 @@ class PurePursuit(Node):
 
             msg = CarCommand()
             #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
-            if self.counter >= 1/self.Ts:
+            if self.infoCounter >= 1/self.Ts:
                 self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}, et={etheta:.3f}, v={self.v:.3f}")
-                self.counter = 0
+                self.infoCounter = 0
 
             speed_norm = self.v / self.vmax
             steer_norm = self.delta / self.delta_max
@@ -131,7 +131,7 @@ class PurePursuit(Node):
 
             self.get_next_node()
 
-            self.counter += 1
+            self.infoCounter += 1
 
 
     def control_system(self, ed, ey, etheta):
