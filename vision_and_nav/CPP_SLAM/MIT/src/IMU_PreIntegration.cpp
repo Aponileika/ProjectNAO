@@ -10,6 +10,14 @@ void IMU_NewNavigationStateArrival(const typeNavigationState& NavigationState)
     IntegrationState.Reset(NavigationState);
 }
 
+void IMU_InitializePreIntegration(typePreIntegration& PreIntegrationState,
+        const typeNavigationState& NavigationState)
+{
+    PreIntegrationState.PreviousMeasurement = IntegrationState.PreviousMeasurement;
+    PreIntegrationState.HasPreviousMeasurement = IntegrationState.HasPreviousMeasurement;
+    PreIntegrationState.Reset(NavigationState);
+}
+
 bool IMU_InitializeGravity(const typeNavigationState& NavigationState,
         const typeIMUMeasurement& Measurement, const Eigen::Vector3d& WorldAcceleration)
 {
@@ -44,86 +52,61 @@ Eigen::Vector3d* IMU_GetGravity(void)
     return &g;
 }
 
-void IMU_IngegrationStep(const typeIMUMeasurement& Current)
+static void IMUPriv_IntegrationStep(const typeIMUMeasurement& Current,
+        typePreIntegration& PreIntegrationState)
 {
-    static typeIMUMeasurement Previous
+    if(!PreIntegrationState.HasPreviousMeasurement)
     {
-        .TimeStamp = 0.0,
-        .AngularVelocity = {},
-        .Acceleration = {}
-    };
-
-    static bool IsFirst =  true;
-    if(IsFirst)
-    {
-        Previous = Current;
-        IsFirst = false;
+        PreIntegrationState.PreviousMeasurement = Current;
+        PreIntegrationState.HasPreviousMeasurement = true;
         return;
     }
 
-    const fp64 dT = Current.TimeStamp - Previous.TimeStamp;
+    const fp64 dT = Current.TimeStamp -
+        PreIntegrationState.PreviousMeasurement.TimeStamp;
+
+    if(dT <= 0.0)
+    {
+        PreIntegrationState.PreviousMeasurement = Current;
+        return;
+    }
+
     // Remove bias
-    const Eigen::Vector3d Omega = Current.AngularVelocity - IntegrationState.GyroBias;
-    const Eigen::Vector3d Acc = Current.Acceleration - IntegrationState.AccelBias;
+    const Eigen::Vector3d Omega = Current.AngularVelocity - PreIntegrationState.GyroBias;
+    const Eigen::Vector3d Acc = Current.Acceleration - PreIntegrationState.AccelBias;
 
     const Eigen::Vector3d Phi = Omega*dT;
     const Eigen::Matrix3d dR = Sophus::SO3d::exp(Phi).matrix();
 
     const Eigen::Matrix3d Jr = Sophus::SO3d::leftJacobian(-Phi);
 
-    IntegrationState.UpdateJacobians(dR, Jr, Acc, dT);
-    IntegrationState.UpdateCovariance(Omega, Acc, dT);
-    IntegrationState.PreIntegrate(Acc, dR, dT);
+    PreIntegrationState.UpdateJacobians(dR, Jr, Acc, dT);
+    PreIntegrationState.UpdateCovariance(Omega, Acc, dT);
+    PreIntegrationState.PreIntegrate(Acc, dR, dT);
 
-    Previous = Current;
+    PreIntegrationState.PreviousMeasurement = Current;
 }
 
-void IMU_IngegrationStep(const typeIMUMeasurement& Current, typePreIntegration& PreIntegratioState)
+void IMU_IngegrationStep(const typeIMUMeasurement& Current)
 {
-    static typeIMUMeasurement Previous
-    {
-        .TimeStamp = 0.0,
-        .AngularVelocity = {},
-        .Acceleration = {}
-    };
+    IMUPriv_IntegrationStep(Current, IntegrationState);
+}
 
-    static bool IsFirst =  true;
-    if(IsFirst)
-    {
-        Previous = Current;
-        IsFirst = false;
-        return;
-    }
-
-    const fp64 dT = Current.TimeStamp - Previous.TimeStamp;
-    // Remove bias
-    const Eigen::Vector3d Omega = Current.AngularVelocity - PreIntegratioState.GyroBias;
-    const Eigen::Vector3d Acc = Current.Acceleration - PreIntegratioState.AccelBias;
-
-    const Eigen::Vector3d Phi = Omega*dT;
-    const Eigen::Matrix3d dR = Sophus::SO3d::exp(Phi).matrix();
-
-    const Eigen::Matrix3d Jr = Sophus::SO3d::leftJacobian(-Phi);
-
-    PreIntegratioState.UpdateJacobians(dR, Jr, Acc, dT);
-    PreIntegratioState.UpdateCovariance(Omega, Acc, dT);
-    PreIntegratioState.PreIntegrate(Acc, dR, dT);
-
-    Previous = Current;
+void IMU_IngegrationStep(const typeIMUMeasurement& Current,
+        typePreIntegration& PreIntegrationState)
+{
+    IMUPriv_IntegrationStep(Current, PreIntegrationState);
 }
 
 void IMU_GetPreIntegratedRt(Eigen::Matrix3d& Rwb, Eigen::Vector3d& twb)
 {
-    static const Eigen::Vector3d Gravity(0.0, 0.0, -9.81);
-
     const typeNavigationState& InitialState =
         IntegrationState.InitialNavigationState;
+    const typeNavigationState Prediction =
+        IMU_PredictNavigationState(InitialState, IntegrationState);
 
-    Rwb = InitialState.Rwb * IntegrationState.DeltaR;
-    twb = InitialState.Position +
-        InitialState.Velocity * IntegrationState.DeltaT +
-        0.5 * Gravity * IntegrationState.DeltaT * IntegrationState.DeltaT +
-        InitialState.Rwb * IntegrationState.DeltaPosition;
+    Rwb = Prediction.Rwb;
+    twb = Prediction.Position;
 }
 
 typePreIntegrationData IMU_GetLatestPreIntegrationData(void)
@@ -134,11 +117,27 @@ typePreIntegrationData IMU_GetLatestPreIntegrationData(void)
 typeNavigationState IMU_PredictNavigationState(const typeNavigationState& PreviousNavigationState,
         const typePreIntegrationData& PreIntegrationData)
 {
-    const Eigen::Matrix3d& PredictedR = PreviousNavigationState.Rwb * PreIntegrationData.DeltaR;
-    const Eigen::Vector3d& PredictedVelocity = PreviousNavigationState.Velocity + 
-        g * PreIntegrationData.DeltaT + PreviousNavigationState.Rwb * PreIntegrationData.DeltaVelocity;
-    const Eigen::Vector3d& PredictedPosition = PreviousNavigationState.Position + PreviousNavigationState.Velocity * PreIntegrationData.DeltaT
-        + 0.5 * g * PreIntegrationData.DeltaT * PreIntegrationData.DeltaT + PreviousNavigationState.Rwb * PreIntegrationData.DeltaPosition;
+    const Eigen::Vector3d DeltaGyroBias = PreviousNavigationState.GyroBias - PreIntegrationData.GyroBias;
+    const Eigen::Vector3d DeltaAccelBias = PreviousNavigationState.AccelorometerBias - PreIntegrationData.AccelBias;
+
+    const Sophus::SO3d DeltaRNominal(PreIntegrationData.DeltaR);
+    const Eigen::Matrix3d DeltaRCorrected = (DeltaRNominal * Sophus::SO3d::exp(
+            PreIntegrationData.JRg * DeltaGyroBias)).matrix();
+
+    const Eigen::Vector3d DeltaVelocityCorrected = PreIntegrationData.DeltaVelocity + PreIntegrationData.JVg * DeltaGyroBias +
+        PreIntegrationData.JVa * DeltaAccelBias;
+
+    const Eigen::Vector3d DeltaPositionCorrected = PreIntegrationData.DeltaPosition + PreIntegrationData.JPg * DeltaGyroBias +
+        PreIntegrationData.JPa * DeltaAccelBias;
+
+    const Eigen::Matrix3d PredictedR = PreviousNavigationState.Rwb * DeltaRCorrected;
+    const Eigen::Vector3d PredictedVelocity = PreviousNavigationState.Velocity +
+        g * PreIntegrationData.DeltaT + PreviousNavigationState.Rwb * DeltaVelocityCorrected;
+
+    const Eigen::Vector3d PredictedPosition = PreviousNavigationState.Position +
+        PreviousNavigationState.Velocity * PreIntegrationData.DeltaT +
+        0.5 * g * PreIntegrationData.DeltaT * PreIntegrationData.DeltaT +
+        PreviousNavigationState.Rwb * DeltaPositionCorrected;
 
     typeNavigationState Prediction(PredictedR, PredictedVelocity, PredictedPosition, PreviousNavigationState.GyroBias, PreviousNavigationState.AccelorometerBias);
 

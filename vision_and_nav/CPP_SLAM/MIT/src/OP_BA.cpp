@@ -14,10 +14,13 @@ static const Eigen::Matrix4d* TBS = &CM_GetIntrinsics()->T_BS;
 
 void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem);
 void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem);
-void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, typeKeyFrame* NewKeyFrame);
+void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
+        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame);
 void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const typeLocalMap& LocalMap);
 
-void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame)
+void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
+        const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame,
+        typeKeyFrame* PreviousFrame)
 {
     ceres::Problem Problem;
     ceres::Solver::Options options;
@@ -38,12 +41,12 @@ void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const ty
             options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
             break;
         case OptimizationTypeTracking:
-            __OP_BuildProblemTracking(Map, Problem, NewKeyFrame);
+            __OP_BuildProblemTracking(Map, Problem, NewKeyFrame, PreviousFrame);
             options.linear_solver_type = ceres::DENSE_QR;
             break;
         case OptimizationTypeLocal:
             __OP_BuildProblemLocal(Map, Problem, LocalMap);
-            options.linear_solver_type = ceres::SPARSE_SCHUR;
+            options.linear_solver_type = ceres::DENSE_SCHUR;
             break;
     }
 
@@ -161,7 +164,9 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
     //We need to add the camera parameters first so we can
     //Set the first camera constant
 
+#if defined(CONFIG_IMU)
     const Eigen::Vector3d Grav = *IMU_GetGravity();
+#endif
 
     for (typeKeyFrame& KeyFrame : Map.KeyFrames) 
     {
@@ -170,26 +175,33 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
         assert(Map.KeyFrames.contains(KeyFrameID));
 
         typeCameraPose& CameraParameters = Map.KeyFrames[KeyFrameID].Camera.Pose;
+#if defined(CONFIG_IMU)
         typeNavigationState& IMUParameters = Map.KeyFrames[KeyFrameID].NavigationState;
+#endif
 
         Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
         Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
         Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
 
+#if defined(CONFIG_IMU)
+        Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
+        Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
+        Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
+#endif
+
         if(KeyFrameID == 0) 
         {
             Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
             Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
+#if defined(CONFIG_IMU)
             Problem.SetParameterBlockConstant(IMUParameters.Velocity.data());
             Problem.SetParameterBlockConstant(IMUParameters.GyroBias.data());
             Problem.SetParameterBlockConstant(IMUParameters.AccelorometerBias.data());
+#endif
             continue;
         }
 
-        Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
-        Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
-        Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
-
+#if defined(CONFIG_IMU)
         typeKeyFrame& PreviousKeyFrame = Map.KeyFrames[Map.KeyFrames[KeyFrameID].PreviousKFID];
 
         typeCameraPose& PreviousCameraParameters =   PreviousKeyFrame.Camera.Pose;
@@ -202,6 +214,7 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
         Problem.AddParameterBlock(PreviousIMUParameters.Velocity.data(), 3);
         Problem.AddParameterBlock(PreviousIMUParameters.GyroBias.data(), 3);
         Problem.AddParameterBlock(PreviousIMUParameters.AccelorometerBias.data(), 3);
+#endif
     }
 
     for(typePantoMapPoint& MapPoint : Map.MapPoints)
@@ -251,10 +264,11 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
             continue;
         }
 
+#if defined(CONFIG_IMU)
         typeNavigationState& IMUParameters = KeyFrame.NavigationState;
         typeCameraPose& PreviousCameraParameters = Map.KeyFrames[KeyFrame.PreviousKFID].Camera.Pose;
         typeNavigationState& PreviousIMUParameters = Map.KeyFrames[KeyFrame.PreviousKFID].NavigationState;
-        typePreIntegrationData& PreviousData = Map.KeyFrames[KeyFrame.PreviousKFID].PreIntegrationData;
+        typePreIntegrationData& PreviousData = KeyFrame.PreIntegrationData;
 
         const Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(PreviousData.Covariance);
         const Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
@@ -277,10 +291,12 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
                                     IMUParameters.GyroBias.data(),
                                     IMUParameters.AccelorometerBias.data()
                                     );
+#endif
     }
 }
 
-void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, typeKeyFrame* NewKeyFrame)
+void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
+        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame)
 {
     /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
      *Optimizing on manifolds seemingly has many benefits, one of them is that
@@ -292,15 +308,20 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, type
     //We need to add the camera parameters first so we can
     //Set the first camera constant
 
-    const Eigen::Vector3d Grav = *IMU_GetGravity();
     typeKeyFrame* KeyFrame = NewKeyFrame;
     typeCameraPose& CameraParameters = KeyFrame->Camera.Pose;
+#if defined(CONFIG_IMU)
+    const Eigen::Vector3d Grav = *IMU_GetGravity();
     typeNavigationState& IMUParameters = KeyFrame->NavigationState;
 
-    typeKeyFrame& PreviousKeyFrame = Map.KeyFrames[NewKeyFrame->PreviousKFID];
+    assert(PreviousFrame != nullptr);
+    typeKeyFrame& PreviousKeyFrame = *PreviousFrame;
     typeCameraPose& PreviousCameraParameters = PreviousKeyFrame.Camera.Pose;
     typeNavigationState& PreviousIMUParameters = PreviousKeyFrame.NavigationState;
-    typePreIntegrationData& PreviousData = PreviousKeyFrame.PreIntegrationData;
+    typePreIntegrationData& PreviousData = KeyFrame->PreIntegrationData;
+#else
+    (void)PreviousFrame;
+#endif
 
     Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
     Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(),
@@ -308,6 +329,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, type
 
     Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
 
+#if defined(CONFIG_IMU)
     Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
     Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
     Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
@@ -327,6 +349,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, type
     Problem.SetParameterBlockConstant(PreviousIMUParameters.Velocity.data());
     Problem.SetParameterBlockConstant(PreviousIMUParameters.GyroBias.data());
     Problem.SetParameterBlockConstant(PreviousIMUParameters.AccelorometerBias.data());
+#endif
 
     u64 NumAssociatedMapPoints = 0;
 
@@ -372,6 +395,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, type
         }
     }
 
+#if defined(CONFIG_IMU)
     const Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(PreviousData.Covariance);
     const Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
     const Eigen::Matrix<fp64, 15, 15> SqrtInfo = L.triangularView<Eigen::Lower>().solve(
@@ -392,6 +416,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem, type
             IMUParameters.GyroBias.data(),
             IMUParameters.AccelorometerBias.data()
             );
+#endif
 }
 
 void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const typeLocalMap& LocalMap)
@@ -404,34 +429,44 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
      *the optimization is reduced to the natural size of optimizing with 3DOF, whatever that means?
     */
     std::unordered_set<u64> FixedKeyFrames;
+#if defined(CONFIG_IMU)
     const Eigen::Vector3d Grav = *IMU_GetGravity();
+#endif
+    const std::unordered_set<u64> OptimizedKeyFrames(
+            LocalMap.KeyFrameIDs.begin(), LocalMap.KeyFrameIDs.end());
 
     for(const u64& KeyFrameID : LocalMap.KeyFrameIDs)
     {
         assert(Map.KeyFrames.contains(KeyFrameID));
 
         typeCameraPose& CameraParameters = Map.KeyFrames[KeyFrameID].Camera.Pose;
+#if defined(CONFIG_IMU)
         typeNavigationState& IMUParameters = Map.KeyFrames[KeyFrameID].NavigationState;
+#endif
 
         Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
         Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
         Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
 
+#if defined(CONFIG_IMU)
+        Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
+        Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
+        Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
+#endif
+
         if (KeyFrameID == 0) 
         {
             Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
             Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
+#if defined(CONFIG_IMU)
             Problem.SetParameterBlockConstant(IMUParameters.Velocity.data());
             Problem.SetParameterBlockConstant(IMUParameters.GyroBias.data());
             Problem.SetParameterBlockConstant(IMUParameters.AccelorometerBias.data());
+#endif
             continue;
         }
 
-        Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
-        Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
-        Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
-
-
+#if defined(CONFIG_IMU)
         typeKeyFrame& PreviousKeyFrame = Map.KeyFrames[Map.KeyFrames[KeyFrameID].PreviousKFID];
 
         typeCameraPose& PreviousCameraParameters =   PreviousKeyFrame.Camera.Pose;
@@ -444,6 +479,17 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         Problem.AddParameterBlock(PreviousIMUParameters.Velocity.data(), 3);
         Problem.AddParameterBlock(PreviousIMUParameters.GyroBias.data(), 3);
         Problem.AddParameterBlock(PreviousIMUParameters.AccelorometerBias.data(), 3);
+
+        if(!OptimizedKeyFrames.contains(PreviousKeyFrame.ID))
+        {
+            Problem.SetParameterBlockConstant(PreviousCameraParameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant(PreviousCameraParameters.tParametrization.data());
+            Problem.SetParameterBlockConstant(PreviousIMUParameters.Velocity.data());
+            Problem.SetParameterBlockConstant(PreviousIMUParameters.GyroBias.data());
+            Problem.SetParameterBlockConstant(PreviousIMUParameters.AccelorometerBias.data());
+            FixedKeyFrames.insert(PreviousKeyFrame.ID);
+        }
+#endif
     }
 
     for(const u64 KeyFrameID : LocalMap.FixedKeyFrameIDs)
@@ -452,7 +498,9 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
 
 
         typeCameraPose& CameraParameters = Map.KeyFrames[KeyFrameID].Camera.Pose;
+#if defined(CONFIG_IMU)
         typeNavigationState& IMUParameters = Map.KeyFrames[KeyFrameID].NavigationState; 
+#endif
 
         Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
         Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
@@ -461,11 +509,7 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
         Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
 
-        if(KeyFrameID == 0)
-        {
-            continue;
-        }
-
+#if defined(CONFIG_IMU)
         Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
         Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
         Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
@@ -473,7 +517,16 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         Problem.SetParameterBlockConstant(IMUParameters.Velocity.data());
         Problem.SetParameterBlockConstant(IMUParameters.GyroBias.data());
         Problem.SetParameterBlockConstant(IMUParameters.AccelorometerBias.data());
+#endif
 
+        FixedKeyFrames.insert(KeyFrameID);
+
+        if(KeyFrameID == 0)
+        {
+            continue;
+        }
+
+#if defined(CONFIG_IMU)
         typeKeyFrame& PreviousKeyFrame = Map.KeyFrames[Map.KeyFrames[KeyFrameID].PreviousKFID];
 
         typeCameraPose& PreviousCameraParameters =   PreviousKeyFrame.Camera.Pose;
@@ -487,13 +540,16 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         Problem.AddParameterBlock(PreviousIMUParameters.GyroBias.data(), 3);
         Problem.AddParameterBlock(PreviousIMUParameters.AccelorometerBias.data(), 3);
 
-        Problem.SetParameterBlockConstant(PreviousCameraParameters.Quaternion.coeffs().data());
-        Problem.SetParameterBlockConstant(PreviousCameraParameters.tParametrization.data());
-        Problem.SetParameterBlockConstant(PreviousIMUParameters.Velocity.data());
-        Problem.SetParameterBlockConstant(PreviousIMUParameters.GyroBias.data());
-        Problem.SetParameterBlockConstant(PreviousIMUParameters.AccelorometerBias.data());
-
-        FixedKeyFrames.insert(KeyFrameID);
+        if(!OptimizedKeyFrames.contains(PreviousKeyFrame.ID))
+        {
+            Problem.SetParameterBlockConstant(PreviousCameraParameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant(PreviousCameraParameters.tParametrization.data());
+            Problem.SetParameterBlockConstant(PreviousIMUParameters.Velocity.data());
+            Problem.SetParameterBlockConstant(PreviousIMUParameters.GyroBias.data());
+            Problem.SetParameterBlockConstant(PreviousIMUParameters.AccelorometerBias.data());
+            FixedKeyFrames.insert(PreviousKeyFrame.ID);
+        }
+#endif
     }
 
 #if !defined(CONFIG_IMU)
@@ -506,10 +562,10 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
                 continue;
             }
             typeCameraPose& CameraParameters = Map.KeyFrames[KeyFrameID].Camera.Pose;
-            typeNavigationState& IMUParameters = Map.KeyFrames[KeyFrameID].NavigationState; 
 
             Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
             Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
+            FixedKeyFrames.insert(KeyFrameID);
 
             if(FixedKeyFrames.size() == 2)
             {
@@ -537,7 +593,7 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
 
 #if defined(CONFIG_IMU)
         // In VIO mappoints are anchors and not moved
-        Problem.SetParameterBlockConstant(MapPoint.Point.data());
+        // Problem.SetParameterBlockConstant(MapPoint.Point.data());
 #endif
     }
 
@@ -548,7 +604,9 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         typeKeyFrame& KeyFrame = Map.KeyFrames[KeyFrameID];
 
         typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+#if defined(CONFIG_IMU)
         typeNavigationState& IMUParameters = KeyFrame.NavigationState;
+#endif
 
         for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
@@ -581,11 +639,12 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
             continue;
         }
 
+#if defined(CONFIG_IMU)
         typeKeyFrame& PreviousKeyFrame = Map.KeyFrames[KeyFrame.PreviousKFID];
 
         typeCameraPose& PreviousCameraParameters = PreviousKeyFrame.Camera.Pose;
         typeNavigationState& PreviousIMUParameters = PreviousKeyFrame.NavigationState;
-        typePreIntegrationData& PreviousData = PreviousKeyFrame.PreIntegrationData;
+        typePreIntegrationData& PreviousData = KeyFrame.PreIntegrationData;
 
         const Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(PreviousData.Covariance);
         const Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
@@ -607,6 +666,7 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
                 IMUParameters.GyroBias.data(),
                 IMUParameters.AccelorometerBias.data()
             );
+#endif
     }
 
     for(const u64& KeyFrameID : LocalMap.FixedKeyFrameIDs)
@@ -614,7 +674,9 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
         typeKeyFrame& KeyFrame = Map.KeyFrames[KeyFrameID];
 
         typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+#if defined(CONFIG_IMU)
         typeNavigationState& IMUParameters = KeyFrame.NavigationState;
+#endif
 
 
         for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
@@ -648,11 +710,12 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
             continue;
         }
 
+#if defined(CONFIG_IMU)
         typeKeyFrame& PreviousKeyFrame = Map.KeyFrames[KeyFrame.PreviousKFID];
 
         typeCameraPose& PreviousCameraParameters = PreviousKeyFrame.Camera.Pose;
         typeNavigationState& PreviousIMUParameters = PreviousKeyFrame.NavigationState;
-        typePreIntegrationData& PreviousData = PreviousKeyFrame.PreIntegrationData;
+        typePreIntegrationData& PreviousData = KeyFrame.PreIntegrationData;
 
         const Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(PreviousData.Covariance);
         const Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
@@ -674,5 +737,6 @@ void __OP_BuildProblemLocal(typeGlobalMap& Map, ceres::Problem& Problem, const t
                 IMUParameters.GyroBias.data(),
                 IMUParameters.AccelorometerBias.data()
             );
+#endif
     }
 }

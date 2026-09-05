@@ -444,15 +444,11 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
     for(typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
     {
         typePantoVector<u64>& KeyFrameIDs = MapPoint.KeyFrameIDs;
-
         typePantoVector<u64>& ImagePointIDs = MapPoint.ImagePointIDs;
 
         assert( KeyFrameIDs.size() == ImagePointIDs.size());
-
         const u64 NumObservationsBefore = PT_GetNumObservations(MapPoint);
-
         Eigen::Vector2d ProjectedPoint;
-
         std::vector<u64> CulledIndexes;
 
         for(std::size_t i{}; i < KeyFrameIDs.size(); i++)
@@ -465,17 +461,11 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
             }
 
             const u64 KeyFrameID = KeyFrameIDs[i];
-
             const u64 ImagePointID = ImagePointIDs[i];
-
             assert(GlobalMap.KeyFrames.contains( KeyFrameID));
-
             typeKeyFrame& KeyFrame = GlobalMap.KeyFrames[KeyFrameID];
-
             assert(KeyFrame.Points.ImagePoints.contains( ImagePointID));
-
             typePantoImagePoint& ImagePoint = KeyFrame.Points.ImagePoints[ImagePointID];
-
             if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Camera))
             {
                 LG_Log( LogSeverity::DBG,

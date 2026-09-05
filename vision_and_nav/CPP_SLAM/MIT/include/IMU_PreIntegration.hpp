@@ -22,16 +22,14 @@ class typeNavigationState
         typeNavigationState() = default;
         typeNavigationState(const Eigen::Quaterniond& Q, const Eigen::Vector3d& Vel, 
                 const Eigen::Vector3d& Pos, const Eigen::Vector3d& GyroB, const Eigen::Vector3d& AccB) 
-            : Rwb(Q.toRotationMatrix()),
+            : Rwb(Q.normalized().toRotationMatrix()),
             Velocity(Vel),
             Position(Pos),
             GyroBias(GyroB),
             AccelorometerBias(AccB),
-            q(Q),
+            q(Q.normalized()),
             t(Position)
-        {
-            q.normalize();
-        };
+        {};
 
         typeNavigationState(const Eigen::Matrix3d& R, const Eigen::Vector3d& Vel, 
                 const Eigen::Vector3d& Pos, const Eigen::Vector3d& GyroB, const Eigen::Vector3d& AccB) 
@@ -55,10 +53,10 @@ class typeNavigationState
             GyroBias = NavigationState.GyroBias;
             AccelorometerBias = NavigationState.AccelorometerBias;
 
-            Eigen::Quaterniond qNew(Rwb.transpose());
+            Eigen::Quaterniond qNew(Rwb);
             qNew.normalize();
             q = qNew;
-            t = -Rwb.transpose() * Position;
+            t = Position;
         }
 };
 
@@ -90,6 +88,8 @@ class typePreIntegration : public typePreIntegrationData
 {
     public:
         typeNavigationState InitialNavigationState;
+        typeIMUMeasurement PreviousMeasurement;
+        bool HasPreviousMeasurement;
 
         typePreIntegration()
         {
@@ -100,6 +100,8 @@ class typePreIntegration : public typePreIntegrationData
             GyroBias = {};
             AccelBias = {};
             InitialNavigationState = {};
+            PreviousMeasurement = {};
+            HasPreviousMeasurement = false;
 
             Qc = {};
             Covariance = {};
@@ -165,10 +167,15 @@ class typePreIntegration : public typePreIntegrationData
             F.block<3,3>(0,9) = -I * dT;
             F.block<3,3>(3,0) = -DeltaR * AccSkew * dT;
             F.block<3,3>(3,12) = -DeltaR * dT;
+            F.block<3,3>(6,0) =
+                -0.5 * DeltaR * AccSkew * dT * dT;
             F.block<3,3>(6,3) = I * dT;
+            F.block<3,3>(6,12) =
+                -0.5 * DeltaR * dT * dT;
 
             G.block<3,3>(0,0) = -I;
             G.block<3,3>(3,3) = -DeltaR;
+            G.block<3,3>(6,3) = -0.5 * DeltaR * dT;
             G.block<3,3>(9,6) = I;
             G.block<3,3>(12,9) = I;
 
@@ -189,6 +196,8 @@ class typePreIntegration : public typePreIntegrationData
 };
 
 void IMU_NewNavigationStateArrival(const typeNavigationState& NavigationState);
+void IMU_InitializePreIntegration(typePreIntegration& PreIntegrationState,
+        const typeNavigationState& NavigationState);
 bool IMU_InitializeGravity(const typeNavigationState& NavigationState, const typeIMUMeasurement& Measurement, const Eigen::Vector3d& WorldAcceleration);
 Eigen::Vector3d* IMU_GetGravity(void);
 void IMU_IngegrationStep(const typeIMUMeasurement& Current);

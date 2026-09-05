@@ -8,12 +8,17 @@ This is the todo list for IMU integration:
 -   (DONE) Keyframe should contain Navstate, not just pose.
 -   (DONE) Optional GT initialization, so choose two initial keyframes that are read from GT.
 -   (DONE) IMU residual factor for Ceres, in progress, currently making residual, residual done
--   Calculate SQRT information for the residual, S^T * S = P^-1 (for whitening), cholesky decomp.
--   both residuals take in R and t from typeCameras pose, (the same pointer) thats how they are connected
--   accumulate frame to frame preint and keyframe preint
+-   (DONE) Calculate SQRT information for the residual, S^T * S = P^-1 (for whitening), cholesky decomp.
+-   (DONE) both residuals take in R and t from typeCameras pose, (the same pointer) thats how they are connected
+-   (DONE) Make frame to frame preintegration work as expected, also KF to KF preintegration.
+-   (DONE) Make keyframes correctly reference the last keyframe.
+-   (DONE) If preintegration accumulation and correct references "BA" should work now, test it, tracking, local,
+    and global pose only optimization.
 -   handle linear interp with preint, so the timestamps align exactly between IMU and frames, eg
 -   IMU(T=1), KEY(T=2), IMU(T=3) -> IMU(T=1) -> KEY(T=2) + IMU_interpbetween1and3 -> IMU(T=3)
--   IMU pose prediction
+-   IMU pose prediction, should be more or less done as soon as above points are done, just need to
+    make sure everything inherits correctly.
 
 note that since IMU and camera initilization differ greatly depending on
-monocular or stereo, I'm skipping that for now.
+monocular or stereo, I'm skipping that for now, and only initializing with GT frames
+when running with IMU, since then I get correct scale without any worries

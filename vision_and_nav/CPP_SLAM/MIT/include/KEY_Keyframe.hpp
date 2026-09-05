@@ -35,7 +35,7 @@ typedef struct
     fp64 AcumulatedDistanceTravelled;
 }typeKeyFrameInformation;
 
-typedef struct
+struct typeKeyFrame
 {
     typePantoKeypointFrame Points;
     DBoW3::BowVector BowVector;
@@ -44,11 +44,11 @@ typedef struct
 #if defined(CONFIG_IMU)
     typeNavigationState NavigationState;
     typePreIntegrationData PreIntegrationData;
-    u64 PreviousKFID;
+    u64 PreviousKFID = PANTO_ID_NOT_SET;
 #endif
     u64 ID;
     std::string ImagePath;
-}typeKeyFrame;
+};
 
 typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame,
         const u64 ID);

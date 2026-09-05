@@ -11,6 +11,9 @@ static constexpr u64 VIZPriv_IMUTestPublishStride = 5;
 static void VIZPriv_WriteTrajectoryFile(
         const std::vector<Eigen::Vector3d>& Trajectory,
         const std::string& Path);
+static void VIZPriv_WriteTimeStampFile(
+        const std::vector<fp64>& TimeStamps,
+        const std::string& Path);
 
 void VIZ_InitVisualization(void)
 {
@@ -159,6 +162,19 @@ void VIZ_SetGroundTruth(
             "/sparse/ground_truth.bin");
 }
 
+void VIZ_SetGroundTruth(
+        const std::vector<Eigen::Vector3d>& GroundTruthTrajectory,
+        const std::vector<fp64>& GroundTruthTimeStamps)
+{
+    assert(GroundTruthTrajectory.size() == GroundTruthTimeStamps.size());
+
+    VIZ_SetGroundTruth(GroundTruthTrajectory);
+    VIZPriv_WriteTimeStampFile(
+            GroundTruthTimeStamps,
+            std::string(PANTO_COLMAP_PATH) +
+            "/sparse/ground_truth_timestamps.bin");
+}
+
 void VIZ_SetIMUTestGroundTruth(
         const std::vector<Eigen::Vector3d>& GroundTruthTrajectory)
 {
@@ -229,6 +245,28 @@ static void VIZPriv_WriteTrajectoryFile(
                 Last.y(),
                 Last.z());
     }
+}
+
+static void VIZPriv_WriteTimeStampFile(
+        const std::vector<fp64>& TimeStamps,
+        const std::string& Path)
+{
+    FILE* fp = fopen(Path.c_str(), "wb");
+    assert(fp != nullptr);
+
+    const u64 NumTimeStamps = static_cast<u64>(TimeStamps.size());
+    fwrite(&NumTimeStamps, sizeof(u64), 1, fp);
+
+    if(!TimeStamps.empty())
+    {
+        fwrite(
+                TimeStamps.data(),
+                sizeof(fp64),
+                TimeStamps.size(),
+                fp);
+    }
+
+    fclose(fp);
 }
 
 void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)

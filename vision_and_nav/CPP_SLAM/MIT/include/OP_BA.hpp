@@ -169,10 +169,10 @@ struct OP_IMUResidual
 
         const Eigen::Quaternion<T> QBC = CameraToBodyRotation.template cast<T>();
         const Eigen::Matrix<T,3,1> tBC = CameraToBodyTranslation.template cast<T>();
-        const Eigen::Quaternion<T> QWBi = (QBC * Qi).conjugate();
-        const Eigen::Quaternion<T> QWBj = (QBC * Qj).conjugate();
-        const Eigen::Matrix<T,3,1> PWBi = -(QWBi * (QBC * Posei + tBC));
-        const Eigen::Matrix<T,3,1> PWBj = -(QWBj * (QBC * Posej + tBC));
+        const Eigen::Quaternion<T> QWBi = Qi * QBC.conjugate();
+        const Eigen::Quaternion<T> QWBj = Qj * QBC.conjugate();
+        const Eigen::Matrix<T,3,1> PWBi = Posei - QWBi * tBC;
+        const Eigen::Matrix<T,3,1> PWBj = Posej - QWBj * tBC;
 
         const Sophus::SO3<T> RWBi(QWBi);
         const Sophus::SO3<T> RWBj(QWBj);
@@ -209,6 +209,8 @@ struct OP_IMUResidual
 
 };
 
-void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target, const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame);
+void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
+        const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame,
+        typeKeyFrame* PreviousFrame = nullptr);
 
 #endif //__OP_BA_HPP_

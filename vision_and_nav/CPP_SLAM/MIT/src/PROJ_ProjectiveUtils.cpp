@@ -1,4 +1,6 @@
 #include "PROJ_ProjectiveUtils.hpp"
+#include <cmath>
+#include <limits>
 
 Eigen::Vector3d PROJ_Homog2Cart(cv::Mat vec)
 {
@@ -200,12 +202,20 @@ std::vector<Eigen::Vector4d> PROJ_TriangulateLOST(const std::vector<std::vector<
 
 bool PROJ_Project(const Eigen::Vector4d& MapPoint, Eigen::Vector2d& ImagePoint, const typeCamera& Camera)
 {
-    fp64 w = MapPoint.w();
+    const fp64 w = MapPoint.w();
+    if(!MapPoint.allFinite() ||
+       !std::isfinite(w) ||
+       std::abs(w) <= std::numeric_limits<fp64>::epsilon())
+    {
+        return false;
+    }
+
     Eigen::Vector3d NormalizedMapPoint(MapPoint.x() / w, MapPoint.y() / w, MapPoint.z() / w);
 
     NormalizedMapPoint = Camera.Pose.R * NormalizedMapPoint + Camera.Pose.t;
 
-    if(NormalizedMapPoint.z() < 0.0f)
+    if(!NormalizedMapPoint.allFinite() ||
+       NormalizedMapPoint.z() <= std::numeric_limits<fp64>::epsilon())
     {
         return false;
     }
@@ -219,13 +229,12 @@ bool PROJ_Project(const Eigen::Vector4d& MapPoint, Eigen::Vector2d& ImagePoint, 
 
     ImagePoint = Pixel.head<2>();
 
-
-    if (ImagePoint.x() < 0.0 || ImagePoint.x() >= PANTO_IMAGE_WIDTH ||
-    ImagePoint.y() < 0.0 || ImagePoint.y() >= PANTO_IMAGE_HEIGHT)
+    if(!ImagePoint.allFinite() ||
+       ImagePoint.x() < 0.0 || ImagePoint.x() >= Intrinsics.ImageWidth ||
+       ImagePoint.y() < 0.0 || ImagePoint.y() >= Intrinsics.ImageHeight)
     {
         return false;
     }
 
     return true;
 }
-

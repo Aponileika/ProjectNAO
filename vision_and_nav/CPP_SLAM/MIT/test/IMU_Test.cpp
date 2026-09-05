@@ -118,18 +118,12 @@ static bool IMUTest_SynchronizeFrameAndGroundTruth(
 
 static typeNavigationState IMUTest_GetNavigationState(const typeGroundTruth& GroundTruth)
 {
-    typeNavigationState NavigationState;
-    NavigationState.Rwb =
-        GroundTruth.Orientation.normalized().toRotationMatrix();
-    NavigationState.Velocity = GroundTruth.Velocity;
-    NavigationState.Position = GroundTruth.Position;
-    NavigationState.GyroBias = GroundTruth.GyroBias;
-    NavigationState.AccelorometerBias = GroundTruth.AccelBias;
-    NavigationState.q = Eigen::Quaterniond(
-            NavigationState.Rwb.transpose()).normalized();
-    NavigationState.t =
-        -NavigationState.Rwb.transpose() * NavigationState.Position;
-    return NavigationState;
+    return typeNavigationState(
+            GroundTruth.Orientation.normalized(),
+            GroundTruth.Velocity,
+            GroundTruth.Position,
+            GroundTruth.GyroBias,
+            GroundTruth.AccelBias);
 }
 
 struct typeIMUTestOptions
@@ -325,8 +319,47 @@ int main(int argc, char* argv[])
         }
     }
 
-    IMU_NewNavigationStateArrival(
-            IMUTest_GetNavigationState(CurrentGroundTruth));
+    const typeNavigationState InitialNavigationState =
+        IMUTest_GetNavigationState(CurrentGroundTruth);
+    const auto InitialGroundTruthIterator = std::lower_bound(
+            AllGroundTruth.begin(),
+            AllGroundTruth.end(),
+            CurrentGroundTruth.TimeStamp,
+            [](const typeGroundTruth& Measurement, const fp64 TimeStamp)
+            {
+                return Measurement.TimeStamp < TimeStamp;
+            });
+    const std::size_t InitialGroundTruthIndex =
+        InitialGroundTruthIterator == AllGroundTruth.end() ?
+        AllGroundTruth.size() - 1 :
+        static_cast<std::size_t>(
+            InitialGroundTruthIterator - AllGroundTruth.begin());
+    const std::size_t AccelerationFirstIndex =
+        InitialGroundTruthIndex == 0 ? 0 : InitialGroundTruthIndex - 1;
+    const std::size_t AccelerationSecondIndex =
+        std::min(InitialGroundTruthIndex + 1, AllGroundTruth.size() - 1);
+    const fp64 AccelerationDeltaT =
+        AllGroundTruth[AccelerationSecondIndex].TimeStamp -
+        AllGroundTruth[AccelerationFirstIndex].TimeStamp;
+    Eigen::Vector3d InitialWorldAcceleration = Eigen::Vector3d::Zero();
+    if(AccelerationDeltaT > 0.0)
+    {
+        InitialWorldAcceleration =
+            (AllGroundTruth[AccelerationSecondIndex].Velocity -
+             AllGroundTruth[AccelerationFirstIndex].Velocity) /
+            AccelerationDeltaT;
+    }
+
+    if(!IMU_InitializeGravity(
+                InitialNavigationState,
+                CurrentIMUMeasurement,
+                InitialWorldAcceleration))
+    {
+        std::cerr << "Failed to initialize gravity\n";
+        return 1;
+    }
+
+    IMU_NewNavigationStateArrival(InitialNavigationState);
     IMU_IngegrationStep(CurrentIMUMeasurement);
     CurrentIMUMeasurement = IMU_GetMeasurement();
 

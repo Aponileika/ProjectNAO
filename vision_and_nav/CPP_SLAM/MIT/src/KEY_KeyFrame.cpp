@@ -112,7 +112,7 @@ typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typeP
 #endif
 
     const Eigen::Matrix3d& Rbw = NavState.Rwb.transpose();
-    const Eigen::Vector3d& tbw = -Rbw * NavState.t;
+    const Eigen::Vector3d tbw = -Rbw * NavState.Position;
 
     const Eigen::Matrix3d& CameraR = BodyToCamera.R.transpose() * Rbw;
     const Eigen::Vector3d& Camerat = BodyToCamera.R.transpose() * tbw - BodyToCamera.R.transpose() * BodyToCamera.t;
@@ -1296,6 +1296,7 @@ typeNavigationState KEY_PredictPose(typeKeyFrame& PreviousKeyFrame)
     typePreIntegrationData PreIntegrationData = IMU_GetLatestPreIntegrationData();
     return IMU_PredictNavigationState(PreviousKeyFrame.NavigationState, PreIntegrationData);
 }
+
 #endif
 
 #if defined(CONFIG_IMU)
