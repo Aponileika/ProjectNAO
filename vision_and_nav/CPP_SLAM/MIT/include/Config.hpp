@@ -53,7 +53,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define PANTO_NUM_BOOTSTRAP_FRAMES 100
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
-#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 10
+#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 30
 #define PANTO_KEYFRAME_MEAN_VELOCITY_THRESHOLD_GAIN 4
 #define PANTO_KEYFRAME_MEAN_TRACKING_HIGH_THRESHOLD_GAIN 0.5f
 #define PANTO_KEYFRAME_MEAN_TRACKING_LOW_THRESHOLD_GAIN 0.1f
