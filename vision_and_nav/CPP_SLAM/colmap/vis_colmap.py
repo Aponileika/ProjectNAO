@@ -437,6 +437,11 @@ def update_visualization(
 ):
     images_path = root / "images"
 
+    ground_truth_changed = not np.array_equal(
+        handles["latest_ground_truth"],
+        ground_truth,
+    )
+
     handles["latest_tracks"] = tracks
     handles["latest_images"] = images
     handles["latest_ground_truth"] = ground_truth
@@ -537,7 +542,10 @@ def update_visualization(
     else:
         handles["tracking_trajectory"] = None
 
-    if handles["ground_truth_size"] != len(ground_truth):
+    if (
+        handles["ground_truth_size"] != len(ground_truth)
+        or ground_truth_changed
+    ):
         if handles["ground_truth_trajectory"] is not None:
             handles["ground_truth_trajectory"].remove()
             handles["ground_truth_trajectory"] = None
