@@ -1,4 +1,5 @@
 #include "MAP_Mapping.hpp"
+#include "Config.hpp"
 #include "MAPPriv_Mapping.hpp"
 #include <unordered_map>
 
@@ -143,8 +144,71 @@ typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, 
 
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const u64 LatestKeyFrameID)
 {
-    std::vector<typeCovisibility> MostCovisible = GRAPH_GetTopNCovisibleFrames(CovisibilityGraph, LatestKeyFrameID, PANTO_TOP_N_KF_FOR_LOCAL_MAP);
     typeLocalMap LocalMap;
+#if defined(CONFIG_IMU)
+    LocalMap.KeyFrameIDs.reserve(PANTO_NUM_TEMPORALLY_CONNECTED_KFS_LOCAL_BA);
+
+    LocalMap.IMUAnchor = PANTO_ID_NOT_SET;
+
+    u64 CurrentKeyFrameID = LatestKeyFrameID;
+
+    for(u64 i = 0; i < PANTO_NUM_TEMPORALLY_CONNECTED_KFS_LOCAL_BA; i++)
+    {
+        LocalMap.KeyFrameIDs.push_back(CurrentKeyFrameID);
+
+        const u64 PreviousKeyFrameID =
+            GlobalMap.KeyFrames[CurrentKeyFrameID].PreviousKFID;
+
+        if(PreviousKeyFrameID == PANTO_ID_NOT_SET)
+        {
+            // CurrentKeyFrameID is the root KF. Must be fixed
+            LocalMap.KeyFrameIDs.pop_back();
+            LocalMap.IMUAnchor = CurrentKeyFrameID;
+            break;
+        }
+
+        CurrentKeyFrameID = PreviousKeyFrameID;
+    }
+
+    if(LocalMap.IMUAnchor == PANTO_ID_NOT_SET)
+    {
+        LocalMap.IMUAnchor = GlobalMap.KeyFrames[LocalMap.KeyFrameIDs.back()].PreviousKFID;
+    }
+
+    // The temporal anchor is fixed by the inertial problem, but its
+    // observations must still constrain the local map points visually.
+    LocalMap.FixedKeyFrameIDs.push_back(LocalMap.IMUAnchor);
+
+    std::unordered_set<u64> MapPointInLocalMap;
+    for(const u64 KeyFrameID : LocalMap.KeyFrameIDs)
+    {
+        for(const typePantoImagePoint& ImagePoint : GlobalMap.KeyFrames[KeyFrameID].Points.ImagePoints)
+        {
+            if(ImagePoint.MapPointID == PANTO_ID_NOT_SET)
+            {
+                continue;
+            }
+            if(MapPointInLocalMap.insert(ImagePoint.MapPointID).second)
+            {
+                LocalMap.MapPointIDs.push_back(ImagePoint.MapPointID);
+            }
+        }
+    }
+
+    const std::vector<typeCovisibility> ExternalKeyFrames =
+        GRAPH_GetTopNExternalCovisibleFrames(
+                CovisibilityGraph,
+                LocalMap.KeyFrameIDs,
+                PANTO_MAX_FIXED_KFS_LOCAL_BA - 1,
+                LocalMap.IMUAnchor);
+
+    for(const typeCovisibility& ExternalKeyFrame : ExternalKeyFrames)
+    {
+        LocalMap.FixedKeyFrameIDs.push_back(ExternalKeyFrame.KeyFrameID);
+    }
+
+#else
+    std::vector<typeCovisibility> MostCovisible = GRAPH_GetTopNCovisibleFrames(CovisibilityGraph, LatestKeyFrameID, PANTO_TOP_N_KF_FOR_LOCAL_MAP);
     std::unordered_set<u64> KeyFrameInLocalMap;
 
     LocalMap.KeyFrameIDs.push_back(LatestKeyFrameID);
@@ -186,6 +250,7 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisi
         }
     }
 
+#endif // CONFIG_IMU
     return LocalMap;
 }
 
@@ -365,7 +430,10 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& Covisibil
             CulledKeyFrameIDs.size());
 }
 
-void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGlobalMap& GlobalMap)
+void MAP_CullRecentMapPoints(
+        typePantoVector<u64>& RecentMapPointIndexes,
+        typeGlobalMap& GlobalMap,
+        typeCovisibilityGraph& CovisibilityGraph)
 {
     LG_Log( LogSeverity::DBG, "[MAP_CullRecentMapPoints] Culling recent mappoints\n");
 
@@ -396,7 +464,11 @@ void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGl
         if(PT_GetFoundRatio(MapPoint) < PANTO_MIN_FOUND_RATIO)
         {
             RecentMapPointIndexes.remove(i);
-            MAPPriv_CullRecentMapPoint(MapPoint, MapPointIndex, GlobalMap);
+            MAPPriv_CullRecentMapPoint(
+                    MapPoint,
+                    MapPointIndex,
+                    GlobalMap,
+                    CovisibilityGraph);
             NumRemoved++;
             MappingData.RecentMapPointsCulled++;
             continue;
@@ -404,7 +476,11 @@ void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGl
         else if(Age >= 2 && NumObservations <= 2)
         {
             RecentMapPointIndexes.remove(i);
-            MAPPriv_CullRecentMapPoint(MapPoint, MapPointIndex, GlobalMap);
+            MAPPriv_CullRecentMapPoint(
+                    MapPoint,
+                    MapPointIndex,
+                    GlobalMap,
+                    CovisibilityGraph);
             NumRemoved++;
             MappingData.RecentMapPointsCulled++;
             continue;
@@ -952,6 +1028,9 @@ void MAP_AssertGraphEqual(const typeGlobalMap& GlobalMap, const typeCovisibility
 {
     assert(GlobalMap.KeyFrames.size() == CovisibilityGraph.size());
 
+    std::vector<std::unordered_map<u64, u64>> ExpectedConnections(
+            GlobalMap.KeyFrames.size());
+
     for(std::size_t i{}; i < GlobalMap.KeyFrames.size(); i++)
     {
         assert(GlobalMap.KeyFrames.contains(i) == CovisibilityGraph.contains(i));
@@ -960,6 +1039,50 @@ void MAP_AssertGraphEqual(const typeGlobalMap& GlobalMap, const typeCovisibility
         {
             assert(GlobalMap.KeyFrames[i].ID == i);
         }
+    }
+
+    for(const typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
+    {
+        const typePantoVector<u64>& KeyFrameIDs = MapPoint.KeyFrameIDs;
+
+        for(std::size_t i = 0; i < KeyFrameIDs.size(); i++)
+        {
+            if(!KeyFrameIDs.contains(i))
+            {
+                continue;
+            }
+
+            const u64 FirstKeyFrameID = KeyFrameIDs[i];
+            assert(GlobalMap.KeyFrames.contains(FirstKeyFrameID));
+
+            for(std::size_t j = i + 1; j < KeyFrameIDs.size(); j++)
+            {
+                if(!KeyFrameIDs.contains(j))
+                {
+                    continue;
+                }
+
+                const u64 SecondKeyFrameID = KeyFrameIDs[j];
+                assert(FirstKeyFrameID != SecondKeyFrameID);
+                assert(GlobalMap.KeyFrames.contains(SecondKeyFrameID));
+
+                ExpectedConnections[FirstKeyFrameID][SecondKeyFrameID]++;
+                ExpectedConnections[SecondKeyFrameID][FirstKeyFrameID]++;
+            }
+        }
+    }
+
+    for(std::size_t KeyFrameID = 0;
+        KeyFrameID < GlobalMap.KeyFrames.size();
+        KeyFrameID++)
+    {
+        if(!GlobalMap.KeyFrames.contains(KeyFrameID))
+        {
+            continue;
+        }
+
+        assert(CovisibilityGraph[KeyFrameID] ==
+                ExpectedConnections[KeyFrameID]);
     }
 }
 
@@ -1014,8 +1137,16 @@ void MAP_AssertMapPointObservations( const typeGlobalMap& GlobalMap)
     }
 }
 
-void MAPPriv_CullRecentMapPoint(typePantoMapPoint& MapPoint, u64 MapPointIndex, typeGlobalMap& GlobalMap)
+void MAPPriv_CullRecentMapPoint(
+        typePantoMapPoint& MapPoint,
+        u64 MapPointIndex,
+        typeGlobalMap& GlobalMap,
+        typeCovisibilityGraph& CovisibilityGraph)
 {
+    // Each map point contributes one unit to every pair of keyframes that
+    // observes it. Remove those contributions before deleting observations.
+    GRAPH_DecrementAll(CovisibilityGraph, MapPoint.KeyFrameIDs);
+
     typePantoVector KeyFrameIDs = MapPoint.KeyFrameIDs;
     typePantoVector ImagePointIDs = MapPoint.ImagePointIDs;
     for(std::size_t j{}; j < KeyFrameIDs.size(); j++)

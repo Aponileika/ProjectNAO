@@ -56,6 +56,9 @@ typedef struct
     typePantoVector<u64> RecentMapPointIndexes;
 
     std::vector<Eigen::Vector3d> TrackingTrajectory;
+    std::vector<fp64> TrackingTrajectoryTimeStamps;
+    bool GroundTruthVisualizationAligned;
+    bool GroundTruthVisualizationAlignmentAttempted;
 }typeSLAM;
 
 struct typeTimingStatistics

@@ -27,8 +27,12 @@ typedef struct
 typedef struct
 {
     std::vector<u64> KeyFrameIDs;
+    // for imu these are pure visual constraints
     std::vector<u64> FixedKeyFrameIDs;
     std::vector<u64> MapPointIDs;
+#if defined(CONFIG_IMU)
+    u64 IMUAnchor;
+#endif
 }typeLocalMap;
 
 typedef struct
@@ -46,7 +50,9 @@ typePantoVector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap
 typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMapTracking& LocalMap, typeKeyFrame& NewKeyFrame);
 
 void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const u64 CurrentFrameID);
-void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGlobalMap& GlobalMap);
+void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes,
+        typeGlobalMap& GlobalMap,
+        typeCovisibilityGraph& CovisibilityGraph);
 void MAP_CullObservationEdges(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph);
 
 std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& NewKeyFrame, const typeCovisibilityGraph& CovisibilityGraph,

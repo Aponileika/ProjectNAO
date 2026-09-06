@@ -153,8 +153,8 @@ fp64 EP_CheckEpipolarConstraint(const Eigen::Vector2d& Point1, const Eigen::Vect
     EpipolarLine2 /= EpipolarLine2Norm;
     fp64 Distance2 = std::abs(HomogPoint2.transpose() * EpipolarLine2);
 
-    fp64 MeanDistance = (Distance1 + Distance2) * 0.5f;
-    return MeanDistance;
+    fp64 MaxDistance = std::max(Distance1, Distance2);
+    return MaxDistance;
 }
 
 /*

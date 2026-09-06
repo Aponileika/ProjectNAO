@@ -350,10 +350,12 @@ int main(int argc, char* argv[])
             AccelerationDeltaT;
     }
 
-    if(!IMU_InitializeGravity(
+    IMU_ResetGravityInitialization();
+    if(!IMU_AddGravityInitializationMeasurement(
                 InitialNavigationState,
                 CurrentIMUMeasurement,
-                InitialWorldAcceleration))
+                InitialWorldAcceleration) ||
+       !IMU_FinalizeGravityInitialization())
     {
         std::cerr << "Failed to initialize gravity\n";
         return 1;

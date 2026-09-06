@@ -198,7 +198,11 @@ class typePreIntegration : public typePreIntegrationData
 void IMU_NewNavigationStateArrival(const typeNavigationState& NavigationState);
 void IMU_InitializePreIntegration(typePreIntegration& PreIntegrationState,
         const typeNavigationState& NavigationState);
-bool IMU_InitializeGravity(const typeNavigationState& NavigationState, const typeIMUMeasurement& Measurement, const Eigen::Vector3d& WorldAcceleration);
+void IMU_ResetGravityInitialization(void);
+bool IMU_AddGravityInitializationMeasurement(const typeNavigationState& NavigationState,
+        const typeIMUMeasurement& Measurement,
+        const Eigen::Vector3d& WorldAcceleration);
+bool IMU_FinalizeGravityInitialization(void);
 Eigen::Vector3d* IMU_GetGravity(void);
 void IMU_IngegrationStep(const typeIMUMeasurement& Current);
 void IMU_IngegrationStep(const typeIMUMeasurement& Current, typePreIntegration& PreIntegratioState);

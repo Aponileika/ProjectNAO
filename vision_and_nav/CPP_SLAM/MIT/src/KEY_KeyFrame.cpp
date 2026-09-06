@@ -885,11 +885,11 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
                 if(SecondBestDistance != std::numeric_limits<u32>::max())
                 {
-                    if(static_cast<fp64>(BestDistance) >= PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance))
-                    {
-                        NumRatioRejected++;
-                        continue;
-                    }
+                    // if(static_cast<fp64>(BestDistance) >= PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance))
+                    // {
+                    //     NumRatioRejected++;
+                    //     continue;
+                    // }
                 }
                 typePantoImagePoint& ImagePoint2 = AllImagePoints2[BestFeatureID];
                 std::pair<u64, u64> ImagePointIDs(ImagePoint1.ID, ImagePoint2.ID);

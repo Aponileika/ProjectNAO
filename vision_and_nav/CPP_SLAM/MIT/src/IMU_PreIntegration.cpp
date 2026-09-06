@@ -4,6 +4,8 @@
 typePreIntegration IntegrationState = typePreIntegration(); 
 
 static Eigen::Vector3d g{};
+static Eigen::Vector3d GravityDirectionSum{};
+static std::size_t GravityInitializationSamples{};
 
 void IMU_NewNavigationStateArrival(const typeNavigationState& NavigationState)
 {
@@ -18,11 +20,18 @@ void IMU_InitializePreIntegration(typePreIntegration& PreIntegrationState,
     PreIntegrationState.Reset(NavigationState);
 }
 
-bool IMU_InitializeGravity(const typeNavigationState& NavigationState,
-        const typeIMUMeasurement& Measurement, const Eigen::Vector3d& WorldAcceleration)
+void IMU_ResetGravityInitialization(void)
 {
-    constexpr fp64 GravityMagnitude = 9.81;
+    g.setZero();
+    GravityDirectionSum.setZero();
+    GravityInitializationSamples = 0;
+}
 
+bool IMU_AddGravityInitializationMeasurement(
+        const typeNavigationState& NavigationState,
+        const typeIMUMeasurement& Measurement,
+        const Eigen::Vector3d& WorldAcceleration)
+{
     const Eigen::Vector3d SpecificForce =
         Measurement.Acceleration - NavigationState.AccelorometerBias;
 
@@ -38,10 +47,34 @@ bool IMU_InitializeGravity(const typeNavigationState& NavigationState,
         return false;
     }
 
-    g = GravityMagnitude * GravityEstimate.normalized();
+    // Average directions rather than raw vectors so that a noisy numerical GT
+    // acceleration sample cannot dominate the complete initialization window.
+    GravityDirectionSum += GravityEstimate.normalized();
+    GravityInitializationSamples++;
+
+    return true;
+}
+
+bool IMU_FinalizeGravityInitialization(void)
+{
+    constexpr fp64 GravityMagnitude = 9.81;
+
+    if(GravityInitializationSamples == 0 ||
+       !GravityDirectionSum.allFinite() ||
+       GravityDirectionSum.norm() < 1e-6)
+    {
+        return false;
+    }
+
+    g = GravityMagnitude * GravityDirectionSum.normalized();
+    const fp64 MeanDirectionAgreement =
+        GravityDirectionSum.norm() /
+        static_cast<fp64>(GravityInitializationSamples);
 
     LG_Log(LogSeverity::DATA,
-            "[IMUGravityInitialization] g_W = (%.6f, %.6f, %.6f), |g| = %.6f\n",
+            "[IMUGravityInitialization] samples = %zu; direction agreement = %.6f; g_W = (%.6f, %.6f, %.6f), |g| = %.6f\n",
+            GravityInitializationSamples,
+            MeanDirectionAgreement,
             g.x(), g.y(), g.z(), g.norm());
 
     return true;

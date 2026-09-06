@@ -1,6 +1,7 @@
 #include "../include/SL_SLAM.hpp"
 #include "Config.hpp"
 #include "OP_BA.hpp"
+#include <algorithm>
 #include <cmath>
 
 typeSLAM PantoSLAM;
@@ -10,6 +11,178 @@ typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameDat
 void SLPriv_ResetMapAndTracking(void);
 void SLPriv_InitializeMap(void);
 static std::vector<typeGroundTruth> GroundTruth;
+
+#if !defined(DEBUG)
+static std::vector<Eigen::Vector3d> GroundTruthVisualizationTrajectory;
+static std::vector<fp64> GroundTruthVisualizationTimeStamps;
+
+static Eigen::Vector3d SLPriv_GetGroundTruthCameraPosition(
+        const typeGroundTruth& Measurement)
+{
+    const Eigen::Vector3d CameraInBody =
+        CM_GetIntrinsics()->T_BS.block<3,1>(0,3);
+
+    return Measurement.Position +
+        Measurement.Orientation.toRotationMatrix() * CameraInBody;
+}
+#endif
+
+#if !defined(CONFIG_IMU) && !defined(DEBUG)
+static bool SLPriv_InterpolateGroundTruthPosition(
+        const fp64 TimeStamp,
+        Eigen::Vector3d& Position)
+{
+    if(GroundTruthVisualizationTrajectory.empty() ||
+       GroundTruthVisualizationTrajectory.size() !=
+           GroundTruthVisualizationTimeStamps.size() ||
+       TimeStamp < GroundTruthVisualizationTimeStamps.front() ||
+       TimeStamp > GroundTruthVisualizationTimeStamps.back())
+    {
+        return false;
+    }
+
+    const auto Upper = std::lower_bound(
+            GroundTruthVisualizationTimeStamps.begin(),
+            GroundTruthVisualizationTimeStamps.end(),
+            TimeStamp);
+
+    if(Upper == GroundTruthVisualizationTimeStamps.begin())
+    {
+        Position = GroundTruthVisualizationTrajectory.front();
+        return true;
+    }
+
+    if(Upper == GroundTruthVisualizationTimeStamps.end())
+    {
+        Position = GroundTruthVisualizationTrajectory.back();
+        return true;
+    }
+
+    const std::size_t UpperIndex = static_cast<std::size_t>(
+            Upper - GroundTruthVisualizationTimeStamps.begin());
+    const std::size_t LowerIndex = UpperIndex - 1;
+    const fp64 LowerTime = GroundTruthVisualizationTimeStamps[LowerIndex];
+    const fp64 UpperTime = GroundTruthVisualizationTimeStamps[UpperIndex];
+    const fp64 Interval = UpperTime - LowerTime;
+
+    if(Interval <= 0.0)
+    {
+        return false;
+    }
+
+    const fp64 Alpha = (TimeStamp - LowerTime) / Interval;
+    Position = (1.0 - Alpha) * GroundTruthVisualizationTrajectory[LowerIndex] +
+        Alpha * GroundTruthVisualizationTrajectory[UpperIndex];
+    return Position.allFinite();
+}
+
+static void SLPriv_TryAlignGroundTruthForVisualization(void)
+{
+    if(PANTO_GROUNDTRUTH_INIT ||
+       PantoSLAM.GroundTruthVisualizationAligned ||
+       PantoSLAM.GroundTruthVisualizationAlignmentAttempted ||
+       PantoSLAM.TrackingTrajectory.size() <
+           PANTO_VISUAL_ALIGNMENT_WINDOW_FRAMES ||
+       PantoSLAM.TrackingTrajectoryTimeStamps.size() !=
+           PantoSLAM.TrackingTrajectory.size())
+    {
+        return;
+    }
+
+    PantoSLAM.GroundTruthVisualizationAlignmentAttempted = true;
+
+    Eigen::Matrix<fp64, 3, Eigen::Dynamic> GroundTruthPoints(
+            3, PANTO_VISUAL_ALIGNMENT_WINDOW_FRAMES);
+    Eigen::Matrix<fp64, 3, Eigen::Dynamic> EstimatedPoints(
+            3, PANTO_VISUAL_ALIGNMENT_WINDOW_FRAMES);
+
+    for(std::size_t i = 0; i < PANTO_VISUAL_ALIGNMENT_WINDOW_FRAMES; i++)
+    {
+        Eigen::Vector3d GroundTruthPosition;
+        if(!SLPriv_InterpolateGroundTruthPosition(
+                    PantoSLAM.TrackingTrajectoryTimeStamps[i],
+                    GroundTruthPosition))
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "[SLAMGroundTruthVisualization] Could not associate visual frame %zu at timestamp %.9f with ground truth; fixed Sim(3) alignment was not applied\n",
+                    i,
+                    PantoSLAM.TrackingTrajectoryTimeStamps[i]);
+            return;
+        }
+
+        GroundTruthPoints.col(i) = GroundTruthPosition;
+        EstimatedPoints.col(i) = PantoSLAM.TrackingTrajectory[i];
+    }
+
+    const fp64 GroundTruthSpread =
+        (GroundTruthPoints.colwise() - GroundTruthPoints.rowwise().mean())
+            .squaredNorm();
+    const fp64 EstimatedSpread =
+        (EstimatedPoints.colwise() - EstimatedPoints.rowwise().mean())
+            .squaredNorm();
+
+    if(GroundTruthSpread <= 1e-12 || EstimatedSpread <= 1e-12)
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[SLAMGroundTruthVisualization] Fixed Sim(3) alignment window is degenerate; GT spread = %.9e, estimated spread = %.9e\n",
+                GroundTruthSpread,
+                EstimatedSpread);
+        return;
+    }
+
+    const Eigen::Matrix4d GroundTruthToSLAM =
+        Eigen::umeyama(GroundTruthPoints, EstimatedPoints, true);
+
+    if(!GroundTruthToSLAM.allFinite())
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[SLAMGroundTruthVisualization] Fixed Sim(3) alignment produced non-finite values\n");
+        return;
+    }
+
+    const Eigen::Matrix3d SimilarityLinear =
+        GroundTruthToSLAM.block<3,3>(0,0);
+    const Eigen::Vector3d SimilarityTranslation =
+        GroundTruthToSLAM.block<3,1>(0,3);
+    const fp64 Scale = std::cbrt(std::abs(SimilarityLinear.determinant()));
+
+    if(!std::isfinite(Scale) || Scale <= 0.0)
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[SLAMGroundTruthVisualization] Fixed Sim(3) alignment produced invalid scale %.9f\n",
+                Scale);
+        return;
+    }
+
+    std::vector<Eigen::Vector3d> AlignedGroundTruth;
+    AlignedGroundTruth.reserve(GroundTruthVisualizationTrajectory.size());
+
+    for(const Eigen::Vector3d& Position : GroundTruthVisualizationTrajectory)
+    {
+        AlignedGroundTruth.push_back(
+                SimilarityLinear * Position + SimilarityTranslation);
+    }
+
+    VIZ_SetGroundTruth(
+            AlignedGroundTruth,
+            GroundTruthVisualizationTimeStamps);
+    PantoSLAM.GroundTruthVisualizationAligned = true;
+
+    Eigen::Matrix<fp64, 3, Eigen::Dynamic> AlignedWindow =
+        SimilarityLinear * GroundTruthPoints;
+    AlignedWindow.colwise() += SimilarityTranslation;
+
+    const fp64 AlignmentRMSE = std::sqrt(
+            (EstimatedPoints - AlignedWindow).squaredNorm() /
+            PANTO_VISUAL_ALIGNMENT_WINDOW_FRAMES);
+
+    LG_Log(LogSeverity::DATA,
+            "[SLAMGroundTruthVisualization] Applied fixed GT-to-visual-SLAM Sim(3) after %d poses; scale = %.9f, window RMSE = %.6f m\n",
+            PANTO_VISUAL_ALIGNMENT_WINDOW_FRAMES,
+            Scale,
+            AlignmentRMSE);
+}
+#endif
 
 #if defined(CONFIG_IMU)
 static bool SLPriv_IntegrateIMUUntil(const fp64 TimeStamp,
@@ -237,6 +410,18 @@ void SLPriv_ResetMapAndTracking(void)
     PantoSLAM.AccumulatedDistance = fp64{};
     PantoSLAM.RecentMapPointIndexes = typePantoVector<u64>{};
     PantoSLAM.TrackingTrajectory = std::vector<Eigen::Vector3d>{};
+    PantoSLAM.TrackingTrajectoryTimeStamps = std::vector<fp64>{};
+    PantoSLAM.GroundTruthVisualizationAligned = false;
+    PantoSLAM.GroundTruthVisualizationAlignmentAttempted = false;
+
+#if !defined(CONFIG_IMU) && !defined(DEBUG)
+    if(!GroundTruthVisualizationTrajectory.empty())
+    {
+        VIZ_SetGroundTruth(
+                GroundTruthVisualizationTrajectory,
+                GroundTruthVisualizationTimeStamps);
+    }
+#endif
 }
 
 void SLPriv_InitializeMap(void)
@@ -297,14 +482,15 @@ void SLPriv_InitializeMap(void)
         const Eigen::Vector3d FirstWorldAcceleration =
             SLPriv_GetGroundTruthAcceleration(FirstGroundTruthIndex);
 
-        if(!IMU_InitializeGravity(
+        IMU_ResetGravityInitialization();
+
+        if(!IMU_AddGravityInitializationMeasurement(
                     First,
                     FirstIMUMeasurement,
                     FirstWorldAcceleration))
         {
-            LG_Log(LogSeverity::ERROR,
-                    "[SLPriv_InitializeMap] Could not initialize gravity from the first ground-truth frame\n");
-            return;
+            LG_Log(LogSeverity::DATA,
+                    "[SLPriv_InitializeMap] Ignored invalid first gravity initialization sample\n");
         }
 
         IMU_NewNavigationStateArrival(First);
@@ -317,6 +503,33 @@ void SLPriv_InitializeMap(void)
         {
             typeNavigationState Second(SecondGT.Orientation, SecondGT.Velocity,
                     SecondGT.Position, SecondGT.GyroBias, SecondGT.AccelBias);
+
+#if defined(CONFIG_IMU)
+            typeIMUMeasurement SecondIMUMeasurement{};
+            if(!SLPriv_IntegrateIMUUntil(
+                        SecondFrame.TimeStamp,
+                        &SecondIMUMeasurement))
+            {
+                LG_Log(LogSeverity::ERROR,
+                        "[SLPriv_InitializeMap] Could not retrieve the IMU measurement for GT candidate %.9f\n",
+                        SecondFrame.TimeStamp);
+                return;
+            }
+
+            const std::size_t SecondGroundTruthIndex = GroundTruthIndex - 1;
+            const Eigen::Vector3d SecondWorldAcceleration =
+                SLPriv_GetGroundTruthAcceleration(SecondGroundTruthIndex);
+
+            if(!IMU_AddGravityInitializationMeasurement(
+                        Second,
+                        SecondIMUMeasurement,
+                        SecondWorldAcceleration))
+            {
+                LG_Log(LogSeverity::DATA,
+                        "[SLPriv_InitializeMap] Ignored invalid gravity initialization sample at timestamp %.9f\n",
+                        SecondFrame.TimeStamp);
+            }
+#endif
 
             const fp64 Baseline =
                 (SecondGT.Position - FirstGT.Position).norm();
@@ -360,12 +573,21 @@ void SLPriv_InitializeMap(void)
                 continue;
             }
 
-            PantoSLAM.GlobalMap = std::move(CandidateMap);
 #if defined(CONFIG_IMU)
             // Only the accepted candidate ends the first keyframe interval.
             // Rejected candidates remain part of the same first-to-candidate
             // preintegration interval.
+            if(!IMU_FinalizeGravityInitialization())
+            {
+                LG_Log(LogSeverity::ERROR,
+                        "[SLPriv_InitializeMap] Could not finalize gravity from the initialization interval\n");
+                return;
+            }
+
+            PantoSLAM.GlobalMap = std::move(CandidateMap);
             IMU_NewNavigationStateArrival(Second);
+#else
+            PantoSLAM.GlobalMap = std::move(CandidateMap);
 #endif
             InitialMapFound = true;
             break;
@@ -392,6 +614,8 @@ void SLPriv_InitializeMap(void)
         {
             GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap.MapPoints, KeyFrame.ID);
             PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Camera));
+            PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
+                    KeyFrame.Camera.TimeStamp);
         }
 
         PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
@@ -437,6 +661,8 @@ void SLPriv_InitializeMap(void)
         {
             GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap.MapPoints, KeyFrame.ID);
             PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Camera));
+            PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
+                    KeyFrame.Camera.TimeStamp);
         }
 
 #if defined(DEBUG)
@@ -478,24 +704,26 @@ void SL_PantoSLAM(i32 num_loops)
     {
         GroundTruth = GT_GetAllMeasurements();
 
-        std::vector<Eigen::Vector3d> GroundTruthTrajectory;
-        GroundTruthTrajectory.reserve(GroundTruth.size());
-        std::vector<fp64> GroundTruthTimeStamps;
-        GroundTruthTimeStamps.reserve(GroundTruth.size());
+        GroundTruthVisualizationTrajectory.clear();
+        GroundTruthVisualizationTrajectory.reserve(GroundTruth.size());
+        GroundTruthVisualizationTimeStamps.clear();
+        GroundTruthVisualizationTimeStamps.reserve(GroundTruth.size());
 
         for(const typeGroundTruth& Measurement : GroundTruth)
         {
-            GroundTruthTrajectory.push_back(Measurement.Position);
-            GroundTruthTimeStamps.push_back(Measurement.TimeStamp);
+            GroundTruthVisualizationTrajectory.push_back(
+                    SLPriv_GetGroundTruthCameraPosition(Measurement));
+            GroundTruthVisualizationTimeStamps.push_back(
+                    Measurement.TimeStamp);
         }
 
         VIZ_SetGroundTruth(
-                GroundTruthTrajectory,
-                GroundTruthTimeStamps);
+                GroundTruthVisualizationTrajectory,
+                GroundTruthVisualizationTimeStamps);
 
         LG_Log(LogSeverity::DATA,
                 "[SLAMGroundTruthVisualization] Published %zu ground-truth positions\n",
-                GroundTruthTrajectory.size());
+                GroundTruthVisualizationTrajectory.size());
     }
 #endif
 
@@ -722,6 +950,12 @@ void SL_PantoSLAM(i32 num_loops)
 #endif
 
         PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(CurrentFrame.Camera));
+        PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
+                CurrentFrame.Camera.TimeStamp);
+
+#if !defined(CONFIG_IMU) && !defined(DEBUG)
+        SLPriv_TryAlignGroundTruthForVisualization();
+#endif
 
         const PantoClock::time_point KeyFrameEvaluationStartTime = PantoClock::now();
         typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, CurrentFrame, LocalMapInfo);
@@ -760,14 +994,23 @@ void SL_PantoSLAM(i32 num_loops)
             GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, CurrentKeyFrame, PantoSLAM.GlobalMap.MapPoints, PantoSLAM.CurrentFrameID);
 
 #if defined(DEBUG)
+            MAP_AssertGraphEqual(
+                    PantoSLAM.GlobalMap,
+                    PantoSLAM.CovisibilityGraph);
             MAP_LogGlobalMap(PantoSLAM.GlobalMap);
             MAP_LogGraphConsistency(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
             GRAPH_Log(PantoSLAM.CovisibilityGraph);
 #endif
 
-            MAP_CullRecentMapPoints(PantoSLAM.RecentMapPointIndexes, PantoSLAM.GlobalMap);
+            MAP_CullRecentMapPoints(
+                    PantoSLAM.RecentMapPointIndexes,
+                    PantoSLAM.GlobalMap,
+                    PantoSLAM.CovisibilityGraph);
 
 #if defined(DEBUG)
+            MAP_AssertGraphEqual(
+                    PantoSLAM.GlobalMap,
+                    PantoSLAM.CovisibilityGraph);
             MAP_LogGlobalMap(PantoSLAM.GlobalMap);
             MAP_LogGraphConsistency(PantoSLAM.GlobalMap, PantoSLAM.CovisibilityGraph);
             GRAPH_Log(PantoSLAM.CovisibilityGraph);
@@ -776,6 +1019,10 @@ void SL_PantoSLAM(i32 num_loops)
             const PantoClock::time_point MapPointCreationStartTime = PantoClock::now();
 
             std::vector<u64> NewPointIndexes = MAP_CreateNewMapPoints(PantoSLAM.GlobalMap, CurrentKeyFrame, PantoSLAM.CovisibilityGraph, PantoSLAM.CurrentFrameID);
+
+            // The local visual-boundary selection uses the covisibility graph,
+            // so include the newly triangulated observations before querying it.
+            GRAPH_UpdateCovisibility(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.MapPoints, PantoSLAM.CurrentFrameID, NewPointIndexes);
 
 #if defined(DEBUG)
             MAP_LogGlobalMap(PantoSLAM.GlobalMap);
@@ -796,8 +1043,6 @@ void SL_PantoSLAM(i32 num_loops)
             SL_AddTimingSample(MapPointCreationTiming, MapPointCreationTime);
 
             LG_Log(LogSeverity::DBG, "[SLAMLoop] Created %llu new map points\n", static_cast<u64>(NewPointIndexes.size()));
-
-            GRAPH_UpdateCovisibility(PantoSLAM.CovisibilityGraph, PantoSLAM.GlobalMap.MapPoints, PantoSLAM.CurrentFrameID, NewPointIndexes);
 
 #if defined(DEBUG)
             MAP_LogGlobalMap(PantoSLAM.GlobalMap);
@@ -881,9 +1126,9 @@ void SL_PantoSLAM(i32 num_loops)
         SL_AddTimingSample(LoopTiming, LoopTime);
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Finished loop %d\n", i);
-        if(i % 100 == 0)
+        if(i % 50 == 0)
         {
-            OP_BundleAdjust(PantoSLAM.GlobalMap, OptimizationTypePose, {}, nullptr);
+            OP_BundleAdjust(PantoSLAM.GlobalMap, OptimizationTypePoseAndPoints, {}, nullptr);
         }
     }
 

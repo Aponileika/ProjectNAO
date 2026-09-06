@@ -1,6 +1,7 @@
 #include "../include/GRAPH_PantoGraph.hpp"
 #include "GRAPHPriv_PantoGraph.hpp"
 #include <cstring>
+#include <unordered_set>
 
 void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
         const u64 ID)
@@ -109,6 +110,69 @@ std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames( const typeCovisibili
     }
 
     return Covisibility;
+}
+
+std::vector<typeCovisibility> GRAPH_GetTopNExternalCovisibleFrames(
+        const typeCovisibilityGraph& CovisibilityGraph,
+        const std::vector<u64>& LocalKeyFrameIDs,
+        const u64 N,
+        const u64 ExcludedKeyFrameID)
+{
+    const std::unordered_set<u64> LocalKeyFrames(
+            LocalKeyFrameIDs.begin(),
+            LocalKeyFrameIDs.end());
+    std::unordered_map<u64, u64> ExternalCovisibility;
+
+    for(const u64 LocalKeyFrameID : LocalKeyFrameIDs)
+    {
+        if(!CovisibilityGraph.contains(LocalKeyFrameID))
+        {
+            continue;
+        }
+
+        for(const auto& [OtherKeyFrameID, Count] :
+            CovisibilityGraph[LocalKeyFrameID])
+        {
+            if(OtherKeyFrameID == ExcludedKeyFrameID ||
+               LocalKeyFrames.contains(OtherKeyFrameID) ||
+               !CovisibilityGraph.contains(OtherKeyFrameID))
+            {
+                continue;
+            }
+
+            ExternalCovisibility[OtherKeyFrameID] += Count;
+        }
+    }
+
+    std::vector<typeCovisibility> Result;
+    Result.reserve(ExternalCovisibility.size());
+
+    for(const auto& [KeyFrameID, Count] : ExternalCovisibility)
+    {
+        Result.push_back(
+        {
+            .KeyFrameID = KeyFrameID,
+            .Covisibility = Count
+        });
+    }
+
+    std::sort(Result.begin(), Result.end(),
+            [](const typeCovisibility& A, const typeCovisibility& B)
+            {
+                if(A.Covisibility != B.Covisibility)
+                {
+                    return A.Covisibility > B.Covisibility;
+                }
+
+                return A.KeyFrameID < B.KeyFrameID;
+            });
+
+    if(Result.size() > N)
+    {
+        Result.resize(N);
+    }
+
+    return Result;
 }
 
 
