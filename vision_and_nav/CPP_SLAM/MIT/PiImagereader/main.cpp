@@ -1,3 +1,32 @@
+/*
+ * Mac receiver for the Raspberry Pi camera streamer.
+ *
+ * Build from the CPP_SLAM repository root:
+ *   make -C MIT/PiImagereader
+ *
+ * Monocular examples:
+ *   ./MIT/PiImagereader/PantoReceiver
+ *   ./MIT/PiImagereader/PantoReceiver --camera-count 1 --camera 1
+ *
+ * Stereo example (server shown as left, client shown as right):
+ *   ./MIT/PiImagereader/PantoReceiver --camera-count 2 \
+ *       --server-camera 0 --client-camera 1 --left-role server
+ *
+ * Options:
+ *   --camera-count 1|2        Number of camera streams to receive.
+ *   --camera INDEX            Camera used in monocular mode (default: 0).
+ *   --server-camera INDEX     Sync-server camera in stereo mode (default: 0).
+ *   --client-camera INDEX     Sync-client camera in stereo mode (default: 1).
+ *   --left-role server|client Select which sync role is displayed as left.
+ *   --frames COUNT            Frames received per camera (default: 600).
+ *   --mac-ip ADDRESS          Mac address advertised to the Pi
+ *                             (default: 192.168.0.95).
+ *   --help, -h                Print runtime usage information.
+ *
+ * The receiver starts ~/PantoPI/ImageIO on
+ * pantopilot@pantopilotstereoraspberry.local over SSH.
+ */
+
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>

@@ -168,6 +168,14 @@ static void SLPriv_TryAlignGroundTruthForVisualization(void)
             GroundTruthVisualizationTimeStamps);
     PantoSLAM.GroundTruthVisualizationAligned = true;
 
+    // Publishing the aligned ground-truth file alone does not wake the
+    // viewer. Publish a fresh snapshot as well so all existing keyframe
+    // frames, including their attached image frustums, are updated
+    // immediately after the Sim(3) alignment.
+    VIZ_WriteColmap(
+            PantoSLAM.GlobalMap,
+            PantoSLAM.TrackingTrajectory);
+
     Eigen::Matrix<fp64, 3, Eigen::Dynamic> AlignedWindow =
         SimilarityLinear * GroundTruthPoints;
     AlignedWindow.colwise() += SimilarityTranslation;
