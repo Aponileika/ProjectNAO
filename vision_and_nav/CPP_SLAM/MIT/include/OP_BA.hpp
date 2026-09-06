@@ -209,7 +209,7 @@ struct OP_IMUResidual
 
 };
 
-void OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
+void OP_BundleAdjust(typeGlobalMap* Map, typeOptimizationTarget Target,
         const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame,
         typeKeyFrame* PreviousFrame = nullptr);
 

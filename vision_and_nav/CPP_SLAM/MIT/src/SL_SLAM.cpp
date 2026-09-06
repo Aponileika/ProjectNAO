@@ -680,16 +680,16 @@ void SLPriv_InitializeMap(void)
 #endif
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error before tracking\n");
-        MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
+        MAP_LogGlobalMapProjectionErrors(*PantoSLAM.GlobalMap);
         OP_BundleAdjust(PantoSLAM.GlobalMap, OptimizationTypeTracking, {},
-                &PantoSLAM.GlobalMap.KeyFrames.back(),
-                &PantoSLAM.GlobalMap.KeyFrames[1]);
+                &PantoSLAM.GlobalMap->KeyFrames.back(),
+                &PantoSLAM.GlobalMap->KeyFrames[1]);
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Global map reprojection error after tracking\n");
-        MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
+        MAP_LogGlobalMapProjectionErrors(*PantoSLAM.GlobalMap);
         OP_BundleAdjust(PantoSLAM.GlobalMap, OptimizationTypePoseAndPoints, {}, nullptr);
 
 #if !defined(DEBUG)
-        VIZ_WriteColmap(PantoSLAM.GlobalMap, PantoSLAM.TrackingTrajectory);
+        VIZ_WriteColmap(*PantoSLAM.GlobalMap, PantoSLAM.TrackingTrajectory);
 #endif
 
         PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());

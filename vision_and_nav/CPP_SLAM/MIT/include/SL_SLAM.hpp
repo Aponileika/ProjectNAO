@@ -34,26 +34,55 @@ typedef struct
     typeKeyFrame PreviousPreviousFrame;
 }typePreviousFrameData;
 
-typedef struct 
+typedef struct
 {
-    typeGlobalMap GlobalMap;
-    typeLocalMap LocalMap;
-    typeCovisibilityGraph CovisibilityGraph;
+    typeKeyFrame KeyFrame;
+    u64 ID;
 
-    typeLocalMapTracking LocalMapTracking;
-    u64 CurrentFrameID;
+}typeNewFrameData;
 
+typedef struct
+{
 #if !defined(CONFIG_IMU)
     typeCamera NextFramePosePrediction;
 #else 
     typeNavigationState NextFramePosePrediction;
 #endif // CONFIG_IMU 
+}typePosePrediction;
 
+typedef struct
+{
+    typeGlobalMap GlobalMapCopy;
+    typeGlobalMap CovisibilityGraphCopy;
     typePreviousFrameData PreviousFrameData;
+    typeLocalMapTracking TrackingMap;
+    typeNewFrameData NewFrame;
 
-    fp64 AccumulatedDistance;
+    typePantoVector<u64>* RecentMapPointIndexes;
+    typePosePrediction* PosePrediction;
+    typeGlobalMap* GlobalMap;
+    typeCovisibilityGraph* CovisibilityGraph;
+}typeTrackingData;
+
+typedef struct
+{
+    typeGlobalMap GlobalMapCopy;
+    typeGlobalMap CovisibilityGraphCopy;
+    typeLocalMap LocalMap;
+
+    typePantoVector<u64>* RecentMapPointIndexes;
+    typePosePrediction* PosePrediction;
+    typeGlobalMap* GlobalMap;
+    typeCovisibilityGraph* CovisibilityGraph;
+}typeLocalMapData;
+
+typedef struct 
+{
+    typeGlobalMap* GlobalMap;
+    typeCovisibilityGraph* CovisibilityGraph;
+    typePantoVector<u64>* RecentMapPointIndexes;
     DBoW3::Vocabulary* Vocabulary;
-    typePantoVector<u64> RecentMapPointIndexes;
+    fp64 AccumulatedDistance;
 
     std::vector<Eigen::Vector3d> TrackingTrajectory;
     std::vector<fp64> TrackingTrajectoryTimeStamps;

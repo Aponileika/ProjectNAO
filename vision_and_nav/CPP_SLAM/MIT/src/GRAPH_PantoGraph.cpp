@@ -3,17 +3,18 @@
 #include <cstring>
 #include <unordered_set>
 
-void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
+void GRAPH_AddKeyFrame(typeCovisibilityGraph* CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
         const u64 ID)
 {
+    CovisibilityGraph->Mutex.lock();
     assert(KeyFrame.ID == ID);
 
     const u64 GraphID =
-        CovisibilityGraph.push_back({});
+        CovisibilityGraph->CovisibilityGraph.push_back({});
 
     assert(GraphID == ID);
 
-    std::unordered_map<u64, u64>& Connections = CovisibilityGraph[KeyFrame.ID];
+    std::unordered_map<u64, u64>& Connections = CovisibilityGraph->CovisibilityGraph[KeyFrame.ID];
 
     Connections.clear();
 
@@ -36,7 +37,7 @@ void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFr
                 continue;
             }
 
-            if(!CovisibilityGraph.contains(OtherKeyFrameID))
+            if(!CovisibilityGraph->CovisibilityGraph.contains(OtherKeyFrameID))
             {
                 continue;
             }
@@ -48,12 +49,12 @@ void GRAPH_AddKeyFrame(typeCovisibilityGraph& CovisibilityGraph, const typeKeyFr
     for(const auto& [OtherKeyFrameID, Count] :
         Connections)
     {
-        CovisibilityGraph[OtherKeyFrameID][KeyFrame.ID] =
-            Count;
+        CovisibilityGraph->CovisibilityGraph[OtherKeyFrameID][KeyFrame.ID] = Count;
     }
+    CovisibilityGraph->Mutex.lock();
 }
 
-typeCovisibility GRAPH_GetMostCovisibleFrame( const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID)
+typeCovisibility GRAPH_GetMostCovisibleFrame(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID)
 {
     typeCovisibility MostCovisible
     {
@@ -61,12 +62,12 @@ typeCovisibility GRAPH_GetMostCovisibleFrame( const typeCovisibilityGraph& Covis
         .Covisibility = 0
     };
 
-    if(!CovisibilityGraph.contains(KeyFrameID))
+    if(!CovisibilityGraph.CovisibilityGraph.contains(KeyFrameID))
     {
         return MostCovisible;
     }
 
-    for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph[KeyFrameID])
+    for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph.CovisibilityGraph[KeyFrameID])
     {
         if(Count > MostCovisible.Covisibility)
         {
@@ -85,9 +86,9 @@ std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames( const typeCovisibili
 {
     std::vector<typeCovisibility> Covisibility;
 
-    Covisibility.reserve( CovisibilityGraph[KeyFrameID].size());
+    Covisibility.reserve(CovisibilityGraph.CovisibilityGraph[KeyFrameID].size());
 
-    for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph[KeyFrameID])
+    for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph.CovisibilityGraph[KeyFrameID])
     {
         Covisibility.push_back(
         {
@@ -112,30 +113,23 @@ std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames( const typeCovisibili
     return Covisibility;
 }
 
-std::vector<typeCovisibility> GRAPH_GetTopNExternalCovisibleFrames(
-        const typeCovisibilityGraph& CovisibilityGraph,
-        const std::vector<u64>& LocalKeyFrameIDs,
-        const u64 N,
-        const u64 ExcludedKeyFrameID)
+std::vector<typeCovisibility> GRAPH_GetTopNExternalCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph,
+        const std::vector<u64>& LocalKeyFrameIDs, const u64 N, const u64 ExcludedKeyFrameID)
 {
-    const std::unordered_set<u64> LocalKeyFrames(
-            LocalKeyFrameIDs.begin(),
-            LocalKeyFrameIDs.end());
+    const std::unordered_set<u64> LocalKeyFrames(LocalKeyFrameIDs.begin(), LocalKeyFrameIDs.end());
     std::unordered_map<u64, u64> ExternalCovisibility;
 
     for(const u64 LocalKeyFrameID : LocalKeyFrameIDs)
     {
-        if(!CovisibilityGraph.contains(LocalKeyFrameID))
+        if(!CovisibilityGraph.CovisibilityGraph.contains(LocalKeyFrameID))
         {
             continue;
         }
 
-        for(const auto& [OtherKeyFrameID, Count] :
-            CovisibilityGraph[LocalKeyFrameID])
+        for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph.CovisibilityGraph[LocalKeyFrameID])
         {
-            if(OtherKeyFrameID == ExcludedKeyFrameID ||
-               LocalKeyFrames.contains(OtherKeyFrameID) ||
-               !CovisibilityGraph.contains(OtherKeyFrameID))
+            if(OtherKeyFrameID == ExcludedKeyFrameID || LocalKeyFrames.contains(OtherKeyFrameID) ||
+               !CovisibilityGraph.CovisibilityGraph.contains(OtherKeyFrameID))
             {
                 continue;
             }
@@ -176,14 +170,15 @@ std::vector<typeCovisibility> GRAPH_GetTopNExternalCovisibleFrames(
 }
 
 
-void GRAPH_UpdateCovisibility( typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<typePantoMapPoint>& GlobalMapPoints, const u64 NewKeyFrameID,
+void GRAPH_UpdateCovisibility( typeCovisibilityGraph* CovisibilityGraph, const typePantoVector<typePantoMapPoint>& GlobalMapPoints, const u64 NewKeyFrameID,
         const std::vector<u64>& NewPointIDs)
 {
-    std::vector<u64> CovisibilityCount( CovisibilityGraph.size(), 0);
+    CovisibilityGraph->Mutex.lock();
+    std::vector<u64> CovisibilityCount( CovisibilityGraph->CovisibilityGraph.size(), 0);
 
     LG_Log( LogSeverity::DBG,
             "[GRAPH_UpdateCovisibility] Covisibility graph size = %zu\n",
-            CovisibilityGraph.size());
+            CovisibilityGraph->CovisibilityGraph.size());
 
     for(const u64 MapPointID : NewPointIDs)
     {
@@ -196,7 +191,7 @@ void GRAPH_UpdateCovisibility( typeCovisibilityGraph& CovisibilityGraph, const t
                 continue;
             }
 
-            assert(CovisibilityGraph.contains(KeyFrameID));
+            assert(CovisibilityGraph->CovisibilityGraph.contains(KeyFrameID));
 
             ++CovisibilityCount[KeyFrameID];
         }
@@ -211,28 +206,32 @@ void GRAPH_UpdateCovisibility( typeCovisibilityGraph& CovisibilityGraph, const t
             continue;
         }
 
-        if(!CovisibilityGraph.contains(KeyFrameID))
+        if(!CovisibilityGraph->CovisibilityGraph.contains(KeyFrameID))
         {
             continue;
         }
 
-        CovisibilityGraph[NewKeyFrameID][KeyFrameID] += Count;
-        CovisibilityGraph[KeyFrameID][NewKeyFrameID] += Count;
+        CovisibilityGraph->CovisibilityGraph[NewKeyFrameID][KeyFrameID] += Count;
+        CovisibilityGraph->CovisibilityGraph[KeyFrameID][NewKeyFrameID] += Count;
     }
+    CovisibilityGraph->Mutex.unlock();
 }
 
-void GRAPH_CullKeyFrame(typeCovisibilityGraph& CovisibilityGraph, u64 KeyFrameID)
+void GRAPH_CullKeyFrame(typeCovisibilityGraph* CovisibilityGraph, u64 KeyFrameID)
 {
-    for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph[KeyFrameID])
+    CovisibilityGraph->Mutex.lock();
+    for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph->CovisibilityGraph[KeyFrameID])
     {
-        CovisibilityGraph[OtherKeyFrameID].erase(KeyFrameID);
+        CovisibilityGraph->CovisibilityGraph[OtherKeyFrameID].erase(KeyFrameID);
     }
 
-    CovisibilityGraph.remove(KeyFrameID);
+    CovisibilityGraph->CovisibilityGraph.remove(KeyFrameID);
+    CovisibilityGraph->Mutex.unlock();
 }
 
-void GRAPH_DecrementAll(typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<u64>& Nodes)
+void GRAPH_DecrementAll(typeCovisibilityGraph* CovisibilityGraph, const typePantoVector<u64>& Nodes)
 {
+    CovisibilityGraph->Mutex.lock();
     for(std::size_t i{}; i < Nodes.size(); i++)
     {
         if(!Nodes.contains(i))
@@ -245,13 +244,39 @@ void GRAPH_DecrementAll(typeCovisibilityGraph& CovisibilityGraph, const typePant
             {
                 continue;
             }
-            GRAPH_DecrementEdge(CovisibilityGraph, Nodes[i], Nodes[j]);
+            const u64 NodeA = Nodes[i];
+            const u64 NodeB = Nodes[j];
+            assert(NodeA != NodeB);
+
+            assert(CovisibilityGraph->CovisibilityGraph.contains(NodeA));
+            assert(CovisibilityGraph->CovisibilityGraph.contains(NodeB));
+
+            assert(CovisibilityGraph->CovisibilityGraph[NodeA].contains(NodeB));
+            assert(CovisibilityGraph->CovisibilityGraph[NodeB].contains(NodeA));
+
+            u64* CovisibilityAB = &CovisibilityGraph->CovisibilityGraph[NodeA][NodeB];
+
+            u64* CovisibilityBA = &CovisibilityGraph->CovisibilityGraph[NodeB][NodeA];
+
+            assert(*CovisibilityAB == *CovisibilityBA);
+            assert(*CovisibilityAB > 0);
+
+            CovisibilityAB--;
+            CovisibilityBA--;
+
+            if(CovisibilityAB == 0)
+            {
+                CovisibilityGraph->CovisibilityGraph[NodeA].erase(NodeB);
+                CovisibilityGraph->CovisibilityGraph[NodeB].erase(NodeA);
+            }
         }
     }
+    CovisibilityGraph->Mutex.unlock();
 }
 
-void GRAPH_DecrementAllOther(typeCovisibilityGraph& CovisibilityGraph, const typePantoVector<u64>& Nodes, const u64 DecrementIndex)
+void GRAPH_DecrementAllOther(typeCovisibilityGraph* CovisibilityGraph, const typePantoVector<u64>& Nodes, const u64 DecrementIndex)
 {
+    CovisibilityGraph->Mutex.lock();
     assert(Nodes.contains(DecrementIndex));
 
     const u64 DecrementNode = Nodes[DecrementIndex];
@@ -265,38 +290,63 @@ void GRAPH_DecrementAllOther(typeCovisibilityGraph& CovisibilityGraph, const typ
             continue;
         }
         
-        GRAPH_DecrementEdge(CovisibilityGraph, Nodes[i], DecrementNode);
+        const u64 NodeA = Nodes[i];
+        const u64 NodeB = DecrementNode;
+        assert(NodeA != NodeB);
+
+        assert(CovisibilityGraph->CovisibilityGraph.contains(NodeA));
+        assert(CovisibilityGraph->CovisibilityGraph.contains(NodeB));
+
+        assert(CovisibilityGraph->CovisibilityGraph[NodeA].contains(NodeB));
+        assert(CovisibilityGraph->CovisibilityGraph[NodeB].contains(NodeA));
+
+        u64* CovisibilityAB = &CovisibilityGraph->CovisibilityGraph[NodeA][NodeB];
+
+        u64* CovisibilityBA = &CovisibilityGraph->CovisibilityGraph[NodeB][NodeA];
+
+        assert(*CovisibilityAB == *CovisibilityBA);
+        assert(*CovisibilityAB > 0);
+
+        CovisibilityAB--;
+        CovisibilityBA--;
+
+        if(CovisibilityAB == 0)
+        {
+            CovisibilityGraph->CovisibilityGraph[NodeA].erase(NodeB);
+            CovisibilityGraph->CovisibilityGraph[NodeB].erase(NodeA);
+        }
     }
+    CovisibilityGraph->Mutex.unlock();
 }
 
-void GRAPH_DecrementEdge(
-        typeCovisibilityGraph& CovisibilityGraph,
-        const u64 NodeA,
-        const u64 NodeB)
+void GRAPH_DecrementEdge( typeCovisibilityGraph* CovisibilityGraph,
+        const u64 NodeA, const u64 NodeB)
 {
+    CovisibilityGraph->Mutex.lock();
     assert(NodeA != NodeB);
 
-    assert(CovisibilityGraph.contains(NodeA));
-    assert(CovisibilityGraph.contains(NodeB));
+    assert(CovisibilityGraph->CovisibilityGraph.contains(NodeA));
+    assert(CovisibilityGraph->CovisibilityGraph.contains(NodeB));
 
-    assert(CovisibilityGraph[NodeA].contains(NodeB));
-    assert(CovisibilityGraph[NodeB].contains(NodeA));
+    assert(CovisibilityGraph->CovisibilityGraph[NodeA].contains(NodeB));
+    assert(CovisibilityGraph->CovisibilityGraph[NodeB].contains(NodeA));
 
-    u64& CovisibilityAB = CovisibilityGraph[NodeA][NodeB];
+    u64* CovisibilityAB = &CovisibilityGraph->CovisibilityGraph[NodeA][NodeB];
 
-    u64& CovisibilityBA = CovisibilityGraph[NodeB][NodeA];
+    u64* CovisibilityBA = &CovisibilityGraph->CovisibilityGraph[NodeB][NodeA];
 
-    assert(CovisibilityAB == CovisibilityBA);
-    assert(CovisibilityAB > 0);
+    assert(*CovisibilityAB == *CovisibilityBA);
+    assert(*CovisibilityAB > 0);
 
     CovisibilityAB--;
     CovisibilityBA--;
 
     if(CovisibilityAB == 0)
     {
-        CovisibilityGraph[NodeA].erase(NodeB);
-        CovisibilityGraph[NodeB].erase(NodeA);
+        CovisibilityGraph->CovisibilityGraph[NodeA].erase(NodeB);
+        CovisibilityGraph->CovisibilityGraph[NodeB].erase(NodeA);
     }
+    CovisibilityGraph->Mutex.unlock();
 }
 
 void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)
@@ -304,12 +354,12 @@ void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)
     LG_Log(
             LogSeverity::DBG,
             "[GRAPH_Log] Graph active vertices = %zu, size = %zu\n",
-            CovisibilityGraph.active_size(),
-            CovisibilityGraph.size());
+            CovisibilityGraph.CovisibilityGraph.active_size(),
+            CovisibilityGraph.CovisibilityGraph.size());
 
-    for(std::size_t i{}; i < CovisibilityGraph.size(); i++)
+    for(std::size_t i{}; i < CovisibilityGraph.CovisibilityGraph.size(); i++)
     {
-        if(!CovisibilityGraph.contains(i))
+        if(!CovisibilityGraph.CovisibilityGraph.contains(i))
         {
             LG_Log(
                     LogSeverity::DBG,
@@ -319,8 +369,7 @@ void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)
             continue;
         }
 
-        const std::unordered_map<u64, u64>& Connections =
-            CovisibilityGraph[i];
+        const std::unordered_map<u64, u64>& Connections = CovisibilityGraph.CovisibilityGraph[i];
 
         LG_Log(
                 LogSeverity::DBG,
@@ -333,7 +382,7 @@ void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)
         {
             LG_Log(
                     LogSeverity::DBG,
-                    "[GRAPH_Log]   %zu <-> %llu : %llu\n",
+                    "[GRAPH_Log]   %zu <. %llu : %llu\n",
                     i,
                     OtherKeyFrameID,
                     Count);
@@ -347,7 +396,7 @@ void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)
                         Count);
             }
 
-            if(!CovisibilityGraph.contains(OtherKeyFrameID))
+            if(!CovisibilityGraph.CovisibilityGraph.contains(OtherKeyFrameID))
             {
                 LG_Log(
                         LogSeverity::ERROR,
@@ -358,11 +407,11 @@ void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)
                 continue;
             }
 
-            if(!CovisibilityGraph[OtherKeyFrameID].contains(i))
+            if(!CovisibilityGraph.CovisibilityGraph[OtherKeyFrameID].contains(i))
             {
                 LG_Log(
                         LogSeverity::ERROR,
-                        "[GRAPH_Log] ERROR: Asymmetric edge: %zu -> %llu exists, reverse does not\n",
+                        "[GRAPH_Log] ERROR: Asymmetric edge: %zu . %llu exists, reverse does not\n",
                         i,
                         OtherKeyFrameID);
 
@@ -370,13 +419,13 @@ void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)
             }
 
             const u64 ReverseCount =
-                CovisibilityGraph[OtherKeyFrameID].at(i);
+                CovisibilityGraph.CovisibilityGraph[OtherKeyFrameID].at(i);
 
             if(ReverseCount != Count)
             {
                 LG_Log(
                         LogSeverity::ERROR,
-                        "[GRAPH_Log] ERROR: Edge weight mismatch: %zu -> %llu = %llu, reverse = %llu\n",
+                        "[GRAPH_Log] ERROR: Edge weight mismatch: %zu . %llu = %llu, reverse = %llu\n",
                         i,
                         OtherKeyFrameID,
                         Count,
@@ -387,7 +436,7 @@ void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)
             {
                 LG_Log(
                         LogSeverity::ERROR,
-                        "[GRAPH_Log] ERROR: Zero-weight edge: %zu <-> %llu\n",
+                        "[GRAPH_Log] ERROR: Zero-weight edge: %zu <. %llu\n",
                         i,
                         OtherKeyFrameID);
             }

@@ -3,6 +3,7 @@
 #include "IMU_PreIntegration.hpp"
 #include "PT_Types.hpp"
 #include <KEY_Keyframe.hpp>
+#include <mutex>
 #include <unordered_set>
 #include "EP_CorrespondingPoints.hpp"
 #include "Config.hpp"
@@ -16,6 +17,7 @@ typedef struct
     typePantoVector<typeKeyFrame> KeyFrames;
     typePantoVector<typePantoMapPoint> MapPoints;
     u64 Age;
+    std::mutex Mutex;
 }typeGlobalMap;
 
 typedef struct
@@ -41,9 +43,9 @@ typedef struct
     fp64 MedianDepth;
 }typeLocalMapInfo;
 
-typeGlobalMap MAP_InitializeFromGT(const typeNavigationState& First, const typeNavigationState& Second,
-        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame);
-u64 MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame);
+void MAP_InitializeFromGT(const typeNavigationState& First, const typeNavigationState& Second,
+        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame, typeGlobalMap* GlobalMap);
+u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame);
 typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame);
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const u64 LatestKeyFrameID);
 typePantoVector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Map, const typeKeyFrame& LastKeyFrame);

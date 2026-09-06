@@ -16,33 +16,26 @@ typeMappingData MappingData =
     .SquaredSumPixelErrorRemovedPixels = 0.0
 };
 
-typeGlobalMap MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNavigationState& SecondNavState,
-        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame)
+void MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNavigationState& SecondNavState,
+        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame, typeGlobalMap* GlobalMap)
 {
     typeKeyFrame FirstKF = KEY_CreateKeyFrame(FirstNavState, FirstFrame, 0);
     typeKeyFrame SecondKF = KEY_CreateKeyFrame(SecondNavState, SecondFrame, 1);
 
-    typeGlobalMap GlobalMap
-    {
-        .KeyFrames{},
-        .MapPoints{},
-        .Age = 0
-    }; 
-
-    const std::vector<u64> Indexes = KEY_InsertNewMapPoints(FirstKF, SecondKF, GlobalMap.MapPoints, GlobalMap.Age);
+    const std::vector<u64> Indexes = KEY_InsertNewMapPoints(FirstKF, SecondKF, GlobalMap->MapPoints, GlobalMap->Age);
 
     (void) MAP_AppendKeyFrame(GlobalMap, FirstKF);
     (void) MAP_AppendKeyFrame(GlobalMap, SecondKF);
-
-    return GlobalMap;
 }
 
-u64 MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame)
+u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame)
 {
-    const u64 ID = GlobalMap.KeyFrames.push_back(KeyFrame);
-    GlobalMap.KeyFrames[ID].ID = ID;
-    GlobalMap.Age++;
+    GlobalMap->Mutex.lock();
+    const u64 ID = GlobalMap->KeyFrames.push_back(KeyFrame);
+    GlobalMap->KeyFrames[ID].ID = ID;
+    GlobalMap->Age++;
     return ID;
+    GlobalMap->Mutex.unlock();
 }
 
 typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame)
@@ -270,13 +263,13 @@ typePantoVector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap
     return LastKeyFrameMapPoints;
 }
 
-typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMapTracking& LocalMap, typeKeyFrame& NewKeyFrame)
+typeLocalMapInfo MAP_MatchMapPointLocalMap(const typeGlobalMap& GlobalMapCopy, typeGlobalMap* GlobalMap, typeLocalMapTracking& LocalMap, typeKeyFrame& NewKeyFrame)
 {
     std::vector<typePantoMapPoint> LocalMapPoints;
     LocalMapPoints.reserve(LocalMap.MapPointIDs.size());
     for(const u64 LocalMapPointID : LocalMap.MapPointIDs)
     {
-        typePantoMapPoint& MapPoint = GlobalMap.MapPoints[LocalMapPointID];
+        const typePantoMapPoint& MapPoint = GlobalMapCopy.MapPoints[LocalMapPointID];
         LocalMapPoints.push_back(MapPoint);
     }
 
@@ -286,11 +279,12 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMa
     const typeCamera& Camera = NewKeyFrame.Camera;
     LG_Log(LogSeverity::DBG, "[MAP_MatchMapPointLocalMap] Matching mappoints to keyframe");
     u64 NumProjectedMapPoints = 0;
+    //TODO fix this function
     const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(
             NewKeyFrame.Points,
             LocalMapPoints,
             Camera,
-            GlobalMap.MapPoints,
+            GlobalMap->MapPoints,
             &NumProjectedMapPoints);
 
     const fp64 TrackingRatio = NumProjectedMapPoints > 0
@@ -312,7 +306,7 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMa
     return LocalMapInfo;
 }
 
-void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const u64 CurrentFrameID)
+void MAP_CullLocalMap(typeGlobalMap* GlobalMap, typeCovisibilityGraph& CovisibilityGraph, const u64 CurrentFrameID)
 {
     assert(GlobalMap.KeyFrames.contains(CurrentFrameID));
     assert(CovisibilityGraph.contains(CurrentFrameID));
@@ -421,9 +415,11 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& Covisibil
             }
         }
 
+        GlobalMap->Mutex.lock();
         GRAPH_CullKeyFrame(CovisibilityGraph, CulledID);
-        GlobalMap.KeyFrames.remove(CulledID);
+        GlobalMap->KeyFrames.remove(CulledID);
         LG_Log(LogSeverity::DBG, "[MAP_CullLocalMap] culled keyframe %llu\n", CulledID);
+        GlobalMap->Mutex.unlock();
     }
 
     LG_Log(LogSeverity::DBG, "[MAP_CullLocalMap] Culled %zu kfs",
