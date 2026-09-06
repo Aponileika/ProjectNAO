@@ -30,12 +30,19 @@ BASE_CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -std=c++20 \
 	-I$(OPENCV)/include/opencv4 \
 	-I$(SOPHUS)/include 
 
+CXXFLAGS := $(BASE_CXXFLAGS) -O2
+SANITIZER_LDFLAGS :=
+
 ifeq ($(DEBUG),1)
-	CXXFLAGS := $(BASE_CXXFLAGS) -O0 -g -fsanitize=address -fno-omit-frame-pointer -DDEBUG
+	CXXFLAGS := $(BASE_CXXFLAGS) -O0 -g \
+		-fsanitize=address \
+		-fno-omit-frame-pointer \
+		-DDEBUG
 	SANITIZER_LDFLAGS := -fsanitize=address
-else
-	CXXFLAGS := $(BASE_CXXFLAGS) -O2
-	SANITIZER_LDFLAGS :=
+endif
+
+ifeq ($(CONFIG_IMU),1)
+	CXXFLAGS += -DCONFIG_IMU
 endif
 
 LDFLAGS := \
@@ -60,7 +67,7 @@ LDLIBS := \
   $(OPENCVLIBS)
 
 
-.PHONY: FORCE clean
+.PHONY: FORCE clean imu_test
 
 main : FORCE $(sourcedir)main.cpp
 	$(CXX) -o main $(sourcedir)main.cpp \
@@ -69,5 +76,13 @@ main : FORCE $(sourcedir)main.cpp
 	$(LDLIBS) \
 	-ferror-limit=100
 
+imu_test : MIT/test/IMU_Test.cpp
+	$(CXX) -o imu_test MIT/test/IMU_Test.cpp \
+	-DPANTO_ACTIVE_DATASET=EUROC_MAV_VICON_ROOM1_EASY \
+	$(CXXFLAGS) \
+	$(LDFLAGS) \
+	$(LDLIBS) \
+	-ferror-limit=100
+
 clean :
-	rm -f main
+	rm -f main imu_test

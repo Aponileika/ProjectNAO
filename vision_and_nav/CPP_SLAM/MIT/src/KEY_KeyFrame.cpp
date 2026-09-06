@@ -84,6 +84,76 @@ typeFuzzyKeyFrameInference FuzzyInference =
     .SpatialTrackingThreshold = NAN
 };
 
+typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame,
+        const u64 ID)
+{
+    typeKeyFrame KeyFrame{};
+
+    DBoW3::Vocabulary* Vocab = DBOW3_GetVocabulary();
+    const typePose BodyToCamera = CM_GetBodyToSensor(CM_GetIntrinsics());
+    DescRet Desc = EP_GetDescriptors(Frame.Frame);
+    std::vector<cv::Mat> DescriptorVector;
+    DescriptorVector.reserve(Desc.Descriptors.rows);
+    for(i32 i{}; i < Desc.Descriptors.rows; i++)
+    {
+        DescriptorVector.push_back(Desc.Descriptors.row(i));
+    }
+
+    const i32 Levels = PANTO_DBOW_LEVELSUP;
+
+    Vocab->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
+
+    KeyFrame.ID = ID;
+    KeyFrame.ImagePath = Frame.Path;
+#if defined(CONFIG_IMU)
+    KeyFrame.NavigationState = NavState;
+#else
+    (void)NavState;
+#endif
+
+    const Eigen::Matrix3d& Rbw = NavState.Rwb.transpose();
+    const Eigen::Vector3d tbw = -Rbw * NavState.Position;
+
+    const Eigen::Matrix3d& CameraR = BodyToCamera.R.transpose() * Rbw;
+    const Eigen::Vector3d& Camerat = BodyToCamera.R.transpose() * tbw - BodyToCamera.R.transpose() * BodyToCamera.t;
+
+    KeyFrame.Camera = CM_CreateCam(CameraR, Camerat, Frame.TimeStamp);
+    const std::vector<cv::Point2d>& Points = Desc.Points;
+    const cv::Mat& Descriptors = Desc.Descriptors;
+
+    typePantoKeypointFrame ImagePoints;
+    ImagePoints.ImagePoints.reserve(Points.size());
+
+    for(std::size_t i{}; i < DescriptorVector.size(); i++)
+    {
+        Eigen::Vector2d Point(Points[i].x, Points[i].y);
+        u64 CellX = static_cast<u64>(Point[0]) / PANTO_CELL_SIZE;
+        u64 CellY = static_cast<u64>(Point[1]) / PANTO_CELL_SIZE;
+
+        u64 CellIndex = CellY * PANTO_GRID_COLUMNS + CellX;
+
+        typeDescriptor Descriptor;
+
+        std::memcpy(Descriptor.data(), Descriptors.ptr<u8>(i), PANTO_DESCRIPTOR_SIZE);
+
+        typePantoImagePoint CandidateImagePoint = 
+        {
+            .Point = Point,
+            .Descriptor = Descriptor,
+            .MapPointID = PANTO_ID_NOT_SET,
+            .ID = static_cast<u64>(i),
+            .CellID = CellIndex
+        };
+
+        ImagePoints.ImagePoints.push_back(CandidateImagePoint);
+        ImagePoints.CellIndexingArray[CellIndex].push_back(i);
+    }
+
+    KeyFrame.Points = ImagePoints;
+
+    return KeyFrame;
+}
+
 typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints)
 {
     typePantoFrame Frame = FR_GetFrame();
@@ -108,7 +178,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
     typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePointsNoMatch(Descriptors.Points, Descriptors.Descriptors);
 
-    typeCamera PredictedPose = LastKeyFrame.Pose;
+    typeCamera PredictedPose = LastKeyFrame.Camera;
     PredictedPose.TimeStamp = Frame.TimeStamp;
 
     typeKeyFrame KeyFrame = 
@@ -116,7 +186,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
         .Points = ImagePoints,
         .BowVector = NewBowVector,
         .FeatureVector = NewFeatureVector,
-        .Pose = PredictedPose,
+        .Camera = PredictedPose,
         .ID = 2,
         .ImagePath = Frame.Path
     };
@@ -169,7 +239,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
                     // Eigen::Vector2d ProjectedPoint{};
 
-                    // if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
+                    // if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Camera))
                     // {
                     //     continue;
                     // }
@@ -241,24 +311,41 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
     return KeyFrame;
 }
 
-typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints,
+#if !defined(CONFIG_IMU)
+typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose,
+        std::vector<typePantoMapPoint>& LastFrameMapPoints,
         typePantoVector<typePantoMapPoint>& GlobalMapPoints)
+#else
+typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
+        std::vector<typePantoMapPoint>& LastFrameMapPoints,
+        typePantoVector<typePantoMapPoint>& GlobalMapPoints)
+#endif
 {
+#if defined(CONFIG_IMU)
+    const typePose BodyToCamera = CM_GetBodyToSensor(CM_GetIntrinsics());
+    const Eigen::Matrix3d Rbw = PredictedNavigationState.Rwb.transpose();
+    const Eigen::Vector3d tbw = -Rbw * PredictedNavigationState.Position;
+    const Eigen::Matrix3d CameraR = BodyToCamera.R.transpose() * Rbw;
+    const Eigen::Vector3d Camerat = BodyToCamera.R.transpose() *
+        (tbw - BodyToCamera.t);
+    typeCamera PredictedPose = CM_CreateCam(
+            CameraR, Camerat, PANTO_TIMESTAMP_NOT_SET);
+#endif
+
     const PantoClock::time_point GetKeyFrameStartTime = PantoClock::now();
 
     LG_Log(LogSeverity::DBG, "[KEY_GetKeyFrame] Predicted q = (%f, %f, %f, %f), t = (%f, %f, %f)\n",
-        PredictedPose.Parameters.q.w(),
-        PredictedPose.Parameters.q.x(),
-        PredictedPose.Parameters.q.y(),
-        PredictedPose.Parameters.q.z(),
-        PredictedPose.Parameters.t[0],
-        PredictedPose.Parameters.t[1],
-        PredictedPose.Parameters.t[2]);
+        PredictedPose.Pose.Quaternion.w(),
+        PredictedPose.Pose.Quaternion.x(),
+        PredictedPose.Pose.Quaternion.y(),
+        PredictedPose.Pose.Quaternion.z(),
+        PredictedPose.Pose.tParametrization[0],
+        PredictedPose.Pose.tParametrization[1],
+        PredictedPose.Pose.tParametrization[2]);
 
     const PantoClock::time_point GetFrameStartTime = PantoClock::now();
     typePantoFrame Frame = FR_GetFrame();
-    const fp64 GetFrameTime =
-        std::chrono::duration<fp64>(PantoClock::now() - GetFrameStartTime).count();
+    const fp64 GetFrameTime = std::chrono::duration<fp64>(PantoClock::now() - GetFrameStartTime).count();
 
     KEYPriv_AddTimingSample(GetFrameTiming, GetFrameTime);
 
@@ -266,22 +353,23 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
     {
         PredictedPose.TimeStamp = -1.0f;
 
-        const fp64 GetKeyFrameTotalTime =
-            std::chrono::duration<fp64>(PantoClock::now() - GetKeyFrameStartTime).count();
+        const fp64 GetKeyFrameTotalTime = std::chrono::duration<fp64>(PantoClock::now() - GetKeyFrameStartTime).count();
 
         KEYPriv_AddTimingSample(GetKeyFrameTotalTiming, GetKeyFrameTotalTime);
 
         LG_Log(LogSeverity::DBG,
                 "[KEY_GetKeyFrameTiming] total = %.6f s, FR_GetFrame = %.6f s, frame invalid\n",
-                GetKeyFrameTotalTime,
-                GetFrameTime);
+                GetKeyFrameTotalTime, GetFrameTime);
 
         return
         {
             .Points = typePantoKeypointFrame{},
             .BowVector = {},
             .FeatureVector = {},
-            .Pose = PredictedPose,
+            .Camera = PredictedPose,
+#if defined(CONFIG_IMU)
+            .NavigationState = PredictedNavigationState,
+#endif
             .ID = PANTO_ID_NOT_SET,
             .ImagePath = "" 
         };
@@ -310,7 +398,10 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
         .Points = ImagePoints,
         .BowVector = {},
         .FeatureVector = {},
-        .Pose = PredictedPose,
+        .Camera = PredictedPose,
+#if defined(CONFIG_IMU)
+        .NavigationState = PredictedNavigationState,
+#endif
         .ID = PANTO_ID_NOT_SET,
         .ImagePath = Frame.Path
     };
@@ -469,9 +560,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
         }
 
         const u64 ImagePointID = ImagePoint.ID;
-
         typePantoMapPoint& MapPoint = GlobalMapPoints[MapPointID];
-
         for(const u64 ExistingKeyFrameID : MapPoint.KeyFrameIDs)
         {
             if(ExistingKeyFrameID == ID)
@@ -541,7 +630,6 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
     }
 
     Vocabulary->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
-
     CurrentDescriptors.pop();
 }
 
@@ -599,7 +687,7 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
     std::size_t NumReprojectionRejectedTwentyPlus = 0;
     std::size_t NumCheiralityRejected = 0;
 
-    const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Pose.Pose, KeyFrame2.Pose.Pose);
+    const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Camera.Pose, KeyFrame2.Camera.Pose);
     const Eigen::Matrix3d F12 = F21.transpose();
 
     typePantoVector<typePantoImagePoint>& AllImagePoints1 = KeyFrame1.Points.ImagePoints;
@@ -613,13 +701,13 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
     std::pair<u64, u64> KeyFrameIDs(KeyFrame1.ID, KeyFrame2.ID);
 
-    const typeCamera& Camera1 = KeyFrame1.Pose;
-    const typeCamera& Camera2 = KeyFrame2.Pose;
+    const typeCamera& Camera1 = KeyFrame1.Camera;
+    const typeCamera& Camera2 = KeyFrame2.Camera;
 
     const Eigen::Matrix3d K = CM_GetIntrinsics()->K;
 
-    Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Pose);
-    Eigen::Matrix<fp64, 3, 4> Rt2 = CM_GetRt(KeyFrame2.Pose);
+    Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Camera);
+    Eigen::Matrix<fp64, 3, 4> Rt2 = CM_GetRt(KeyFrame2.Camera);
 
     const Eigen::Matrix<fp64, 3, 4> P1 = K * Rt1;
 
@@ -754,8 +842,7 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
                     const fp64 CosParallax = Ray1World.normalized().dot(Ray2World.normalized());
 
-                    if(CosParallax <= 0 ||
-                        CosParallax > PANTO_MAXIMUMCOSPARALLAX)
+                    if(CosParallax <= 0 || CosParallax > PANTO_MAXIMUMCOSPARALLAX)
                     {
                         NumParallaxRejected++;
                         continue;
@@ -781,15 +868,13 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
                 NumBestHammingDistanceSamples++;
                 SumBestHammingDistance += static_cast<fp64>(BestDistance);
-                SquaredSumBestHammingDistance +=
-                    static_cast<fp64>(BestDistance) * static_cast<fp64>(BestDistance);
+                SquaredSumBestHammingDistance += static_cast<fp64>(BestDistance) * static_cast<fp64>(BestDistance);
 
                 if(SecondBestDistance != std::numeric_limits<u32>::max())
                 {
                     NumSecondBestHammingDistanceSamples++;
                     SumSecondBestHammingDistance += static_cast<fp64>(SecondBestDistance);
-                    SquaredSumSecondBestHammingDistance +=
-                        static_cast<fp64>(SecondBestDistance) * static_cast<fp64>(SecondBestDistance);
+                    SquaredSumSecondBestHammingDistance += static_cast<fp64>(SecondBestDistance) * static_cast<fp64>(SecondBestDistance);
                 }
 
                 if(BestDistance >= PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW)
@@ -800,12 +885,11 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
                 if(SecondBestDistance != std::numeric_limits<u32>::max())
                 {
-                    if(static_cast<fp64>(BestDistance) >= PANTO_MATCHRATIO *
-                            static_cast<fp64>(SecondBestDistance))
-                    {
-                        NumRatioRejected++;
-                        continue;
-                    }
+                    // if(static_cast<fp64>(BestDistance) >= PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance))
+                    // {
+                    //     NumRatioRejected++;
+                    //     continue;
+                    // }
                 }
                 typePantoImagePoint& ImagePoint2 = AllImagePoints2[BestFeatureID];
                 std::pair<u64, u64> ImagePointIDs(ImagePoint1.ID, ImagePoint2.ID);
@@ -870,22 +954,18 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                     Projected2.y() / Projected2.z()
                 };
 
-                const fp64 ReprojectionError1 =
-                    (ReprojectedPoint1 - ImagePoint1.Point).squaredNorm();
+                const fp64 ReprojectionError1 = (ReprojectedPoint1 - ImagePoint1.Point).squaredNorm();
 
-                const fp64 ReprojectionError2 =
-                    (ReprojectedPoint2 - ImagePoint2.Point).squaredNorm();
+                const fp64 ReprojectionError2 = (ReprojectedPoint2 - ImagePoint2.Point).squaredNorm();
 
-                const fp64 MaxReprojectionPixelError =
-                    sqrt(std::max(ReprojectionError1, ReprojectionError2));
+                const fp64 MaxReprojectionPixelError = sqrt(std::max(ReprojectionError1, ReprojectionError2));
 
-                if(ReprojectionError1 > PANTO_INIT_MAX_REPROJECTION_ERROR ||
-                   ReprojectionError2 > PANTO_INIT_MAX_REPROJECTION_ERROR)
+                if(ReprojectionError1 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED ||
+                   ReprojectionError2 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED)
                 {
                     NumReprojectionRejected++;
                     SumRejectedReprojectionPixelError += MaxReprojectionPixelError;
-                    SquaredSumRejectedReprojectionPixelError +=
-                        MaxReprojectionPixelError * MaxReprojectionPixelError;
+                    SquaredSumRejectedReprojectionPixelError += MaxReprojectionPixelError * MaxReprojectionPixelError;
 
                     if(MaxReprojectionPixelError < PANTO_INIT_MAX_REPROJECTION_ERROR + 2.0)
                     {
@@ -914,7 +994,6 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                     const u64 Index = GlobalMapPoints.push_back(NewPoint);
                     GlobalMapPoints[Index].ID = Index;
                     Indexes.push_back(Index);
-
                     ImagePoint1.MapPointID = Index;
                     ImagePoint2.MapPointID = Index;
                 }
@@ -1172,7 +1251,7 @@ fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<
     LocalDepth.reserve((LocalMapPoints.size() + PANTO_LOCAL_MAP_SAMPLE_STRIDE - 1) /
         PANTO_LOCAL_MAP_SAMPLE_STRIDE);
 
-    const typeCameraPose& LocalMapPose = KeyFrame.Pose.Pose;
+    const typeCameraPose& LocalMapPose = KeyFrame.Camera.Pose;
 
     for(std::size_t i{}; i < LocalMapPoints.size(); i += PANTO_LOCAL_MAP_SAMPLE_STRIDE)
     {
@@ -1204,6 +1283,46 @@ fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<
 
     return LocalDepth[Middle];
 }
+
+#if defined(CONFIG_IMU)
+void KEY_IntegrationStep()
+{
+    typeIMUMeasurement Measurement = IMU_GetMeasurement();
+    IMU_IngegrationStep(Measurement);
+}
+
+typeNavigationState KEY_PredictPose(typeKeyFrame& PreviousKeyFrame)
+{
+    typePreIntegrationData PreIntegrationData = IMU_GetLatestPreIntegrationData();
+    return IMU_PredictNavigationState(PreviousKeyFrame.NavigationState, PreIntegrationData);
+}
+
+#endif
+
+#if defined(CONFIG_IMU)
+void KEY_UpdateNavState(typeKeyFrame* KeyFrame)
+{
+    const Eigen::Matrix4d& TBS = KeyFrame->Camera.Intrinsics->T_BS;
+
+    const Eigen::Matrix3d Rbs = TBS.block<3,3>(0,0);
+    const Eigen::Vector3d Tbs = TBS.block<3,1>(0,3);
+
+    const Eigen::Matrix3d& Rsw = KeyFrame->Camera.Pose.R;
+    const Eigen::Vector3d& Tsw = KeyFrame->Camera.Pose.t;
+
+    // T_BW = T_BS * T_SW. The navigation state stores the inverse
+    // convention: body-to-world rotation and the body origin in world.
+    const Eigen::Matrix3d Rbw = Rbs * Rsw;
+    const Eigen::Vector3d Tbw = Rbs * Tsw + Tbs;
+
+    typeNavigationState& NavigationState = KeyFrame->NavigationState;
+    NavigationState.Rwb = Rbw.transpose();
+    NavigationState.Position = -NavigationState.Rwb * Tbw;
+
+    NavigationState.q = Eigen::Quaterniond(NavigationState.Rwb).normalized();
+    NavigationState.t = NavigationState.Position;
+}
+#endif
 
 void KEYPriv_SolveBootStrapData(void)
 {

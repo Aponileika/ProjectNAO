@@ -153,8 +153,8 @@ fp64 EP_CheckEpipolarConstraint(const Eigen::Vector2d& Point1, const Eigen::Vect
     EpipolarLine2 /= EpipolarLine2Norm;
     fp64 Distance2 = std::abs(HomogPoint2.transpose() * EpipolarLine2);
 
-    fp64 MeanDistance = (Distance1 + Distance2) * 0.5f;
-    return MeanDistance;
+    fp64 MaxDistance = std::max(Distance1, Distance2);
+    return MaxDistance;
 }
 
 /*
@@ -287,7 +287,31 @@ DescRet __EP_GetDesc(const cv::Mat& img)
     LG_Log(LogSeverity::DBG, "[__EP_GetDesc] num descriptors AkazeExtract = %d\n", out.size());
     std::vector<cv::Point2d> pd;
     cv::undistortPoints(out, pd, K, DistCoeffs, cv::noArray(), K);
-    out = pd;
+
+    std::vector<cv::Point2d> FilteredPoints;
+    FilteredPoints.reserve(pd.size());
+    cv::Mat FilteredDescriptors;
+
+    for(std::size_t i = 0; i < pd.size(); i++)
+    {
+        const cv::Point2d& Point = pd[i];
+        if(!std::isfinite(Point.x) ||
+           !std::isfinite(Point.y) ||
+           Point.x < 0.0 ||
+           Point.y < 0.0 ||
+           Point.x >= static_cast<fp64>(ci->ImageWidth) ||
+           Point.y >= static_cast<fp64>(ci->ImageHeight))
+        {
+            continue;
+        }
+
+        FilteredPoints.push_back(Point);
+        FilteredDescriptors.push_back(
+                Descriptors.row(static_cast<i32>(i)));
+    }
+
+    out = std::move(FilteredPoints);
+    Descriptors = std::move(FilteredDescriptors);
     struct DescRet ret;
     ret.Points = out;
     ret.Descriptors = Descriptors;

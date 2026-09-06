@@ -1,0 +1,6 @@
+#ifndef IMUPRIV_PREINTEGRATION_HPP
+#define IMUPRIV_PREINTEGRATION_HPP
+#include "IMU_PreIntegration.hpp"
+
+
+#endif  // IMUPRIV_PREINTEGRATION_HPP

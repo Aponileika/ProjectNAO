@@ -1,4 +1,5 @@
 #include "MAP_Mapping.hpp"
+#include "Config.hpp"
 #include "MAPPriv_Mapping.hpp"
 #include <unordered_map>
 
@@ -15,17 +16,27 @@ typeMappingData MappingData =
     .SquaredSumPixelErrorRemovedPixels = 0.0
 };
 
-    u64 RecentMapPointsCulled;
+typeGlobalMap MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNavigationState& SecondNavState,
+        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame)
+{
+    typeKeyFrame FirstKF = KEY_CreateKeyFrame(FirstNavState, FirstFrame, 0);
+    typeKeyFrame SecondKF = KEY_CreateKeyFrame(SecondNavState, SecondFrame, 1);
 
-    u64 KeyFramesCulled;
+    typeGlobalMap GlobalMap
+    {
+        .KeyFrames{},
+        .MapPoints{},
+        .Age = 0
+    }; 
 
-    u64 MapPointsCulled;
+    const std::vector<u64> Indexes = KEY_InsertNewMapPoints(FirstKF, SecondKF, GlobalMap.MapPoints, GlobalMap.Age);
 
-    u64 ObservationEdgesCulled;
-    u64 NumObservationEdgesPixelErrorHigh;
-    u64 NumObservationEdgesFailedProjection;
-    fp64 SumPixelErrorRemovedPixels;
-    fp64 SquaredSumPixelErrorRemovedPixels;
+    (void) MAP_AppendKeyFrame(GlobalMap, FirstKF);
+    (void) MAP_AppendKeyFrame(GlobalMap, SecondKF);
+
+    return GlobalMap;
+}
+
 u64 MAP_AppendKeyFrame(typeGlobalMap& GlobalMap, const typeKeyFrame& KeyFrame)
 {
     const u64 ID = GlobalMap.KeyFrames.push_back(KeyFrame);
@@ -133,8 +144,71 @@ typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, 
 
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const u64 LatestKeyFrameID)
 {
-    std::vector<typeCovisibility> MostCovisible = GRAPH_GetTopNCovisibleFrames(CovisibilityGraph, LatestKeyFrameID, PANTO_TOP_N_KF_FOR_LOCAL_MAP);
     typeLocalMap LocalMap;
+#if defined(CONFIG_IMU)
+    LocalMap.KeyFrameIDs.reserve(PANTO_NUM_TEMPORALLY_CONNECTED_KFS_LOCAL_BA);
+
+    LocalMap.IMUAnchor = PANTO_ID_NOT_SET;
+
+    u64 CurrentKeyFrameID = LatestKeyFrameID;
+
+    for(u64 i = 0; i < PANTO_NUM_TEMPORALLY_CONNECTED_KFS_LOCAL_BA; i++)
+    {
+        LocalMap.KeyFrameIDs.push_back(CurrentKeyFrameID);
+
+        const u64 PreviousKeyFrameID =
+            GlobalMap.KeyFrames[CurrentKeyFrameID].PreviousKFID;
+
+        if(PreviousKeyFrameID == PANTO_ID_NOT_SET)
+        {
+            // CurrentKeyFrameID is the root KF. Must be fixed
+            LocalMap.KeyFrameIDs.pop_back();
+            LocalMap.IMUAnchor = CurrentKeyFrameID;
+            break;
+        }
+
+        CurrentKeyFrameID = PreviousKeyFrameID;
+    }
+
+    if(LocalMap.IMUAnchor == PANTO_ID_NOT_SET)
+    {
+        LocalMap.IMUAnchor = GlobalMap.KeyFrames[LocalMap.KeyFrameIDs.back()].PreviousKFID;
+    }
+
+    // The temporal anchor is fixed by the inertial problem, but its
+    // observations must still constrain the local map points visually.
+    LocalMap.FixedKeyFrameIDs.push_back(LocalMap.IMUAnchor);
+
+    std::unordered_set<u64> MapPointInLocalMap;
+    for(const u64 KeyFrameID : LocalMap.KeyFrameIDs)
+    {
+        for(const typePantoImagePoint& ImagePoint : GlobalMap.KeyFrames[KeyFrameID].Points.ImagePoints)
+        {
+            if(ImagePoint.MapPointID == PANTO_ID_NOT_SET)
+            {
+                continue;
+            }
+            if(MapPointInLocalMap.insert(ImagePoint.MapPointID).second)
+            {
+                LocalMap.MapPointIDs.push_back(ImagePoint.MapPointID);
+            }
+        }
+    }
+
+    const std::vector<typeCovisibility> ExternalKeyFrames =
+        GRAPH_GetTopNExternalCovisibleFrames(
+                CovisibilityGraph,
+                LocalMap.KeyFrameIDs,
+                PANTO_MAX_FIXED_KFS_LOCAL_BA - 1,
+                LocalMap.IMUAnchor);
+
+    for(const typeCovisibility& ExternalKeyFrame : ExternalKeyFrames)
+    {
+        LocalMap.FixedKeyFrameIDs.push_back(ExternalKeyFrame.KeyFrameID);
+    }
+
+#else
+    std::vector<typeCovisibility> MostCovisible = GRAPH_GetTopNCovisibleFrames(CovisibilityGraph, LatestKeyFrameID, PANTO_TOP_N_KF_FOR_LOCAL_MAP);
     std::unordered_set<u64> KeyFrameInLocalMap;
 
     LocalMap.KeyFrameIDs.push_back(LatestKeyFrameID);
@@ -176,6 +250,7 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisi
         }
     }
 
+#endif // CONFIG_IMU
     return LocalMap;
 }
 
@@ -208,13 +283,13 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeGlobalMap& GlobalMap, typeLocalMa
     LG_Log(LogSeverity::DBG, "[MAP_MatchMapPointLocalMap] Getting median scene depth");
     const fp64 MedianDepth = KEY_GetLocalMapMedianDepth(NewKeyFrame, LocalMapPoints);
 
-    const typeCamera& Pose = NewKeyFrame.Pose;
+    const typeCamera& Camera = NewKeyFrame.Camera;
     LG_Log(LogSeverity::DBG, "[MAP_MatchMapPointLocalMap] Matching mappoints to keyframe");
     u64 NumProjectedMapPoints = 0;
     const u64 NumTrackedMapPoints = PT_MatchMapPointsToKeyFrame(
             NewKeyFrame.Points,
             LocalMapPoints,
-            Pose,
+            Camera,
             GlobalMap.MapPoints,
             &NumProjectedMapPoints);
 
@@ -355,7 +430,10 @@ void MAP_CullLocalMap(typeGlobalMap& GlobalMap, typeCovisibilityGraph& Covisibil
             CulledKeyFrameIDs.size());
 }
 
-void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGlobalMap& GlobalMap)
+void MAP_CullRecentMapPoints(
+        typePantoVector<u64>& RecentMapPointIndexes,
+        typeGlobalMap& GlobalMap,
+        typeCovisibilityGraph& CovisibilityGraph)
 {
     LG_Log( LogSeverity::DBG, "[MAP_CullRecentMapPoints] Culling recent mappoints\n");
 
@@ -386,7 +464,11 @@ void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGl
         if(PT_GetFoundRatio(MapPoint) < PANTO_MIN_FOUND_RATIO)
         {
             RecentMapPointIndexes.remove(i);
-            MAPPriv_CullRecentMapPoint(MapPoint, MapPointIndex, GlobalMap);
+            MAPPriv_CullRecentMapPoint(
+                    MapPoint,
+                    MapPointIndex,
+                    GlobalMap,
+                    CovisibilityGraph);
             NumRemoved++;
             MappingData.RecentMapPointsCulled++;
             continue;
@@ -394,7 +476,11 @@ void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes, typeGl
         else if(Age >= 2 && NumObservations <= 2)
         {
             RecentMapPointIndexes.remove(i);
-            MAPPriv_CullRecentMapPoint(MapPoint, MapPointIndex, GlobalMap);
+            MAPPriv_CullRecentMapPoint(
+                    MapPoint,
+                    MapPointIndex,
+                    GlobalMap,
+                    CovisibilityGraph);
             NumRemoved++;
             MappingData.RecentMapPointsCulled++;
             continue;
@@ -434,15 +520,11 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
     for(typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
     {
         typePantoVector<u64>& KeyFrameIDs = MapPoint.KeyFrameIDs;
-
         typePantoVector<u64>& ImagePointIDs = MapPoint.ImagePointIDs;
 
         assert( KeyFrameIDs.size() == ImagePointIDs.size());
-
         const u64 NumObservationsBefore = PT_GetNumObservations(MapPoint);
-
         Eigen::Vector2d ProjectedPoint;
-
         std::vector<u64> CulledIndexes;
 
         for(std::size_t i{}; i < KeyFrameIDs.size(); i++)
@@ -455,18 +537,12 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
             }
 
             const u64 KeyFrameID = KeyFrameIDs[i];
-
             const u64 ImagePointID = ImagePointIDs[i];
-
             assert(GlobalMap.KeyFrames.contains( KeyFrameID));
-
             typeKeyFrame& KeyFrame = GlobalMap.KeyFrames[KeyFrameID];
-
             assert(KeyFrame.Points.ImagePoints.contains( ImagePointID));
-
             typePantoImagePoint& ImagePoint = KeyFrame.Points.ImagePoints[ImagePointID];
-
-            if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
+            if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Camera))
             {
                 LG_Log( LogSeverity::DBG,
                         "[MAP_CullObservationEdges] MP %llu observation KF %llu IP %llu rejected: projection failed\n",
@@ -525,7 +601,7 @@ void MAP_CullObservationEdges( typeGlobalMap& GlobalMap, typeCovisibilityGraph& 
                     CulledIndexes.size());
         }
 
-        if(RemainingObservations < 1)
+        if(RemainingObservations < 2)
         {
             LG_Log( LogSeverity::DBG, "[MAP_CullObservationEdges] MP %llu marked for full deletion: remaining observations = %llu\n",
                     MapPoint.ID, RemainingObservations);
@@ -638,6 +714,7 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& 
     }
 
     std::unordered_set<u64> LocalMapPointIDs;
+
     for(const typeKeyFrame& KeyFrame : LocalMapKeyFrames)
     {
         for(const typePantoImagePoint& ImagePoint :
@@ -663,7 +740,7 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& 
         }
     }
 
-    Eigen::Vector3d NewCameraCenter = CM_GetCameraCenter(NewKeyFrame.Pose);
+    Eigen::Vector3d NewCameraCenter = CM_GetCameraCenter(NewKeyFrame.Camera);
     std::vector<u64> NewPointIndexes;
     for(const typeKeyFrame& KeyFrameLocal : LocalMapKeyFrames)
     {
@@ -673,7 +750,7 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap& GlobalMap, typeKeyFrame& 
             continue;
         }
 
-        const Eigen::Vector3d CameraCenter = CM_GetCameraCenter(KeyFrameLocal.Pose);
+        const Eigen::Vector3d CameraCenter = CM_GetCameraCenter(KeyFrameLocal.Camera);
 
         const fp64 BaseLine = (NewCameraCenter - CameraCenter).norm();
 
@@ -704,19 +781,19 @@ void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap)
 
     for(const typeKeyFrame& KeyFrame : GlobalMap.KeyFrames)
     {
-        const typeCamera& Pose = KeyFrame.Pose;
+        const typeCamera& Camera = KeyFrame.Camera;
 
         LG_Log(
             LogSeverity::DBG,
             "[MAP_LogGlobalMapPoses] KeyFrame %llu q = (%f, %f, %f, %f), t = (%f, %f, %f)\n",
             static_cast<unsigned long long>(KeyFrame.ID),
-            Pose.Parameters.q.w(),
-            Pose.Parameters.q.x(),
-            Pose.Parameters.q.y(),
-            Pose.Parameters.q.z(),
-            Pose.Parameters.t[0],
-            Pose.Parameters.t[1],
-            Pose.Parameters.t[2]);
+            Camera.Pose.Quaternion.w(),
+            Camera.Pose.Quaternion.x(),
+            Camera.Pose.Quaternion.y(),
+            Camera.Pose.Quaternion.z(),
+            Camera.Pose.tParametrization[0],
+            Camera.Pose.tParametrization[1],
+            Camera.Pose.tParametrization[2]);
     }
 }
 
@@ -746,7 +823,7 @@ void MAP_LogKeyFrameProjectionError(const typeKeyFrame& KeyFrame, const typePant
 
         Eigen::Vector2d ProjectedPoint{};
 
-        if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Pose))
+        if(!PROJ_Project(MapPoint.Point, ProjectedPoint, KeyFrame.Camera))
         {
             NumFailedProjection++;
             continue;
@@ -901,10 +978,10 @@ void MAP_RetriangulateLOST(typeGlobalMap& GlobalMap)
                 Eigen::Matrix4d::Identity();
 
             Transform.block<3, 3>(0, 0) =
-                KeyFrame.Pose.Pose.R;
+                KeyFrame.Camera.Pose.R;
 
             Transform.block<3, 1>(0, 3) =
-                KeyFrame.Pose.Pose.t;
+                KeyFrame.Camera.Pose.t;
 
             MapPointPixelCoords.push_back(PixelCoord);
             MapPointTransforms.push_back(Transform);
@@ -921,10 +998,10 @@ void MAP_RetriangulateLOST(typeGlobalMap& GlobalMap)
     }
 
     assert(!GlobalMap.KeyFrames.empty());
-    assert(GlobalMap.KeyFrames[0].Pose.Intrinsics != nullptr);
+    assert(GlobalMap.KeyFrames[0].Camera.Intrinsics != nullptr);
 
     const Eigen::Matrix3d K =
-        GlobalMap.KeyFrames[0].Pose.Intrinsics->K;
+        GlobalMap.KeyFrames[0].Camera.Intrinsics->K;
 
     const std::vector<Eigen::Vector4d> RetriangulatedPoints =
         PROJ_TriangulateLOST(
@@ -951,6 +1028,9 @@ void MAP_AssertGraphEqual(const typeGlobalMap& GlobalMap, const typeCovisibility
 {
     assert(GlobalMap.KeyFrames.size() == CovisibilityGraph.size());
 
+    std::vector<std::unordered_map<u64, u64>> ExpectedConnections(
+            GlobalMap.KeyFrames.size());
+
     for(std::size_t i{}; i < GlobalMap.KeyFrames.size(); i++)
     {
         assert(GlobalMap.KeyFrames.contains(i) == CovisibilityGraph.contains(i));
@@ -959,6 +1039,50 @@ void MAP_AssertGraphEqual(const typeGlobalMap& GlobalMap, const typeCovisibility
         {
             assert(GlobalMap.KeyFrames[i].ID == i);
         }
+    }
+
+    for(const typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
+    {
+        const typePantoVector<u64>& KeyFrameIDs = MapPoint.KeyFrameIDs;
+
+        for(std::size_t i = 0; i < KeyFrameIDs.size(); i++)
+        {
+            if(!KeyFrameIDs.contains(i))
+            {
+                continue;
+            }
+
+            const u64 FirstKeyFrameID = KeyFrameIDs[i];
+            assert(GlobalMap.KeyFrames.contains(FirstKeyFrameID));
+
+            for(std::size_t j = i + 1; j < KeyFrameIDs.size(); j++)
+            {
+                if(!KeyFrameIDs.contains(j))
+                {
+                    continue;
+                }
+
+                const u64 SecondKeyFrameID = KeyFrameIDs[j];
+                assert(FirstKeyFrameID != SecondKeyFrameID);
+                assert(GlobalMap.KeyFrames.contains(SecondKeyFrameID));
+
+                ExpectedConnections[FirstKeyFrameID][SecondKeyFrameID]++;
+                ExpectedConnections[SecondKeyFrameID][FirstKeyFrameID]++;
+            }
+        }
+    }
+
+    for(std::size_t KeyFrameID = 0;
+        KeyFrameID < GlobalMap.KeyFrames.size();
+        KeyFrameID++)
+    {
+        if(!GlobalMap.KeyFrames.contains(KeyFrameID))
+        {
+            continue;
+        }
+
+        assert(CovisibilityGraph[KeyFrameID] ==
+                ExpectedConnections[KeyFrameID]);
     }
 }
 
@@ -1013,8 +1137,16 @@ void MAP_AssertMapPointObservations( const typeGlobalMap& GlobalMap)
     }
 }
 
-void MAPPriv_CullRecentMapPoint(typePantoMapPoint& MapPoint, u64 MapPointIndex, typeGlobalMap& GlobalMap)
+void MAPPriv_CullRecentMapPoint(
+        typePantoMapPoint& MapPoint,
+        u64 MapPointIndex,
+        typeGlobalMap& GlobalMap,
+        typeCovisibilityGraph& CovisibilityGraph)
 {
+    // Each map point contributes one unit to every pair of keyframes that
+    // observes it. Remove those contributions before deleting observations.
+    GRAPH_DecrementAll(CovisibilityGraph, MapPoint.KeyFrameIDs);
+
     typePantoVector KeyFrameIDs = MapPoint.KeyFrameIDs;
     typePantoVector ImagePointIDs = MapPoint.ImagePointIDs;
     for(std::size_t j{}; j < KeyFrameIDs.size(); j++)
@@ -1064,7 +1196,7 @@ void MAP_LogGlobalMap(const typeGlobalMap& GlobalMap)
                 KeyFrame.ID,
                 KeyFrame.Points.ImagePoints.active_size(),
                 KeyFrame.Points.ImagePoints.size(),
-                KeyFrame.Pose.TimeStamp);
+                KeyFrame.Camera.TimeStamp);
 
         if(KeyFrame.ID != i)
         {

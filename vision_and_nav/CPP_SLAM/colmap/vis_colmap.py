@@ -14,6 +14,22 @@ from viser.extras.colmap import (
 )
 
 
+def read_viser_image(path: Path):
+    image = iio.imread(path)
+
+    if image.ndim == 2:
+        image = np.repeat(image[:, :, None], 3, axis=2)
+    elif image.ndim == 3 and image.shape[2] == 1:
+        image = np.repeat(image, 3, axis=2)
+
+    if image.ndim != 3 or image.shape[2] not in (3, 4):
+        raise ValueError(
+            f"unsupported image shape {image.shape} for {path}"
+        )
+
+    return np.ascontiguousarray(image)
+
+
 def read_tracking_binary(path: Path):
     if not path.exists():
         print(f"[VISER] tracking file does not exist: {path}")
@@ -62,6 +78,26 @@ def read_tracking_binary(path: Path):
         return points
 
 
+def read_timestamp_binary(path: Path):
+    if not path.exists():
+        return np.empty((0,), dtype=np.float64)
+
+    with path.open("rb") as f:
+        count_data = f.read(8)
+        if len(count_data) != 8:
+            raise RuntimeError(f"{path} is too short")
+
+        count = struct.unpack("<Q", count_data)[0]
+        timestamp_data = f.read(count * 8)
+        if len(timestamp_data) != count * 8:
+            raise RuntimeError(
+                f"{path} expected {count * 8} timestamp bytes, "
+                f"got {len(timestamp_data)}"
+            )
+
+    return np.frombuffer(timestamp_data, dtype="<f8").copy()
+
+
 def read_latest_snapshot(root: Path):
     latest_path = root / "sparse" / "latest.txt"
 
@@ -81,19 +117,63 @@ def load_snapshot(root: Path, snapshot_id: int):
     tracks = read_tracking_binary(sparse_path / "tracking.bin")
     print(f"[VISER] tracking.bin OK: {len(tracks)}")
 
-    print("[VISER] Reading cameras.bin")
-    cameras = read_cameras_binary(sparse_path / "cameras.bin")
-    print(f"[VISER] cameras.bin OK: {len(cameras)}")
+    cameras_path = sparse_path / "cameras.bin"
 
-    print("[VISER] Reading images.bin")
-    images = read_images_binary(sparse_path / "images.bin")
-    print(f"[VISER] images.bin OK: {len(images)}")
+    if cameras_path.exists():
+        print("[VISER] Reading cameras.bin")
+        cameras = read_cameras_binary(cameras_path)
+        print(f"[VISER] cameras.bin OK: {len(cameras)}")
+    else:
+        cameras = {}
+        print("[VISER] cameras.bin omitted")
 
-    print("[VISER] Reading points3D.bin")
-    points3d = read_points3d_binary(sparse_path / "points3D.bin")
-    print(f"[VISER] points3D.bin OK: {len(points3d)}")
+    images_path = sparse_path / "images.bin"
 
-    return tracks, cameras, images, points3d
+    if images_path.exists():
+        print("[VISER] Reading images.bin")
+        images = read_images_binary(images_path)
+        print(f"[VISER] images.bin OK: {len(images)}")
+    else:
+        images = {}
+        print("[VISER] images.bin omitted")
+
+    points_path = sparse_path / "points3D.bin"
+
+    if points_path.exists():
+        print("[VISER] Reading points3D.bin")
+        points3d = read_points3d_binary(points_path)
+        print(f"[VISER] points3D.bin OK: {len(points3d)}")
+    else:
+        points3d = {}
+        print("[VISER] points3D.bin omitted")
+
+    ground_truth_path = root / "sparse" / "ground_truth.bin"
+
+    if ground_truth_path.exists():
+        print("[VISER] Reading ground-truth trajectory")
+        ground_truth = read_tracking_binary(ground_truth_path)
+        print(f"[VISER] Ground truth OK: {len(ground_truth)}")
+    else:
+        ground_truth = np.empty((0, 3), dtype=np.float64)
+
+    ground_truth_timestamps = read_timestamp_binary(
+        root / "sparse" / "ground_truth_timestamps.bin"
+    )
+
+    if len(ground_truth_timestamps) not in (0, len(ground_truth)):
+        raise RuntimeError(
+            "ground-truth position and timestamp counts differ: "
+            f"{len(ground_truth)} != {len(ground_truth_timestamps)}"
+        )
+
+    return (
+        tracks,
+        ground_truth,
+        ground_truth_timestamps,
+        cameras,
+        images,
+        points3d,
+    )
 
 
 def initialize_view_from_first_camera(
@@ -226,16 +306,129 @@ def update_track_follow_camera(
             current_client.camera.up_direction = viewer_up
 
 
+def update_expected_ground_truth_marker(
+    server,
+    images,
+    ground_truth,
+    ground_truth_timestamps,
+    image_id,
+    visible,
+    handles,
+):
+    marker = handles["expected_gt_marker"]
+    label = handles["expected_gt_label"]
+
+    if handles["expected_gt_error"] is not None:
+        handles["expected_gt_error"].remove()
+        handles["expected_gt_error"] = None
+
+    if (
+        not visible
+        or image_id not in images
+        or len(ground_truth) == 0
+        or len(ground_truth_timestamps) != len(ground_truth)
+    ):
+        if marker is not None:
+            marker.visible = False
+        if label is not None:
+            label.visible = False
+        return
+
+    try:
+        image_timestamp = int(Path(images[image_id].name).stem) * 1e-9
+    except ValueError:
+        print(
+            f"[VISER] Cannot parse timestamp from image "
+            f"{images[image_id].name}"
+        )
+        return
+
+    insertion_index = int(
+        np.searchsorted(ground_truth_timestamps, image_timestamp)
+    )
+    candidate_indices = []
+    if insertion_index < len(ground_truth_timestamps):
+        candidate_indices.append(insertion_index)
+    if insertion_index > 0:
+        candidate_indices.append(insertion_index - 1)
+
+    if not candidate_indices:
+        return
+
+    gt_index = min(
+        candidate_indices,
+        key=lambda index: abs(
+            ground_truth_timestamps[index] - image_timestamp
+        ),
+    )
+    gt_position = np.asarray(ground_truth[gt_index], dtype=np.float64)
+    time_error = ground_truth_timestamps[gt_index] - image_timestamp
+
+    if marker is None:
+        marker = server.scene.add_icosphere(
+            "/ground_truth/expected_position",
+            radius=0.045,
+            color=(255, 40, 220),
+        )
+        handles["expected_gt_marker"] = marker
+
+    if label is None:
+        label = server.scene.add_label(
+            "/ground_truth/expected_position_label",
+            "",
+            anchor="bottom-center",
+        )
+        handles["expected_gt_label"] = label
+
+    marker.position = gt_position
+    marker.visible = True
+    label.position = gt_position
+    label.text = (
+        f"Expected GT for KF {image_id - 1} "
+        f"(dt={time_error * 1e3:+.3f} ms)"
+    )
+    label.visible = True
+
+    image = images[image_id]
+    estimated_pose = vtf.SE3.from_rotation_and_translation(
+        vtf.SO3(image.qvec),
+        image.tvec,
+    ).inverse()
+    estimated_position = np.asarray(
+        estimated_pose.translation(),
+        dtype=np.float32,
+    )
+    error_segment = np.stack(
+        (estimated_position, gt_position.astype(np.float32)),
+        axis=0,
+    )[None, :, :]
+    error_colors = np.array(
+        [[[255, 210, 0], [255, 40, 220]]],
+        dtype=np.uint8,
+    )
+    handles["expected_gt_error"] = server.scene.add_line_segments(
+        "/ground_truth/expected_position_error",
+        points=error_segment,
+        colors=error_colors,
+        line_width=3.0,
+    )
+    handles["selected_gt_image_id"] = image_id
+
+
 def update_visualization(
     server,
     root: Path,
     tracks,
+    ground_truth,
+    ground_truth_timestamps,
     cameras,
     images,
     points3d,
     gui_point_size,
     gui_frustum_scale,
     gui_tracking_thickness,
+    gui_show_keyframes,
+    gui_show_expected_gt,
     gui_follow_track,
     gui_follow_distance,
     gui_follow_height,
@@ -244,8 +437,36 @@ def update_visualization(
 ):
     images_path = root / "images"
 
+    ground_truth_changed = not np.array_equal(
+        handles["latest_ground_truth"],
+        ground_truth,
+    )
+
     handles["latest_tracks"] = tracks
     handles["latest_images"] = images
+    handles["latest_ground_truth"] = ground_truth
+    handles["latest_ground_truth_timestamps"] = ground_truth_timestamps
+    handles["camera_image_preview"].visible = len(images) > 0
+
+    if len(images) > 0:
+        latest_img_id = max(images.keys())
+        latest_image_file = images_path / images[latest_img_id].name
+
+        if latest_image_file.is_file():
+            try:
+                handles["camera_image_preview"].image = read_viser_image(
+                    latest_image_file
+                )
+            except Exception as error:
+                print(
+                    f"[VISER] Failed to read camera image "
+                    f"{latest_img_id} from {latest_image_file}: {error}"
+                )
+        else:
+            print(
+                f"[VISER] Missing camera image {latest_img_id}: "
+                f"{latest_image_file}"
+            )
 
     if handles["point_cloud"] is not None:
         handles["point_cloud"].remove()
@@ -321,6 +542,46 @@ def update_visualization(
     else:
         handles["tracking_trajectory"] = None
 
+    if (
+        handles["ground_truth_size"] != len(ground_truth)
+        or ground_truth_changed
+    ):
+        if handles["ground_truth_trajectory"] is not None:
+            handles["ground_truth_trajectory"].remove()
+            handles["ground_truth_trajectory"] = None
+
+        if len(ground_truth) >= 2:
+            ground_truth_points = np.asarray(
+                ground_truth,
+                dtype=np.float32,
+            )
+            ground_truth_segments = np.stack(
+                (
+                    ground_truth_points[:-1],
+                    ground_truth_points[1:],
+                ),
+                axis=1,
+            )
+            ground_truth_colors = np.empty(
+                ground_truth_segments.shape,
+                dtype=np.uint8,
+            )
+            ground_truth_colors[:] = np.array(
+                [40, 230, 80],
+                dtype=np.uint8,
+            )
+
+            handles["ground_truth_trajectory"] = (
+                server.scene.add_line_segments(
+                    name="/ground_truth/trajectory",
+                    points=ground_truth_segments,
+                    colors=ground_truth_colors,
+                    line_width=gui_tracking_thickness.value,
+                )
+            )
+
+        handles["ground_truth_size"] = len(ground_truth)
+
     initialize_view_from_first_camera(
         server,
         images,
@@ -350,6 +611,11 @@ def update_visualization(
             frame = handles["camera_frames"][img_id]
             frame.wxyz = T_world_camera.rotation().wxyz
             frame.position = T_world_camera.translation()
+            frame.visible = gui_show_keyframes.value
+            if img_id in handles["camera_frustums"]:
+                handles["camera_frustums"][img_id].visible = (
+                    gui_show_keyframes.value
+                )
             continue
 
         handles["camera_frames"][img_id] = server.scene.add_frame(
@@ -358,6 +624,7 @@ def update_visualization(
             position=T_world_camera.translation(),
             axes_length=gui_frustum_scale.value * 0.5,
             axes_radius=gui_frustum_scale.value * 0.025,
+            visible=gui_show_keyframes.value,
         )
 
         if cam.model == "PINHOLE":
@@ -366,7 +633,22 @@ def update_visualization(
             H = cam.height
             W = cam.width
             image_file = images_path / img.name
-            image = iio.imread(image_file) if image_file.is_file() else None
+
+            if image_file.is_file():
+                try:
+                    image = read_viser_image(image_file)
+                except Exception as error:
+                    image = None
+                    print(
+                        f"[VISER] Failed to read camera image "
+                        f"{img_id} from {image_file}: {error}"
+                    )
+            else:
+                image = None
+                print(
+                    f"[VISER] Missing camera image {img_id}: "
+                    f"{image_file}"
+                )
 
             frustum = server.scene.add_camera_frustum(
                 f"/colmap/frame_{img_id}/frustum",
@@ -374,15 +656,56 @@ def update_visualization(
                 aspect=W / H,
                 scale=gui_frustum_scale.value,
                 image=image,
+                visible=gui_show_keyframes.value,
             )
 
             handles["camera_frustums"][img_id] = frustum
+
+            @frustum.on_click
+            def _(_, selected_image_file=image_file, selected_id=img_id):
+                update_expected_ground_truth_marker(
+                    server,
+                    handles["latest_images"],
+                    handles["latest_ground_truth"],
+                    handles["latest_ground_truth_timestamps"],
+                    selected_id,
+                    gui_show_expected_gt.value,
+                    handles,
+                )
+
+                if not selected_image_file.is_file():
+                    print(
+                        f"[VISER] Missing camera image {selected_id}: "
+                        f"{selected_image_file}"
+                    )
+                    return
+
+                try:
+                    handles["camera_image_preview"].image = read_viser_image(
+                        selected_image_file
+                    )
+                except Exception as error:
+                    print(
+                        f"[VISER] Failed to read camera image "
+                        f"{selected_id} from {selected_image_file}: {error}"
+                    )
 
         else:
             print(
                 f"[VISER] Skipping frustum for image {img_id}: "
                 f"camera model is {cam.model}"
             )
+
+    if len(images) > 0:
+        update_expected_ground_truth_marker(
+            server,
+            images,
+            ground_truth,
+            ground_truth_timestamps,
+            max(images.keys()),
+            gui_show_expected_gt.value,
+            handles,
+        )
 
     update_track_follow_camera(
         server,
@@ -433,6 +756,29 @@ def main(root: str):
         initial_value=3.0,
     )
 
+    gui_show_keyframes = server.gui.add_checkbox(
+        "Show keyframes",
+        initial_value=True,
+        hint="Show or hide all keyframe axes and image frustums.",
+    )
+
+    gui_show_expected_gt = server.gui.add_checkbox(
+        "Show expected GT position",
+        initial_value=True,
+        hint=(
+            "Highlight the ground-truth position matching the latest or "
+            "clicked keyframe timestamp."
+        ),
+    )
+
+    camera_image_preview = server.gui.add_image(
+        np.zeros((2, 2, 3), dtype=np.uint8),
+        label="Camera image (latest; click a frustum to inspect)",
+        format="jpeg",
+        jpeg_quality=90,
+        visible=False,
+    )
+
     server.gui.add_markdown(
         "**Free camera:** W/A/S/D move, Q/E move down/up, "
         "arrow keys rotate, and the mouse orbits/pans/zooms."
@@ -471,11 +817,22 @@ def main(root: str):
     handles = {
         "point_cloud": None,
         "tracking_trajectory": None,
+        "ground_truth_trajectory": None,
+        "ground_truth_size": 0,
+        "expected_gt_marker": None,
+        "expected_gt_label": None,
+        "expected_gt_error": None,
+        "selected_gt_image_id": None,
         "camera_frames": {},
         "camera_frustums": {},
         "camera_initialized": False,
         "latest_tracks": np.empty((0, 3), dtype=np.float64),
         "latest_images": {},
+        "latest_ground_truth": np.empty((0, 3), dtype=np.float64),
+        "latest_ground_truth_timestamps": np.empty(
+            (0,), dtype=np.float64
+        ),
+        "camera_image_preview": camera_image_preview,
     }
 
     @gui_point_size.on_update
@@ -488,10 +845,37 @@ def main(root: str):
         for frustum in handles["camera_frustums"].values():
             frustum.scale = gui_frustum_scale.value
 
+    @gui_show_keyframes.on_update
+    def _(_):
+        for frame in handles["camera_frames"].values():
+            frame.visible = gui_show_keyframes.value
+        for frustum in handles["camera_frustums"].values():
+            frustum.visible = gui_show_keyframes.value
+
+    @gui_show_expected_gt.on_update
+    def _(_):
+        image_id = handles["selected_gt_image_id"]
+        if image_id is None and handles["latest_images"]:
+            image_id = max(handles["latest_images"].keys())
+
+        update_expected_ground_truth_marker(
+            server,
+            handles["latest_images"],
+            handles["latest_ground_truth"],
+            handles["latest_ground_truth_timestamps"],
+            image_id,
+            gui_show_expected_gt.value,
+            handles,
+        )
+
     @gui_tracking_thickness.on_update
     def _(_):
         if handles["tracking_trajectory"] is not None:
             handles["tracking_trajectory"].line_width = (
+                gui_tracking_thickness.value
+            )
+        if handles["ground_truth_trajectory"] is not None:
+            handles["ground_truth_trajectory"].line_width = (
                 gui_tracking_thickness.value
             )
 
@@ -543,21 +927,29 @@ def main(root: str):
 
         if snapshot_id is not None and snapshot_id != last_snapshot_id:
             try:
-                tracks, cameras, images, points3d = load_snapshot(
-                    root,
-                    snapshot_id,
-                )
+                (
+                    tracks,
+                    ground_truth,
+                    ground_truth_timestamps,
+                    cameras,
+                    images,
+                    points3d,
+                ) = load_snapshot(root, snapshot_id)
 
                 update_visualization(
                     server,
                     root,
                     tracks,
+                    ground_truth,
+                    ground_truth_timestamps,
                     cameras,
                     images,
                     points3d,
                     gui_point_size,
                     gui_frustum_scale,
                     gui_tracking_thickness,
+                    gui_show_keyframes,
+                    gui_show_expected_gt,
                     gui_follow_track,
                     gui_follow_distance,
                     gui_follow_height,

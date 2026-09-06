@@ -173,6 +173,8 @@ public:
         BestReconstruction.NumPointsInFront = 0;
         BestReconstruction.ChosenInitFrameID = InitFrameIDs;
         BestReconstruction.Valid = false;
+        BestReconstruction.FailureReason =
+            typeInitReconstructionFailure::NoCheiralityValidPoints;
         std::array<u64, 4> NumGood{};
         std::array<fp64, 4> Parallaxes{};
         std::array<std::vector<typeInitMapPoint>, 4> HypothesisMapPoints;
@@ -398,6 +400,9 @@ public:
 
         const u64 MaxGood = NumGood[BestIndex];
 
+        BestReconstruction.NumPointsInFront = MaxGood;
+        BestReconstruction.BestParallaxDegrees = Parallaxes[BestIndex];
+
         if(MaxGood == 0)
         {
             return BestReconstruction;
@@ -413,21 +418,36 @@ public:
             }
         }
 
+        u64 SecondBestPointsInFront = 0;
+        for(u64 HypothesisID = 0; HypothesisID < NumGood.size(); ++HypothesisID)
+        {
+            if(HypothesisID != BestIndex)
+            {
+                SecondBestPointsInFront = std::max(
+                    SecondBestPointsInFront, NumGood[HypothesisID]);
+            }
+        }
+        BestReconstruction.SecondBestPointsInFront = SecondBestPointsInFront;
+
         if(NumSimilar > 1)
         {
+            BestReconstruction.FailureReason =
+                typeInitReconstructionFailure::AmbiguousMotionHypotheses;
             return BestReconstruction;
         }
 
         if(Parallaxes[BestIndex] < PANTO_INIT_MIN_PARALLAX_DEGREES)
         {
+            BestReconstruction.FailureReason =
+                typeInitReconstructionFailure::InsufficientParallax;
             return BestReconstruction;
         }
 
         BestReconstruction.R = Rotations[BestIndex];
         BestReconstruction.t = Translations[BestIndex];
         BestReconstruction.MapPoints = std::move( HypothesisMapPoints[BestIndex]);
-        BestReconstruction.NumPointsInFront = MaxGood;
         BestReconstruction.Valid = true;
+        BestReconstruction.FailureReason = typeInitReconstructionFailure::None;
         return BestReconstruction;
     }
 
@@ -644,6 +664,8 @@ public:
         BestReconstruction.NumPointsInFront = 0;
         BestReconstruction.ChosenInitFrameID = InitFrameIDs;
         BestReconstruction.Valid = false;
+        BestReconstruction.FailureReason =
+            typeInitReconstructionFailure::NoCheiralityValidPoints;
         u64 SecondBestReconstructionPointsInFront = 0;
         fp64 BestParallax = 0.0f;
 
@@ -667,6 +689,8 @@ public:
         if(d1 / d2 < 1.00001 ||
            d2 / d3 < 1.00001)
         {
+            BestReconstruction.FailureReason =
+                typeInitReconstructionFailure::DegenerateHomography;
             return BestReconstruction;
         }
 
@@ -966,23 +990,34 @@ public:
             return BestReconstruction;
         }
 
+        BestReconstruction.BestParallaxDegrees = BestParallax;
+        BestReconstruction.SecondBestPointsInFront =
+            SecondBestReconstructionPointsInFront;
+
         if(static_cast<fp64>(SecondBestReconstructionPointsInFront) >=
                 0.75 * static_cast<fp64>(BestReconstruction.NumPointsInFront))
         {
+            BestReconstruction.FailureReason =
+                typeInitReconstructionFailure::AmbiguousMotionHypotheses;
             return BestReconstruction;
         }
 
         if(BestParallax < PANTO_INIT_MIN_PARALLAX_DEGREES)
         {
+            BestReconstruction.FailureReason =
+                typeInitReconstructionFailure::InsufficientParallax;
             return BestReconstruction;
         }
 
         if(BestReconstruction.NumPointsInFront < PANTO_MIN_NUMBER_INITIAL_MAP_POINTS)
         {
+            BestReconstruction.FailureReason =
+                typeInitReconstructionFailure::TooFewTriangulatedMapPoints;
             return BestReconstruction;
         }
 
         BestReconstruction.Valid = true;
+        BestReconstruction.FailureReason = typeInitReconstructionFailure::None;
 
         return BestReconstruction;
     }

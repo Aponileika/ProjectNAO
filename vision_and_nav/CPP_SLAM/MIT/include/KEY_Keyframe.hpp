@@ -4,6 +4,7 @@
 #include "PT_Types.hpp"
 #include "DBOW3_DeepBagofWords.hpp"
 #include "Config.hpp"
+#include "FR_Frames.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 #include <PT_PantoMapPoints.hpp>
 #include <DBoW3/DBoW3.h>
@@ -14,6 +15,8 @@
 #include <Eigen/Dense>
 #include <PT_PantoImagePoint.hpp>
 #include <PT_PantoMapPoints.hpp>
+#include <IMU_IMUReader.hpp>
+#include <IMU_PreIntegration.hpp>
 #include <CM_Camera.hpp>
 #include <queue>
 #include <cmath>
@@ -32,19 +35,32 @@ typedef struct
     fp64 AcumulatedDistanceTravelled;
 }typeKeyFrameInformation;
 
-typedef struct
+struct typeKeyFrame
 {
     typePantoKeypointFrame Points;
     DBoW3::BowVector BowVector;
     DBoW3::FeatureVector FeatureVector;
-    typeCamera Pose;
+    typeCamera Camera;
+#if defined(CONFIG_IMU)
+    typeNavigationState NavigationState;
+    typePreIntegrationData PreIntegrationData;
+    u64 PreviousKFID = PANTO_ID_NOT_SET;
+#endif
     u64 ID;
     std::string ImagePath;
-}typeKeyFrame;
+};
 
+typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame,
+        const u64 ID);
 typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints);
+#if !defined(CONFIG_IMU)
 typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints,
         typePantoVector<typePantoMapPoint>& GlobalMapPoints);
+#else
+typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
+        std::vector<typePantoMapPoint>& LastFrameMapPoints,
+        typePantoVector<typePantoMapPoint>& GlobalMapPoints);
+#endif
 void KEY_LogGetKeyFrameTimingStatistics(void);
 void KEY_LogIsKeyFrameStatistics(void);
 void KEY_Reset(void);
@@ -55,5 +71,13 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
         const u64 MapAge);
 void KEY_NonValidKeyFrame(void);
 fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints);
+#if defined(CONFIG_IMU)
+void KEY_IntegrationStep(void);
+typeNavigationState KEY_PredictPose(typeKeyFrame& PreviousKeyFrame);
+
+// Assumes that the optimized camera pose is correct. Velocity and biases are
+// intentionally left unchanged until visual-inertial optimization is added.
+void KEY_UpdateNavState(typeKeyFrame* KeyFrame);
+#endif
 
 #endif //__KEY_KEYFRAME_HPP_

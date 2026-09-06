@@ -1,4 +1,6 @@
 #include "PROJ_ProjectiveUtils.hpp"
+#include <cmath>
+#include <limits>
 
 Eigen::Vector3d PROJ_Homog2Cart(cv::Mat vec) {
   assert(vec.rows == 4 && vec.cols == 1);
@@ -17,7 +19,8 @@ Eigen::Vector2d PROJ_Homog2Cart(Eigen::Vector3d vec) {
   return Eigen::Vector2d(vec(0) / w, vec(1) / w);
 }
 
-Eigen::Vector4d PROJ_CV2NormalizedEigen(cv::Mat vec) {
+Eigen::Vector4d PROJ_CV2NormalizedEigen(cv::Mat vec)
+{
   assert(vec.rows == 4 && vec.cols == 1);
   Eigen::Vector4d ret(vec.at<fp64>(0, 0), vec.at<fp64>(1, 0),
                       vec.at<fp64>(2, 0), vec.at<fp64>(3, 0));
@@ -27,15 +30,25 @@ Eigen::Vector4d PROJ_CV2NormalizedEigen(cv::Mat vec) {
 
 void PROJ_NormalizeToSpherical(Eigen::Vector4d &Vec) { Vec /= Vec.norm(); }
 
-Eigen::Vector4d PROJ_NormalizeToSpherical(const Eigen::Vector4d &Point) {
+Eigen::Vector4d PROJ_NormalizeToSpherical(const Eigen::Vector4d &Point) 
+{
   return Point / Point.norm();
 }
 
-cv::Mat PROJ_ToHomogFromCart(cv::Point2d point) {
+cv::Mat PROJ_ToHomogFromCart(cv::Point2d point) 
+{
   return (cv::Mat_<fp64>(3, 1) << point.x, point.y, 1.0f);
 }
 
-Eigen::Matrix3d PROJ_CrossProductMatrix(Eigen::Vector3d vec) {
+Eigen::Vector4d PROJ_GetMetricx(const Eigen::Vector4d& Vec)
+{
+    // Assumes IMU is integrated into the system and 3d points are triangulated
+    // from frames with metric pose.
+    return Vec / Vec.w();
+}
+
+Eigen::Matrix3d PROJ_CrossProductMatrix(Eigen::Vector3d vec) 
+{
   Eigen::Matrix3d M;
   M << 0.0, -vec[2], vec[1], vec[2], 0.0, -vec[0], -vec[1], vec[0], 0.0;
   return M;
@@ -44,7 +57,8 @@ Eigen::Matrix3d PROJ_CrossProductMatrix(Eigen::Vector3d vec) {
 /*
  * Get the camera center, assuming T is in CCS
  * */
-Eigen::Vector3d PROJ_GetCameraCenter(const Eigen::Matrix4d T) {
+Eigen::Vector3d PROJ_GetCameraCenter(const Eigen::Matrix4d T) 
+{
   Eigen::Matrix3d R = T.block(0, 0, 3, 3);
   Eigen::Vector3d t = T.block(0, 3, 3, 1);
   return -R.transpose() * t;
@@ -159,31 +173,41 @@ std::vector<Eigen::Vector4d> PROJ_TriangulateLOST(
   return Xh;
 }
 
-bool PROJ_Project(const Eigen::Vector4d &MapPoint, Eigen::Vector2d &ImagePoint,
-                  const typeCamera &Camera) {
-  fp64 w = MapPoint.w();
-  Eigen::Vector3d NormalizedMapPoint(MapPoint.x() / w, MapPoint.y() / w,
-                                     MapPoint.z() / w);
+bool PROJ_Project(const Eigen::Vector4d& MapPoint, Eigen::Vector2d& ImagePoint, const typeCamera& Camera)
+{
+    const fp64 w = MapPoint.w();
+    if(!MapPoint.allFinite() ||
+            !std::isfinite(w) ||
+            std::abs(w) <= std::numeric_limits<fp64>::epsilon())
+    {
+        return false;
+    }
 
-  NormalizedMapPoint = Camera.Pose.R * NormalizedMapPoint + Camera.Pose.t;
+    Eigen::Vector3d NormalizedMapPoint(MapPoint.x() / w, MapPoint.y() / w, MapPoint.z() / w);
 
-  if (NormalizedMapPoint.z() < 0.0f) {
-    return false;
-  }
+    NormalizedMapPoint = Camera.Pose.R * NormalizedMapPoint + Camera.Pose.t;
 
-  const typeCameraIntrinsics Intrinsics = *Camera.Intrinsics;
+    if(!NormalizedMapPoint.allFinite() ||
+            NormalizedMapPoint.z() <= std::numeric_limits<fp64>::epsilon())
+    {
+        return false;
+    }
 
-  fp64 u = NormalizedMapPoint.x() / NormalizedMapPoint.z();
-  fp64 v = NormalizedMapPoint.y() / NormalizedMapPoint.z();
+    const typeCameraIntrinsics Intrinsics = *Camera.Intrinsics;
 
-  const Eigen::Vector3d Pixel = Intrinsics.K * Eigen::Vector3d{u, v, 1.0};
+    fp64 u = NormalizedMapPoint.x() / NormalizedMapPoint.z();
+    fp64 v = NormalizedMapPoint.y() / NormalizedMapPoint.z();
 
-  ImagePoint = Pixel.head<2>();
+    const Eigen::Vector3d Pixel = Intrinsics.K * Eigen::Vector3d{u, v, 1.0};
 
-  if (ImagePoint.x() < 0.0 || ImagePoint.x() >= PANTO_IMAGE_WIDTH ||
-      ImagePoint.y() < 0.0 || ImagePoint.y() >= PANTO_IMAGE_HEIGHT) {
-    return false;
-  }
+    ImagePoint = Pixel.head<2>();
 
-  return true;
+    if(!ImagePoint.allFinite() ||
+            ImagePoint.x() < 0.0 || ImagePoint.x() >= Intrinsics.ImageWidth ||
+            ImagePoint.y() < 0.0 || ImagePoint.y() >= Intrinsics.ImageHeight)
+    {
+        return false;
+    }
+
+    return true;
 }

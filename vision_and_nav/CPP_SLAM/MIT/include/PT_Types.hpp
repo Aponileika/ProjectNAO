@@ -32,7 +32,7 @@ typedef struct
 typedef struct
 {
     typePantoVector<typePantoImagePoint> ImagePoints;
-    std::array<typePantoVector<u64>, PANTO_CELL_SIZE*PANTO_CELL_SIZE> CellIndexingArray;
+    std::array<typePantoVector<u64>, PANTO_NUM_IMAGE_CELLS> CellIndexingArray;
 }typePantoKeypointFrame;
 
 

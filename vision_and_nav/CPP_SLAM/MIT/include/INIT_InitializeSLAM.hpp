@@ -40,7 +40,45 @@ typedef struct
     std::pair<u64, u64> InitImagePointID;
 }typeInitMapPoint;
 
-typedef struct
+enum class typeInitReconstructionFailure
+{
+    None,
+    NotEvaluated,
+    InsufficientCorrespondences,
+    DegenerateHomography,
+    NoCheiralityValidPoints,
+    AmbiguousMotionHypotheses,
+    InsufficientParallax,
+    TooFewTriangulatedMapPoints
+};
+
+inline const char* INIT_ReconstructionFailureName(
+        const typeInitReconstructionFailure Failure)
+{
+    switch(Failure)
+    {
+        case typeInitReconstructionFailure::None:
+            return "none";
+        case typeInitReconstructionFailure::NotEvaluated:
+            return "not evaluated";
+        case typeInitReconstructionFailure::InsufficientCorrespondences:
+            return "insufficient correspondences";
+        case typeInitReconstructionFailure::DegenerateHomography:
+            return "degenerate homography decomposition";
+        case typeInitReconstructionFailure::NoCheiralityValidPoints:
+            return "no cheirality-valid triangulated points";
+        case typeInitReconstructionFailure::AmbiguousMotionHypotheses:
+            return "ambiguous motion hypotheses";
+        case typeInitReconstructionFailure::InsufficientParallax:
+            return "insufficient parallax";
+        case typeInitReconstructionFailure::TooFewTriangulatedMapPoints:
+            return "too few triangulated map points";
+    }
+
+    return "unknown";
+}
+
+struct typeInitReconstruction
 {
     Eigen::Matrix3d R;
     Eigen::Vector3d t;
@@ -48,7 +86,11 @@ typedef struct
     std::vector<typeInitMapPoint> MapPoints;
     std::pair<u64, u64> ChosenInitFrameID;
     bool Valid;
-}typeInitReconstruction;
+    typeInitReconstructionFailure FailureReason =
+        typeInitReconstructionFailure::NotEvaluated;
+    fp64 BestParallaxDegrees = 0.0;
+    u64 SecondBestPointsInFront = 0;
+};
 
 typedef struct
 {

@@ -1,0 +1,28 @@
+-   Implement multithreading, so two threads, tracking and local mapping, local mapping:
+Process KF
+↓
+recent MP culling
+↓
+Update shared map behind mutex lock
+↓
+create/fuse points
+↓
+Update shared map behind mutex lock
+↓
+Local BA
+↓
+Update shared map behind mutex lock
+↓
+remove high-error observation edges
+↓
+Update shared map behind mutex lock
+↓
+KF culling
+↓
+Update shared map behind mutex lock
+
+is interrupted by kf insertion at local ba. mutex for map update.
+tracking just inserts kfs, reads map shared map state behind update mutex.
+so both share the same map, except local map can change the map after recent mappoint culling,
+after creating new points, after BA, after removing observation edges, after kf culling.
+Note that only BA can be interrupted, not kf culling or observation edge culling.

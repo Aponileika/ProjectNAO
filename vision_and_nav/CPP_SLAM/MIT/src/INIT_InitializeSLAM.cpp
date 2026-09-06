@@ -167,10 +167,22 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
 
         LG_Log(
                 LogSeverity::DBG,
-                "[INIT_ProcessNewFrame] Reconstruction %llu has %zu map points, valid = %s\n",
+                "[INIT_ProcessNewFrame] Reconstruction %llu (frames %llu -> %llu) has %zu map points, valid = %s, reason = %s, best/second cheirality = %llu/%llu, parallax = %.3f/%.3f deg\n",
                 static_cast<unsigned long long>(i),
+                static_cast<unsigned long long>(
+                    Reconstruction[i].ChosenInitFrameID.first),
+                static_cast<unsigned long long>(
+                    Reconstruction[i].ChosenInitFrameID.second),
                 NumPoints,
-                Reconstruction[i].Valid ? "true" : "false");
+                Reconstruction[i].Valid ? "true" : "false",
+                INIT_ReconstructionFailureName(
+                    Reconstruction[i].FailureReason),
+                static_cast<unsigned long long>(
+                    Reconstruction[i].NumPointsInFront),
+                static_cast<unsigned long long>(
+                    Reconstruction[i].SecondBestPointsInFront),
+                Reconstruction[i].BestParallaxDegrees,
+                static_cast<double>(PANTO_INIT_MIN_PARALLAX_DEGREES));
 
         if(!Reconstruction[i].Valid)
         {
@@ -204,6 +216,8 @@ typeInitReconstruction INIT_ProcessNewFrame(void)
     if(MostPoints < PANTO_MIN_NUMBER_INITIAL_MAP_POINTS)
     {
         Reconstruction[BestReconstructionIndex].Valid = false;
+        Reconstruction[BestReconstructionIndex].FailureReason =
+            typeInitReconstructionFailure::TooFewTriangulatedMapPoints;
 
         LG_Log(
                 LogSeverity::DBG,
@@ -304,7 +318,7 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
             .Points = ImagePoints[0],
             .BowVector = InitData.InitFrames[FirstFrameID].BoWVector,
             .FeatureVector = InitData.InitFrames[FirstFrameID].FeatureVector,
-            .Pose = FirstCamera,
+            .Camera = FirstCamera,
             .ID = 0,
             .ImagePath = InitData.InitFrames[FirstFrameID].ImagePath
         });
@@ -314,7 +328,7 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
             .Points = ImagePoints[1],
             .BowVector = InitData.InitFrames[SecondFrameID].BoWVector,
             .FeatureVector = InitData.InitFrames[SecondFrameID].FeatureVector,
-            .Pose = SecondCamera,
+            .Camera = SecondCamera,
             .ID = 1,
             .ImagePath = InitData.InitFrames[SecondFrameID].ImagePath
         });
@@ -751,7 +765,16 @@ typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFram
 
     if(HistoricalPoints.size() < PANTO_FUNDAMENTAL_MIN_POINTS)
     {
-        return {};
+        typeInitReconstruction Reconstruction{};
+        Reconstruction.ChosenInitFrameID =
+        {
+            HistoricalFrame.ID,
+            NewFrame.ID
+        };
+        Reconstruction.Valid = false;
+        Reconstruction.FailureReason =
+            typeInitReconstructionFailure::InsufficientCorrespondences;
+        return Reconstruction;
     }
 
     /*
@@ -776,6 +799,8 @@ typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFram
 
     std::unique_ptr<ImageToImageMapping> Mapping{};
     std::unique_ptr<ImageToImageMapping> OtherMapping{};
+    const char* PrimaryMappingName = "fundamental";
+    const char* FallbackMappingName = "homography";
 
     if(TotalScore <= std::numeric_limits<fp64>::epsilon())
     {
@@ -795,6 +820,8 @@ typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFram
         {
             Mapping = std::move(Mappings.second);
             OtherMapping = std::move(Mappings.first);
+            PrimaryMappingName = "homography";
+            FallbackMappingName = "fundamental";
         }
         else
         {
@@ -825,12 +852,43 @@ typeInitReconstruction INITPriv_Reconstruct( const typeInitFrame& HistoricalFram
 
     if(!Reconstruction.Valid)
     {
+        LG_Log(
+            LogSeverity::DBG,
+            "[INITPriv_Reconstruct] Primary %s reconstruction for frames %llu -> %llu rejected: %s; best/second cheirality = %llu/%llu; parallax = %.3f/%.3f deg; map points = %zu/%d\n",
+            PrimaryMappingName,
+            static_cast<unsigned long long>(HistoricalFrame.ID),
+            static_cast<unsigned long long>(NewFrame.ID),
+            INIT_ReconstructionFailureName(Reconstruction.FailureReason),
+            static_cast<unsigned long long>(Reconstruction.NumPointsInFront),
+            static_cast<unsigned long long>(Reconstruction.SecondBestPointsInFront),
+            Reconstruction.BestParallaxDegrees,
+            static_cast<double>(PANTO_INIT_MIN_PARALLAX_DEGREES),
+            Reconstruction.MapPoints.size(),
+            PANTO_MIN_NUMBER_INITIAL_MAP_POINTS);
+
         Reconstruction = OtherMapping->Reconstruct(
             HistoricalPoints,
             NewPoints,
             ImagePointIDs,
             FrameIDs,
             K);
+
+        if(!Reconstruction.Valid)
+        {
+            LG_Log(
+                LogSeverity::DBG,
+                "[INITPriv_Reconstruct] Fallback %s reconstruction for frames %llu -> %llu rejected: %s; best/second cheirality = %llu/%llu; parallax = %.3f/%.3f deg; map points = %zu/%d\n",
+                FallbackMappingName,
+                static_cast<unsigned long long>(HistoricalFrame.ID),
+                static_cast<unsigned long long>(NewFrame.ID),
+                INIT_ReconstructionFailureName(Reconstruction.FailureReason),
+                static_cast<unsigned long long>(Reconstruction.NumPointsInFront),
+                static_cast<unsigned long long>(Reconstruction.SecondBestPointsInFront),
+                Reconstruction.BestParallaxDegrees,
+                static_cast<double>(PANTO_INIT_MIN_PARALLAX_DEGREES),
+                Reconstruction.MapPoints.size(),
+                PANTO_MIN_NUMBER_INITIAL_MAP_POINTS);
+        }
     }
 
     return Reconstruction;

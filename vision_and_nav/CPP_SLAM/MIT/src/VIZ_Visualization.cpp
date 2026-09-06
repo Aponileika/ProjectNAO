@@ -2,13 +2,23 @@
 #include "VIZPriv_Visualization.hpp"
 
 static std::vector<cv::Mat> VIZPriv_KeyFrameImages;
+static std::vector<Eigen::Vector3d> VIZPriv_IMUTestTrajectory;
 
 static pid_t VIZPriv_ViewerPID = -1;
 static u64 VIZPriv_SnapshotID = 0;
+static constexpr u64 VIZPriv_IMUTestPublishStride = 5;
+
+static void VIZPriv_WriteTrajectoryFile(
+        const std::vector<Eigen::Vector3d>& Trajectory,
+        const std::string& Path);
+static void VIZPriv_WriteTimeStampFile(
+        const std::vector<fp64>& TimeStamps,
+        const std::string& Path);
 
 void VIZ_InitVisualization(void)
 {
     VIZPriv_KeyFrameImages.clear();
+    VIZPriv_IMUTestTrajectory.clear();
     VIZPriv_SnapshotID = 0;
 
     const std::string ImagesPath =
@@ -113,21 +123,102 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Ve
     VIZPriv_SnapshotID++;
 }
 
+static void VIZPriv_WriteIMUTestSnapshot(void)
+{
+    if(VIZPriv_IMUTestTrajectory.empty())
+    {
+        return;
+    }
+
+    const std::string SnapshotPath =
+        std::string(PANTO_COLMAP_PATH) +
+        "/sparse/snapshots/" +
+        std::to_string(VIZPriv_SnapshotID);
+
+    std::filesystem::create_directories(SnapshotPath);
+
+    VIZPriv_WriteTrackingTrajectory(VIZPriv_IMUTestTrajectory, SnapshotPath);
+    VIZPriv_PublishSnapshot(VIZPriv_SnapshotID);
+
+    if(VIZPriv_SnapshotID >= 5)
+    {
+        const std::string OldSnapshotPath =
+            std::string(PANTO_COLMAP_PATH) +
+            "/sparse/snapshots/" +
+            std::to_string(VIZPriv_SnapshotID - 5);
+
+        std::filesystem::remove_all(OldSnapshotPath);
+    }
+
+    VIZPriv_SnapshotID++;
+}
+
+void VIZ_SetGroundTruth(
+        const std::vector<Eigen::Vector3d>& GroundTruthTrajectory)
+{
+    VIZPriv_WriteTrajectoryFile(
+            GroundTruthTrajectory,
+            std::string(PANTO_COLMAP_PATH) +
+            "/sparse/ground_truth.bin");
+}
+
+void VIZ_SetGroundTruth(
+        const std::vector<Eigen::Vector3d>& GroundTruthTrajectory,
+        const std::vector<fp64>& GroundTruthTimeStamps)
+{
+    assert(GroundTruthTrajectory.size() == GroundTruthTimeStamps.size());
+
+    VIZ_SetGroundTruth(GroundTruthTrajectory);
+    VIZPriv_WriteTimeStampFile(
+            GroundTruthTimeStamps,
+            std::string(PANTO_COLMAP_PATH) +
+            "/sparse/ground_truth_timestamps.bin");
+}
+
+void VIZ_SetIMUTestGroundTruth(
+        const std::vector<Eigen::Vector3d>& GroundTruthTrajectory)
+{
+    VIZ_SetGroundTruth(GroundTruthTrajectory);
+}
+
+void VIZ_WriteIMUTest(const Eigen::Vector3d& Position)
+{
+    VIZPriv_IMUTestTrajectory.push_back(Position);
+
+    if(VIZPriv_IMUTestTrajectory.size() > 1 &&
+       VIZPriv_IMUTestTrajectory.size() % VIZPriv_IMUTestPublishStride != 0)
+    {
+        return;
+    }
+
+    VIZPriv_WriteIMUTestSnapshot();
+}
+
+void VIZ_FlushIMUTest(void)
+{
+    VIZPriv_WriteIMUTestSnapshot();
+}
+
 void VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& TrackingTrajectory, const std::string& SnapshotPath)
 {
-    
-    const std::string TrackingPath = SnapshotPath + "/tracking.bin";
+    VIZPriv_WriteTrajectoryFile(
+            TrackingTrajectory,
+            SnapshotPath + "/tracking.bin");
+}
 
-    FILE* fp = fopen(TrackingPath.c_str(), "wb");
+static void VIZPriv_WriteTrajectoryFile(
+        const std::vector<Eigen::Vector3d>& Trajectory,
+        const std::string& Path)
+{
+    FILE* fp = fopen(Path.c_str(), "wb");
 
     assert(fp != nullptr);
 
-    const u64 NumPoints = static_cast<u64>(TrackingTrajectory.size());
+    const u64 NumPoints = static_cast<u64>(Trajectory.size());
 
     fwrite(&NumPoints, sizeof(u64), 1, fp);
 
-    for(const Eigen::Vector3d& Point :
-        TrackingTrajectory)
+    for(const Eigen::Vector3d& Point : Trajectory)
     {
         fwrite(&Point.x(), sizeof(fp64), 1, fp);
         fwrite(&Point.y(), sizeof(fp64), 1, fp);
@@ -136,13 +227,13 @@ void VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& Trackin
 
     fclose(fp);
 
-        if(!TrackingTrajectory.empty())
+    if(!Trajectory.empty())
     {
         const Eigen::Vector3d& First =
-            TrackingTrajectory.front();
+            Trajectory.front();
 
         const Eigen::Vector3d& Last =
-            TrackingTrajectory.back();
+            Trajectory.back();
 
         LG_Log(
                 LogSeverity::DBG,
@@ -154,6 +245,28 @@ void VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& Trackin
                 Last.y(),
                 Last.z());
     }
+}
+
+static void VIZPriv_WriteTimeStampFile(
+        const std::vector<fp64>& TimeStamps,
+        const std::string& Path)
+{
+    FILE* fp = fopen(Path.c_str(), "wb");
+    assert(fp != nullptr);
+
+    const u64 NumTimeStamps = static_cast<u64>(TimeStamps.size());
+    fwrite(&NumTimeStamps, sizeof(u64), 1, fp);
+
+    if(!TimeStamps.empty())
+    {
+        fwrite(
+                TimeStamps.data(),
+                sizeof(fp64),
+                TimeStamps.size(),
+                fp);
+    }
+
+    fclose(fp);
 }
 
 void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
@@ -193,7 +306,7 @@ void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const 
             PANTO_CAMERA_MODEL_ID;
 
         const typeCameraIntrinsics* Intrinsics =
-            KeyFrame.Pose.Intrinsics;
+            KeyFrame.Camera.Intrinsics;
 
         assert(Intrinsics != nullptr);
 
@@ -264,10 +377,10 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
         fwrite( &ImageID, sizeof(i32), 1, fp);
 
         const Eigen::Matrix3d& Rcw =
-            KeyFrame.Pose.Pose.R;
+            KeyFrame.Camera.Pose.R;
 
         const Eigen::Vector3d& tcw =
-            KeyFrame.Pose.Pose.t;
+            KeyFrame.Camera.Pose.t;
 
         Eigen::Quaterniond Quaternion(Rcw);
 
@@ -296,11 +409,6 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
         const u64 NumImagePoints = static_cast<u64>( KeyFrame.Points.ImagePoints.active_size());
 
         fwrite( &NumImagePoints, sizeof(u64), 1, fp);
-
-        LG_Log( LogSeverity::DBG,
-                "[VIZPriv_WriteImages] ImageID = %d, CameraID = %d, Name = '%s', NumPoints2D = %llu\n",
-                ImageID, CameraID, ImageName.c_str(),
-                static_cast<unsigned long long>(NumImagePoints));
 
         for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {

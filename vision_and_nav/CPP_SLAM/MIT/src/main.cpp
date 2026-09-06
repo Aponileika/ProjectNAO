@@ -25,6 +25,11 @@
 #include "../include/Config.hpp"
 #include "../include/INIT_InitializeSLAM.hpp"
 #include "../include/PANTOVEC_PantoVector.hpp"
+#if defined(CONFIG_IMU)
+#include "../include/IMU_IMUReader.hpp"
+#include "../include/IMU_PreIntegration.hpp"
+#include "../include/GT_ReadGroundTruth.hpp"
+#endif 
 
 #include "LG_Logging.cpp"
 #include "CArenaAlloc.c"
@@ -43,6 +48,11 @@
 #include "INIT_InitializeSLAM.cpp"
 #include "GRAPH_PantoGraph.cpp"
 #include "VIZ_Visualization.cpp"
+#if defined(CONFIG_IMU)
+#include "IMU_IMUReader.cpp"
+#include "IMU_PreIntegration.cpp"
+#endif
+#include "GT_ReadGroundTruth.cpp"
 
 int main(int argc, char* argv[])
 {

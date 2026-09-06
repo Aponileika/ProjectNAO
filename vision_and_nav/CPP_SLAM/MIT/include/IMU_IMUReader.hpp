@@ -9,12 +9,23 @@
 
 typedef struct
 {
-    u64 TimeStamp;
+    fp64 TimeStamp;
 
     Eigen::Vector3d AngularVelocity;
     Eigen::Vector3d Acceleration;
 }typeIMUMeasurement;
 
+typedef struct
+{
+    fp64 RateHz;
+    Eigen::Matrix4d T_BS;
+    fp64 GyroscopeNoiseDensity;
+    fp64 GyroscopeRandomWalk;
+    fp64 AccelerometerNoiseDensity;
+    fp64 AccelerometerRandomWalk;
+}typeIMUIntrinsics;
+
 typeIMUMeasurement IMU_GetMeasurement(void);
+const typeIMUIntrinsics* IMU_GetIntrinsics(void);
 
 #endif // IMU_IMUREADER_HPP_
