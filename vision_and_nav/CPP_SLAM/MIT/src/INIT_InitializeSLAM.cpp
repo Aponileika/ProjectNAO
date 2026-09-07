@@ -254,7 +254,7 @@ void INIT_DestroyInitData(void)
     InitNumFrames = 1;
 }
 
-typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
+void INIT_ConstructInitialMap(typeInitReconstruction Reconstruction, typeGlobalMap* GlobalMap)
 {
     assert(Reconstruction.Valid == true);
     assert(Reconstruction.MapPoints.size() > 0);
@@ -330,10 +330,12 @@ typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction)
             .FeatureVector = InitData.InitFrames[SecondFrameID].FeatureVector,
             .Camera = SecondCamera,
             .ID = 1,
-            .ImagePath = InitData.InitFrames[SecondFrameID].ImagePath
+            .ImagePath = InitData.InitFrames[SecondFrameID].ImagePath,
         });
 
-    return {.KeyFrames = KeyFrames, .MapPoints = InitialMapPoints, 0};
+    GlobalMap->KeyFrames = KeyFrames;
+    GlobalMap->MapPoints = InitialMapPoints;
+    GlobalMap->Age = 0;
 }
 
 typePantoKeypointFrame INITPriv_GetKeyPointFrame(u64 InitFrameID)

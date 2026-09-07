@@ -1,6 +1,11 @@
 #include "../include/SL_SLAM.hpp"
 #include "Config.hpp"
+#include "GRAPH_PantoGraph.hpp"
+#include "IMU_PreIntegration.hpp"
+#include "KEY_Keyframe.hpp"
+#include "MAP_Mapping.hpp"
 #include "OP_BA.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -307,8 +312,7 @@ static bool SLPriv_IntegrateIMUUntil(const fp64 TimeStamp,
     }
 }
 
-static Eigen::Vector3d SLPriv_GetGroundTruthAcceleration(
-        const std::size_t GroundTruthIndex)
+static Eigen::Vector3d SLPriv_GetGroundTruthAcceleration( const std::size_t GroundTruthIndex)
 {
     if(GroundTruth.size() < 2)
     {
@@ -402,25 +406,17 @@ void SLPriv_ResetMapAndTracking(void)
     INIT_DestroyInitData();
     KEY_Reset();
 
-    PantoSLAM.GlobalMap = typeGlobalMap{};
-    PantoSLAM.LocalMap = typeLocalMap{};
-    PantoSLAM.CovisibilityGraph = typeCovisibilityGraph{};
-    PantoSLAM.LocalMapTracking = typeLocalMapTracking{};
-    PantoSLAM.CurrentFrameID = PANTO_ID_NOT_SET;
+    PantoSLAM.GlobalMap = new typeGlobalMap();
+    PantoSLAM.CovisibilityGraph = new typeCovisibilityGraph();
+    PantoSLAM.RecentMapPointIndexes = new typePantoVector<u64>;
+    PantoSLAM.Vocabulary = new DBoW3::Vocabulary();
+    PantoSLAM.KeyFrameQueue = new typeKeyFrameQueue();
 
-#if !defined(CONFIG_IMU)
-    PantoSLAM.NextFramePosePrediction = typeCamera{};
-#else
-    PantoSLAM.NextFramePosePrediction = typeNavigationState{};
-#endif
-
-    PantoSLAM.PreviousFrameData = typePreviousFrameData{};
     PantoSLAM.AccumulatedDistance = fp64{};
-    PantoSLAM.RecentMapPointIndexes = typePantoVector<u64>{};
     PantoSLAM.TrackingTrajectory = std::vector<Eigen::Vector3d>{};
-    PantoSLAM.TrackingTrajectoryTimeStamps = std::vector<fp64>{};
-    PantoSLAM.GroundTruthVisualizationAligned = false;
-    PantoSLAM.GroundTruthVisualizationAlignmentAttempted = false;
+    PantoSLAM.TrackingTrajectoryTimeStamps= std::vector<fp64>{};
+    PantoSLAM.GroundTruthVisualizationAligned = bool{};
+    PantoSLAM.GroundTruthVisualizationAlignmentAttempted = bool{};
 
 #if !defined(CONFIG_IMU) && !defined(DEBUG)
     if(!GroundTruthVisualizationTrajectory.empty())
@@ -487,8 +483,7 @@ void SLPriv_InitializeMap(void)
         }
 
         const std::size_t FirstGroundTruthIndex = GroundTruthIndex - 1;
-        const Eigen::Vector3d FirstWorldAcceleration =
-            SLPriv_GetGroundTruthAcceleration(FirstGroundTruthIndex);
+        const Eigen::Vector3d FirstWorldAcceleration = SLPriv_GetGroundTruthAcceleration(FirstGroundTruthIndex);
 
         IMU_ResetGravityInitialization();
 
@@ -525,13 +520,10 @@ void SLPriv_InitializeMap(void)
             }
 
             const std::size_t SecondGroundTruthIndex = GroundTruthIndex - 1;
-            const Eigen::Vector3d SecondWorldAcceleration =
-                SLPriv_GetGroundTruthAcceleration(SecondGroundTruthIndex);
+            const Eigen::Vector3d SecondWorldAcceleration = SLPriv_GetGroundTruthAcceleration(SecondGroundTruthIndex);
 
             if(!IMU_AddGravityInitializationMeasurement(
-                        Second,
-                        SecondIMUMeasurement,
-                        SecondWorldAcceleration))
+                        Second, SecondIMUMeasurement, SecondWorldAcceleration))
             {
                 LG_Log(LogSeverity::DATA,
                         "[SLPriv_InitializeMap] Ignored invalid gravity initialization sample at timestamp %.9f\n",
@@ -539,11 +531,9 @@ void SLPriv_InitializeMap(void)
             }
 #endif
 
-            const fp64 Baseline =
-                (SecondGT.Position - FirstGT.Position).norm();
+            const fp64 Baseline = (SecondGT.Position - FirstGT.Position).norm();
 
-            if(!std::isfinite(Baseline) ||
-               Baseline < PANTO_MIN_INITIALIZATION_BASELINE_METERS)
+            if(!std::isfinite(Baseline) || Baseline < PANTO_MIN_INITIALIZATION_BASELINE_METERS)
             {
                 LG_Log(LogSeverity::DATA,
                         "[SLAMGTInitialization] Candidate timestamp = %.9f; interval = %.6f s; baseline = %.6f/%.6f m; rejected before triangulation\n",
@@ -559,16 +549,16 @@ void SLPriv_InitializeMap(void)
                 IMU_GetLatestPreIntegrationData();
 #endif
 
-            typeGlobalMap CandidateMap = MAP_InitializeFromGT(First, Second, FirstFrame, SecondFrame);
+            MAP_InitializeFromGT(First, Second, FirstFrame, SecondFrame, PantoSLAM.GlobalMap);
 
 #if defined(CONFIG_IMU)
-            CandidateMap.KeyFrames[0].PreviousKFID = PANTO_ID_NOT_SET;
-            CandidateMap.KeyFrames[1].PreviousKFID = 0;
-            CandidateMap.KeyFrames[1].PreIntegrationData =
+            PantoSLAM.GlobalMap->KeyFrames[0].PreviousKFID = PANTO_ID_NOT_SET;
+            PantoSLAM.GlobalMap->KeyFrames[1].PreviousKFID = 0;
+            PantoSLAM.GlobalMap->KeyFrames[1].PreIntegrationData =
                 FirstToSecondPreIntegration;
 #endif
 
-            const std::size_t NumTriangulatedMapPoints = CandidateMap.MapPoints.active_size();
+            const std::size_t NumTriangulatedMapPoints = PantoSLAM.GlobalMap->MapPoints.active_size();
 
             LG_Log(LogSeverity::DATA,
                     "[SLAMGTInitialization] Candidate timestamp = %.9f; interval = %.6f s; baseline = %.6f/%.6f m; triangulated map points = %zu/%d\n",
@@ -578,6 +568,8 @@ void SLPriv_InitializeMap(void)
 
             if(NumTriangulatedMapPoints < static_cast<std::size_t>(PANTO_MIN_NUMBER_INITIAL_MAP_POINTS))
             {
+                delete(PantoSLAM.GlobalMap);
+                PantoSLAM.GlobalMap = new typeGlobalMap();
                 continue;
             }
 
@@ -592,10 +584,7 @@ void SLPriv_InitializeMap(void)
                 return;
             }
 
-            PantoSLAM.GlobalMap = std::move(CandidateMap);
             IMU_NewNavigationStateArrival(Second);
-#else
-            PantoSLAM.GlobalMap = std::move(CandidateMap);
 #endif
             InitialMapFound = true;
             break;
@@ -610,31 +599,30 @@ void SLPriv_InitializeMap(void)
             return;
         }
 
-        PantoSLAM.RecentMapPointIndexes.reserve(PantoSLAM.GlobalMap.MapPoints.size());
-        for(const typePantoMapPoint& MapPoint : PantoSLAM.GlobalMap.MapPoints)
+        PantoSLAM.RecentMapPointIndexes->reserve(PantoSLAM.GlobalMap->MapPoints.size());
+        for(const typePantoMapPoint& MapPoint : PantoSLAM.GlobalMap->MapPoints)
         {
-            PantoSLAM.RecentMapPointIndexes.push_back(MapPoint.ID);
+            PantoSLAM.RecentMapPointIndexes->push_back(MapPoint.ID);
         }
 
         OP_BundleAdjust(PantoSLAM.GlobalMap, OptimizationTypePoseAndPoints, {}, nullptr);
 
-        for(const typeKeyFrame& KeyFrame : PantoSLAM.GlobalMap.KeyFrames)
+        for(const typeKeyFrame& KeyFrame : PantoSLAM.GlobalMap->KeyFrames)
         {
-            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap.MapPoints, KeyFrame.ID);
+            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap->MapPoints, KeyFrame.ID);
             PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Camera));
             PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
                     KeyFrame.Camera.TimeStamp);
         }
 
-        PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
-        PantoSLAM.PreviousFrameData.PreviousPreviousFrame = PantoSLAM.GlobalMap.KeyFrames[0];
-        PantoSLAM.PreviousFrameData.PreviousFrame = PantoSLAM.GlobalMap.KeyFrames.back();
+        PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(*PantoSLAM.GlobalMap, PantoSLAM.GlobalMap->KeyFrames.back());
+        PantoSLAM.PreviousFrameData.PreviousPreviousFrame = PantoSLAM.GlobalMap->KeyFrames[0];
+        PantoSLAM.PreviousFrameData.PreviousFrame = PantoSLAM.GlobalMap->KeyFrames.back();
 
 #if defined(CONFIG_IMU)
-        PantoSLAM.NextFramePosePrediction =
-            PantoSLAM.PreviousFrameData.PreviousFrame.NavigationState;
+        PantoSLAM.NextFramePosePrediction.Pose = IMU_PredictNavigationState(PantoSLAM.PreviousFrameData.PreviousFrame.NavigationState, PantoSLAM.PreviousFrameData.PreviousFrame.PreIntegrationData);
 #else
-        PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFrame.Camera.Pose,
+        PantoSLAM.NextFramePosePrediction.Pose = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFrame.Camera.Pose,
                 PantoSLAM.PreviousFrameData.PreviousPreviousFrame.Camera.Pose);
 #endif
 
@@ -650,24 +638,24 @@ void SLPriv_InitializeMap(void)
             Reconstruction = INIT_ProcessNewFrame();
         }
 
-        PantoSLAM.GlobalMap = INIT_ConstructInitialMap(Reconstruction);
+         INIT_ConstructInitialMap(Reconstruction,PantoSLAM.GlobalMap );
 
         INIT_DestroyInitData();
 
-        PantoSLAM.RecentMapPointIndexes.reserve(PantoSLAM.GlobalMap.MapPoints.size());
-        for(const typePantoMapPoint& MapPoint : PantoSLAM.GlobalMap.MapPoints)
+        PantoSLAM.RecentMapPointIndexes->reserve(PantoSLAM.GlobalMap->MapPoints.size());
+        for(const typePantoMapPoint& MapPoint : PantoSLAM.GlobalMap->MapPoints)
         {
-            PantoSLAM.RecentMapPointIndexes.push_back(MapPoint.ID);
+            PantoSLAM.RecentMapPointIndexes->push_back(MapPoint.ID);
         }
 
         OP_BundleAdjust(PantoSLAM.GlobalMap, OptimizationTypePoseAndPoints, {}, nullptr);
 
-        typeKeyFrame ThirdKeyFrame = KEY_GetThirdKeyFrame(PantoSLAM.GlobalMap.KeyFrames.back(), PantoSLAM.GlobalMap.MapPoints);
+        typeKeyFrame ThirdKeyFrame = KEY_GetThirdKeyFrame(PantoSLAM.GlobalMap->KeyFrames.back(), PantoSLAM.GlobalMap->MapPoints);
         MAP_AppendKeyFrame(PantoSLAM.GlobalMap, ThirdKeyFrame);
 
-        for(const typeKeyFrame& KeyFrame : PantoSLAM.GlobalMap.KeyFrames)
+        for(const typeKeyFrame& KeyFrame : PantoSLAM.GlobalMap->KeyFrames)
         {
-            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap.MapPoints, KeyFrame.ID);
+            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap->MapPoints, KeyFrame.ID);
             PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Camera));
             PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
                     KeyFrame.Camera.TimeStamp);
@@ -692,9 +680,9 @@ void SLPriv_InitializeMap(void)
         VIZ_WriteColmap(*PantoSLAM.GlobalMap, PantoSLAM.TrackingTrajectory);
 #endif
 
-        PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, PantoSLAM.GlobalMap.KeyFrames.back());
-        PantoSLAM.PreviousFrameData.PreviousPreviousFrame = PantoSLAM.GlobalMap.KeyFrames[1];
-        PantoSLAM.PreviousFrameData.PreviousFrame = PantoSLAM.GlobalMap.KeyFrames.back();
+        PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(*PantoSLAM.GlobalMap, PantoSLAM.GlobalMap->KeyFrames.back());
+        PantoSLAM.PreviousFrameData.PreviousPreviousFrame = PantoSLAM.GlobalMap->KeyFrames[1];
+        PantoSLAM.PreviousFrameData.PreviousFrame = PantoSLAM.GlobalMap->KeyFrames.back();
 
 #if !defined(CONFIG_IMU)
         PantoSLAM.NextFramePosePrediction = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFrame.Camera.Pose, PantoSLAM.PreviousFrameData.PreviousPreviousFrame.Camera.Pose);
@@ -760,9 +748,8 @@ void SL_PantoSLAM(i32 num_loops)
 
 #if defined(CONFIG_IMU)
     typePreIntegration PreIntegrationBetweenKF{};
-    IMU_InitializePreIntegration(
-            PreIntegrationBetweenKF,
-            PantoSLAM.GlobalMap.KeyFrames.back().NavigationState);
+    IMU_InitializePreIntegration( PreIntegrationBetweenKF,
+            PantoSLAM.GlobalMap->KeyFrames.back().NavigationState);
 #endif
 
     for(i32 i = 0; i < num_loops; i++)
@@ -783,7 +770,7 @@ void SL_PantoSLAM(i32 num_loops)
             break;
         }
 
-        PantoSLAM.NextFramePosePrediction = KEY_PredictPose(PantoSLAM.PreviousFrameData.PreviousFrame);
+        PantoSLAM.NextFramePosePrediction.Pose = KEY_PredictPose(PantoSLAM.PreviousFrameData.PreviousFrame);
 #endif
 
 #if defined(DEBUG)
@@ -806,9 +793,10 @@ void SL_PantoSLAM(i32 num_loops)
         const PantoClock::time_point FrameStartTime = PantoClock::now();
 
         typeKeyFrame CurrentFrame = KEY_GetKeyFrame(PantoSLAM.NextFramePosePrediction, PantoSLAM.PreviousFrameData.PreviousFrameMapPoints, PantoSLAM.GlobalMap.MapPoints);
+
 #if defined(CONFIG_IMU)
         CurrentFrame.PreIntegrationData = IMU_GetLatestPreIntegrationData();
-        CurrentFrame.PreviousKFID = PantoSLAM.GlobalMap.KeyFrames.back().ID;
+        CurrentFrame.PreviousKFID = PantoSLAM.GlobalMap->KeyFrames.back().ID;
 #endif
 
         if(CurrentFrame.Camera.TimeStamp < 0.0f)
@@ -1184,6 +1172,191 @@ void SL_PantoSLAM(i32 num_loops)
     }
     VIZ_StopViewer();
 #endif
+}
+
+void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops, 
+        typePreIntegration& PreIntegrationBetweenKF)
+{
+    for(i32 i = 0; i < num_loops; i++)
+    {
+        const PantoClock::time_point LoopStartTime = PantoClock::now();
+
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Starting loop %d\n", i);
+
+
+#if defined(CONFIG_IMU)
+        IMU_NewNavigationStateArrival(PantoSLAM.PreviousFrameData.PreviousFrame.NavigationState);
+
+        const fp64 NextFrameTimeStamp = FR_PeekNextFrameTimeStamp();
+        if(!SLPriv_IntegrateIMUUntil(NextFrameTimeStamp,
+                    nullptr, &PreIntegrationBetweenKF))
+        {
+            break;
+        }
+
+        TrackingData.PosePrediction->Pose = KEY_PredictPose(TrackingData.PreviousFrameData.PreviousFrame);
+#endif
+
+        TrackingData.GlobalMap->Mutex.lock();
+        TrackingData.CovisibilityGraph->Mutex.lock();
+        TrackingData.NewFrame = KEY_GetKeyFrame(TrackingData.PosePrediction->Pose, TrackingData.PreviousFrameData.PreviousFrameMapPoints, 
+                TrackingData.GlobalMap->MapPoints);
+        TrackingData.TrackingMap = MAP_CreateLocalMapTracking(*TrackingData.GlobalMap, *TrackingData.CovisibilityGraph, TrackingData.NewFrame);
+        TrackingData.CovisibilityGraph->Mutex.unlock();
+        TrackingData.GlobalMap->Mutex.unlock();
+
+#if defined(CONFIG_IMU)
+        TrackingData.NewFrame.PreIntegrationData = IMU_GetLatestPreIntegrationData();
+        TrackingData.NewFrame.PreviousKFID = PantoSLAM.GlobalMap->KeyFrames.back().ID;
+#endif
+
+#if defined(DEBUG)
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Logging all poses\n");
+        MAP_LogGlobalMapPoses(PantoSLAM.GlobalMap);
+        for(const typePantoMapPoint& MapPoint :
+                PantoSLAM.PreviousFrameData.PreviousFrameMapPoints)
+        {
+            if(!PantoSLAM.GlobalMap.MapPoints.contains(MapPoint.ID))
+            {
+                LG_Log(LogSeverity::ERROR,
+                        "[SLAMLoop] PreviousFrameMapPoints contains removed MP %llu\n", MapPoint.ID);
+
+                assert(false);
+            }
+        }
+#endif 
+
+        if(TrackingData.NewFrame.Camera.TimeStamp < 0.0f)
+        {
+            // Invalid timestamp means failure to read image
+            break;
+        }
+
+        u64 NumMatchedMapPoints = 0;
+
+        for(const typePantoImagePoint& ImagePoint : TrackingData.NewFrame.Points.ImagePoints)
+        {
+            if(ImagePoint.MapPointID != PANTO_ID_NOT_SET)
+            {
+                NumMatchedMapPoints++;
+            }
+        }
+
+#if !defined(CONFIG_IMU)
+        if(NumMatchedMapPoints <= PANTO_TRACKING_MIN_MATCHED_MAP_POINTS)
+        {
+            LG_Log(
+                LogSeverity::ERROR,
+                "[SLAMLoop] Tracking lost with %llu matched map points, resetting SLAM and restarting initialization\n",
+                static_cast<unsigned long long>(NumMatchedMapPoints));
+
+            SLPriv_ResetMapAndTracking();
+
+            const PantoClock::time_point ReinitializationStartTime = PantoClock::now();
+            SLPriv_InitializeMap();
+
+            const PantoClock::time_point ReinitializationEndTime = PantoClock::now();
+
+            LG_Log(LogSeverity::DATA, "[SLAMTiming] Reinitialization = %.6f s\n",
+                std::chrono::duration<fp64>(
+                    ReinitializationEndTime - ReinitializationStartTime).count());
+
+            continue;
+        }
+#endif
+
+        if(NumMatchedMapPoints > PANTO_TRACKING_MIN_MATCHED_MAP_POINTS)
+        {
+            const PantoClock::time_point FirstTrackingStartTime = PantoClock::now();
+            LG_Log(LogSeverity::DBG, "[SLAMLoop] Running first tracking optimization\n");
+            const Eigen::Matrix3d RBefore = TrackingData.NewFrame.Camera.Pose.R;
+            const Eigen::Vector3d tBefore = TrackingData.NewFrame.Camera.Pose.t;
+
+            OP_BundleAdjust(PantoSLAM.GlobalMap, OptimizationTypeTracking, {},
+                    &TrackingData.NewFrame,
+                    &PantoSLAM.PreviousFrameData.PreviousFrame);
+
+            /*
+             * Compare optimized pose against predicted/input pose.
+             */
+            const Eigen::Matrix3d& RAfter = TrackingData.NewFrame.Camera.Pose.R;
+            const Eigen::Vector3d& tAfter = TrackingData.NewFrame.Camera.Pose.t;
+            /*
+             * Relative rotation:
+             *
+             * R_delta = R_after * R_before^T
+             */
+            const Eigen::Matrix3d RDelta = RAfter * RBefore.transpose();
+
+            const fp64 CosAngle = std::clamp( (RDelta.trace() - 1.0) * 0.5, -1.0, 1.0);
+
+            const fp64 RotationChangeRadians = std::acos(CosAngle);
+
+            const fp64 RotationChangeDegrees = RotationChangeRadians * 180.0 / M_PI;
+
+            const Eigen::Vector3d TranslationDelta = tAfter - tBefore;
+
+            LG_Log(
+                    LogSeverity::DBG,
+                    "[SLAMLoop] First tracking BA pose change: "
+                    "R = %.6f deg, "
+                    "dt = (%.6f, %.6f, %.6f), "
+                    "|dt| = %.6f\n",
+                    RotationChangeDegrees,
+                    TranslationDelta.x(),
+                    TranslationDelta.y(),
+                    TranslationDelta.z(),
+                    TranslationDelta.norm());
+
+        }
+
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Creating local map\n");
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Local Map size = %zu\n", TrackingData.TrackingMap.KeyFrameIDs.size());
+
+        LG_Log(LogSeverity::DBG, "[SLAMLoop] Matching local map points\n");
+        const typeLocalMapInfo LocalMapInfo = MAP_MatchMapPointLocalMap(.GlobalMap, PantoSLAM.LocalMapTracking, CurrentFrame);
+        const PantoClock::time_point LocalMapMatchingEndTime = PantoClock::now();
+        const fp64 LocalMapMatchingTime =
+            std::chrono::duration<fp64>(LocalMapMatchingEndTime - LocalMapMatchingStartTime).count();
+        SL_AddTimingSample(LocalMapMatchingTiming, LocalMapMatchingTime);
+
+        MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
+
+        const PantoClock::time_point SecondTrackingStartTime = PantoClock::now();
+
+        OP_BundleAdjust(PantoSLAM.GlobalMap, OptimizationTypeTracking, {},
+                &CurrentFrame,
+                &PantoSLAM.PreviousFrameData.PreviousFrame);
+
+        MAP_LogGlobalMapProjectionErrors(PantoSLAM.GlobalMap);
+        const PantoClock::time_point SecondTrackingEndTime = PantoClock::now();
+        const fp64 SecondTrackingTime =
+            std::chrono::duration<fp64>(SecondTrackingEndTime - SecondTrackingStartTime).count();
+        SL_AddTimingSample(SecondTrackingTiming, SecondTrackingTime);
+
+        const typePreviousFrameData PreviousFrameDataCopy = PantoSLAM.PreviousFrameData;
+        PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(PantoSLAM.GlobalMap, CurrentFrame);
+        PantoSLAM.PreviousFrameData.PreviousPreviousFrame =
+            PantoSLAM.PreviousFrameData.PreviousFrame;
+        PantoSLAM.PreviousFrameData.PreviousFrame = CurrentFrame;
+
+#if !defined(CONFIG_IMU)
+        PantoSLAM.NextFramePosePrediction = CM_PredictPose(
+                PantoSLAM.PreviousFrameData.PreviousFrame.Camera.Pose,
+                PantoSLAM.PreviousFrameData.PreviousPreviousFrame.Camera.Pose);
+#endif
+
+        PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(CurrentFrame.Camera));
+        PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
+                CurrentFrame.Camera.TimeStamp);
+
+#if !defined(CONFIG_IMU) && !defined(DEBUG)
+        SLPriv_TryAlignGroundTruthForVisualization();
+#endif
+
+        const PantoClock::time_point KeyFrameEvaluationStartTime = PantoClock::now();
+        typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(PreviousFrameDataCopy, CurrentFrame, LocalMapInfo);
+
 }
 
 typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameData& PreviousFrameDataCopy, const typeKeyFrame& NewKeyFrame,

@@ -15,7 +15,5 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>&
         const cv::Mat& Descriptors, std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose,
         typePantoVector<typePantoMapPoint>& GlobalMapPoints);
 typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Point2d>& Points, const cv::Mat& Descriptors);
-u64 PT_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<typePantoMapPoint>& MapPoints, const typeCamera& Pose,
-        typePantoVector<typePantoMapPoint>& GlobalMapPoints, u64* NumProjectedMapPoints = nullptr);
 
 #endif // __PT_PANTO_POINT_HPP_

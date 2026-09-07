@@ -127,6 +127,6 @@ typedef struct
 void INIT_CreateInitData(void);
 typeInitReconstruction INIT_ProcessNewFrame(void);
 void INIT_DestroyInitData(void);
-typeGlobalMap INIT_ConstructInitialMap(typeInitReconstruction Reconstruction);
+void INIT_ConstructInitialMap(typeInitReconstruction Reconstruction, typeGlobalMap* GlobalMap);
 
 #endif // INIT_INITIALIZESLAM_HPP_

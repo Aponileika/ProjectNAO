@@ -43,6 +43,39 @@ typedef struct
     fp64 MedianDepth;
 }typeLocalMapInfo;
 
+class typeKeyFrameQueue
+{
+    public:
+        std::atomic_bool AbortLocalBA = false;
+        std::mutex Mutex;
+        std::condition_variable QueueCV;
+        std::queue<typeKeyFrame> KeyFrameQueue;
+
+        typeKeyFrameQueue() = default;
+
+        void enque(const typeKeyFrame& KeyFrame)
+        {
+            {
+                // this makes sense, if for some reason the push fails, tracking continues as normal
+                std::lock_guard<std::mutex> Lock(Mutex);
+                KeyFrameQueue.push(KeyFrame);
+            }
+            AbortLocalBA.store(true, std::memory_order_relaxed);
+            QueueCV.notify_one();
+        }
+
+        typeKeyFrame deque()
+        {
+            typeKeyFrame KeyFrame;
+            {
+                std::lock_guard<std::mutex> Lock(Mutex);
+                KeyFrame = KeyFrameQueue.front();
+                KeyFrameQueue.pop();
+            }
+            return KeyFrame;
+        }
+};
+
 void MAP_InitializeFromGT(const typeNavigationState& First, const typeNavigationState& Second,
         const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame, typeGlobalMap* GlobalMap);
 u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame);
@@ -63,6 +96,8 @@ void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap);
 void MAP_LogKeyFrameProjectionError(const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints);
 void MAP_LogGlobalMapProjectionErrors(const typeGlobalMap& GlobalMap);
 void MAP_RetriangulateLOST(typeGlobalMap& GlobalMap);
+u64 MAP_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame, std::vector<typePantoMapPoint>& MapPoints, const typeCamera& Pose,
+        typeGlobalMap* GlobalMap, u64* NumProjectedMapPointsOutput);
 
 void MAP_AssertGraphEqual(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph);
 void MAP_AssertMapPointObservations(const typeGlobalMap& GlobalMap);

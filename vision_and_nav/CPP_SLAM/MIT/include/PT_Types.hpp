@@ -15,6 +15,8 @@ typedef struct
     u64 MapPointID;
     u64 ID;
     u64 CellID;
+    // TODO add this
+    // fp64 DetectionScale;
 }typePantoImagePoint;
 
 typedef struct

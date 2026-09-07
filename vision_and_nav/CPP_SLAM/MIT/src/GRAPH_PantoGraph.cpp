@@ -219,19 +219,16 @@ void GRAPH_UpdateCovisibility( typeCovisibilityGraph* CovisibilityGraph, const t
 
 void GRAPH_CullKeyFrame(typeCovisibilityGraph* CovisibilityGraph, u64 KeyFrameID)
 {
-    CovisibilityGraph->Mutex.lock();
     for(const auto& [OtherKeyFrameID, Count] : CovisibilityGraph->CovisibilityGraph[KeyFrameID])
     {
         CovisibilityGraph->CovisibilityGraph[OtherKeyFrameID].erase(KeyFrameID);
     }
 
     CovisibilityGraph->CovisibilityGraph.remove(KeyFrameID);
-    CovisibilityGraph->Mutex.unlock();
 }
 
 void GRAPH_DecrementAll(typeCovisibilityGraph* CovisibilityGraph, const typePantoVector<u64>& Nodes)
 {
-    CovisibilityGraph->Mutex.lock();
     for(std::size_t i{}; i < Nodes.size(); i++)
     {
         if(!Nodes.contains(i))
@@ -271,7 +268,6 @@ void GRAPH_DecrementAll(typeCovisibilityGraph* CovisibilityGraph, const typePant
             }
         }
     }
-    CovisibilityGraph->Mutex.unlock();
 }
 
 void GRAPH_DecrementAllOther(typeCovisibilityGraph* CovisibilityGraph, const typePantoVector<u64>& Nodes, const u64 DecrementIndex)

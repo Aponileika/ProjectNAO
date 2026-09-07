@@ -633,10 +633,10 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
     CurrentDescriptors.pop();
 }
 
-std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, typePantoVector<typePantoMapPoint>& GlobalMapPoints,
-        const u64 MapAge)
+std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, const u64 MapAge)
 {
-    std::vector<u64> Indexes;
+    std::vector<typePantoMapPoint> MapPoints;
+    MapPoints.reserve(PANTO_NEW_MAPPOINT_RESERVE);
 
     std::size_t NumSharedNodes = 0;
     std::size_t NumImagePoint1Candidates = 0;
@@ -663,9 +663,6 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
     std::size_t NumBestHammingDistanceSamples = 0;
     fp64 SumBestHammingDistance = 0.0;
     fp64 SquaredSumBestHammingDistance = 0.0;
-    std::size_t NumSecondBestHammingDistanceSamples = 0;
-    fp64 SumSecondBestHammingDistance = 0.0;
-    fp64 SquaredSumSecondBestHammingDistance = 0.0;
     std::size_t NumRatioRejected = 0;
     std::size_t NumNonFiniteRejected = 0;
     std::size_t NumProjectionRejected = 0;
@@ -740,7 +737,6 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
                 u32 BestDistance = std::numeric_limits<u32>::max();
 
-                u32 SecondBestDistance = std::numeric_limits<u32>::max();
                 u64 BestFeatureID = PANTO_ID_NOT_SET;
 
                 if(ImagePoint1.MapPointID != PANTO_ID_NOT_SET)
@@ -779,12 +775,6 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                     NumDescriptorComparisons++;
 
                     const u32 Distance = PANTO_HammingDistance(ImagePoint1.Descriptor, ImagePoint2.Descriptor);
-
-                    if(Distance >= SecondBestDistance)
-                    {
-                        NumNotTopTwoRejected++;
-                        continue;
-                    }
 
                     const fp64 MeanEpipolarDistance =
                         EP_CheckEpipolarConstraint(ImagePoint1.Point, ImagePoint2.Point, F21, F12);
@@ -850,13 +840,8 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
 
                     if(Distance < BestDistance)
                     {
-                        SecondBestDistance = BestDistance;
                         BestDistance = Distance;
                         BestFeatureID = static_cast<u64>(FeatureID2);
-                    }
-                    else
-                    {
-                        SecondBestDistance = Distance;
                     }
                 }
 
@@ -870,27 +855,12 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                 SumBestHammingDistance += static_cast<fp64>(BestDistance);
                 SquaredSumBestHammingDistance += static_cast<fp64>(BestDistance) * static_cast<fp64>(BestDistance);
 
-                if(SecondBestDistance != std::numeric_limits<u32>::max())
-                {
-                    NumSecondBestHammingDistanceSamples++;
-                    SumSecondBestHammingDistance += static_cast<fp64>(SecondBestDistance);
-                    SquaredSumSecondBestHammingDistance += static_cast<fp64>(SecondBestDistance) * static_cast<fp64>(SecondBestDistance);
-                }
-
                 if(BestDistance >= PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW)
                 {
                     NumHammingRejected++;
                     continue;
                 }
 
-                if(SecondBestDistance != std::numeric_limits<u32>::max())
-                {
-                    // if(static_cast<fp64>(BestDistance) >= PANTO_MATCHRATIO * static_cast<fp64>(SecondBestDistance))
-                    // {
-                    //     NumRatioRejected++;
-                    //     continue;
-                    // }
-                }
                 typePantoImagePoint& ImagePoint2 = AllImagePoints2[BestFeatureID];
                 std::pair<u64, u64> ImagePointIDs(ImagePoint1.ID, ImagePoint2.ID);
                 Eigen::Vector4d MapPoint = PROJ_TriangulateDLT(ImagePoint1.Point, ImagePoint2.Point, P1, P2);
@@ -991,11 +961,7 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
                 {
                     const typePantoMapPoint NewPoint = PT_CreatePantoMapPoint(MapPoint, ImagePoint1.Descriptor, 
                             KeyFrameIDs, ImagePointIDs, PANTO_ID_NOT_SET, MapAge);
-                    const u64 Index = GlobalMapPoints.push_back(NewPoint);
-                    GlobalMapPoints[Index].ID = Index;
-                    Indexes.push_back(Index);
-                    ImagePoint1.MapPointID = Index;
-                    ImagePoint2.MapPointID = Index;
+                    MapPoints.push_back(NewPoint);
                 }
                 else
                 {
@@ -1084,20 +1050,6 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
     const fp64 BestHammingDistanceStandardDeviation =
         sqrt(std::max(0.0, BestHammingDistanceVariance));
 
-    const fp64 MeanSecondBestHammingDistance =
-        NumSecondBestHammingDistanceSamples > 0 ?
-        SumSecondBestHammingDistance /
-        static_cast<fp64>(NumSecondBestHammingDistanceSamples) : 0.0;
-
-    const fp64 SecondBestHammingDistanceVariance =
-        NumSecondBestHammingDistanceSamples > 0 ?
-        SquaredSumSecondBestHammingDistance /
-        static_cast<fp64>(NumSecondBestHammingDistanceSamples) -
-        MeanSecondBestHammingDistance * MeanSecondBestHammingDistance : 0.0;
-
-    const fp64 SecondBestHammingDistanceStandardDeviation =
-        sqrt(std::max(0.0, SecondBestHammingDistanceVariance));
-
     const fp64 MeanRejectedDepth1 =
         NumRejectedDepthSamples > 0 ?
         SumRejectedDepth1 / static_cast<fp64>(NumRejectedDepthSamples) : 0.0;
@@ -1153,7 +1105,7 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
             NumFiniteTriangulations,
             NumPositiveDepthTriangulations,
             NumReprojectionAccepted,
-            Indexes.size());
+            MapPoints.size());
 
     LG_Log(LogSeverity::DBG,
             "[KEY_InsertNewMapPoints] Per-feature rejects: KF1 invalid = %zu, KF1 associated = %zu, no best match = %zu, hamming = %zu, ratio = %zu, non-finite = %zu, projection/depth = %zu, reprojection = %zu, cheirality = %zu\n",
@@ -1203,12 +1155,6 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
             BestHammingDistanceStandardDeviation);
 
     LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Second-best Hamming distance: samples = %zu, mean = %lf, standard deviation = %lf\n",
-            NumSecondBestHammingDistanceSamples,
-            MeanSecondBestHammingDistance,
-            SecondBestHammingDistanceStandardDeviation);
-
-    LG_Log(LogSeverity::DBG,
             "[KEY_InsertNewMapPoints] Projection/depth rejected: non-finite = %zu, KF1 depth only = %zu, KF2 depth only = %zu, both depths = %zu\n",
             NumProjectionNonFiniteRejected,
             NumDepth1OnlyRejected,
@@ -1236,7 +1182,7 @@ std::vector<u64> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& K
             NumReprojectionRejectedTenToTwenty,
             NumReprojectionRejectedTwentyPlus);
 
-    return Indexes;
+    return MapPoints;
 }
 
 void KEY_NonValidKeyFrame(void)

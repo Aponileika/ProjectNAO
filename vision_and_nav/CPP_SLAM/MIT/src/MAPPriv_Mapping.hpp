@@ -17,9 +17,6 @@ typedef struct
     fp64 SquaredSumPixelErrorRemovedPixels;
 }typeMappingData;
 
-void MAPPriv_CullRecentMapPoint(typePantoMapPoint& MapPoint,
-        u64 MapPointIndex,
-        typeGlobalMap& GlobalMap,
-        typeCovisibilityGraph& CovisibilityGraph);
+void MAPPriv_CullRecentMapPoint(const u64 MapPointIndex, typeGlobalMap* GlobalMap, typeCovisibilityGraph* CovisibilityGraph);
 
 #endif //  MAPPRIV_MAPPING_HPP_
