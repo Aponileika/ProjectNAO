@@ -41,7 +41,13 @@ class NaoAppWindow(object):
 
         self.config_ip = ""
         self.config_port = ""
-        
+        # Burst gait walks in short bursts with a settle pause between them.
+        # It exists to compensate for one specific robot whose roll diverges
+        # until it topples (see BodyId ALDR1312N090344); a healthy robot does
+        # not need it and walks better without the pauses.  Off unless
+        # config.json opts in.
+        self.config_burst_gait = False
+
         self.api_key_autofill = ""   # first key (shown in UI entry)
         self.api_keys_list    = []   # all keys, used for rotation
         try:
@@ -66,6 +72,7 @@ class NaoAppWindow(object):
                             self.config_port = str(int(port))
                         except Exception:
                             self.config_port = str(port)
+                    self.config_burst_gait = bool(cdata.get("burst_gait", False))
 
             if os.path.isfile(secrets_path):
                 with open(secrets_path, "r") as f:
@@ -613,11 +620,24 @@ class NaoAppWindow(object):
                 if name == "Relax":
                     self.conn.motion.rest()
                 else:
+                    # Wake first.  A resting robot has zero stiffness, so
+                    # goToPosture() has no motors to work with and the button
+                    # appears to do nothing at all — which is exactly what it
+                    # did before this.  (_run_dance already did this, so Dance
+                    # worked from rest while Posture did not.)
+                    if self.conn.motion:
+                        try:
+                            if not self.conn.motion.robotIsWakeUp():
+                                self._set_status("Waking up for posture...")
+                            self.conn.motion.wakeUp()
+                            self.conn.motion.setStiffnesses("Body", 1.0)
+                        except Exception as e:
+                            print("[Posture] wake-up warning: %s" % e)
                     if name in ("Sit", "SitRelax", "Crouch"):
                         self.conn.posture.goToPosture("StandInit", 0.5)
                         self.conn.posture.goToPosture(name, 0.5)
                     else:
-                        self.conn.posture.goToPosture(name, 0.8)
+                        self.conn.posture.goToPosture(name, 0.6)
                 self._set_status("Posture: %s" % name)
             except Exception as e:
                 self._set_status("Posture error: %s" % e, False)
@@ -1633,6 +1653,9 @@ class NaoAppWindow(object):
             _RESUME_ROLL  = 0.07   # rad — settled enough to walk again
             _phase        = ["settle"]   # start by settling after standing up
             _phase_t      = [time.time()]
+            _burst_gait   = bool(getattr(self, "config_burst_gait", False))
+            print("[Gait] burst gait %s" % ("ENABLED (config.json burst_gait)"
+                                            if _burst_gait else "disabled"))
 
             # --- Active head-scanning state machine ---
             # The head cycles through 7 positions so the camera covers the whole
@@ -1998,7 +2021,10 @@ class NaoAppWindow(object):
 
                 # 6b. BURST GAIT — walk in bursts, stand still between them, so
                 # the lateral build-up never gets near the point of no return.
-                if _phase[0] == "settle":
+                # Only for a robot that needs it; see config_burst_gait.
+                if not _burst_gait:
+                    pass
+                elif _phase[0] == "settle":
                     settled_for = now - _phase_t[0]
                     ready = (settled_for >= _SETTLE_MIN_S
                              and roll_peak <= _RESUME_ROLL)
@@ -2028,10 +2054,13 @@ class NaoAppWindow(object):
                     time.sleep(0.05)
                     continue
 
-                # Walking now: keep the head still.  It is ~0.5 kg at the top of
-                # the mass column and the walk engine does not model it moving,
-                # so it only sweeps during the settle phase above.
-                _head_scan_paused[0] = True
+                # With burst gait on, the head only sweeps during the settle
+                # phase, so it never moves mid-stride — it is ~0.5 kg at the top
+                # of the mass column and the walk engine does not model it
+                # moving.  Without burst gait there is no settle phase, so it
+                # scans while walking as it always did.
+                if _burst_gait:
+                    _head_scan_paused[0] = True
 
                 obstacle = bumped or (near <= _STOP_DIST) or not boundary_ok
 

@@ -1,5 +1,7 @@
 {
-    "ip":  "192.168.0.101",
+    "ip":  "192.168.0.105",
     "port":  9559,
+    "_comment_burst_gait": "Short walk bursts with settle pauses. Needed only by the robot with BodyId ALDR1312N090344, whose roll diverges until it topples. Leave false on a healthy robot.",
+    "burst_gait":  false,
     "filepath":  "C:\\Users\\aleks\\FIA\\NAO\\pynaoqi-python2.7-2.8.6.23-win64-vs2015-20191127_152649\\lib"
 }
