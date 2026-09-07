@@ -1180,6 +1180,13 @@ class NaoAppWindow(object):
                 if self.conn.posture:
                     self.conn.posture.goToPosture("StandInit", 0.5)
 
+            # 'robotHasFallen' is a latched flag: it stays True after a fall until
+            # something clears it.  Left set, the very next tilt spike trips the
+            # fall branch instantly, so clear it before we start walking.
+            if self.conn.memory:
+                try: self.conn.memory.insertData("robotHasFallen", False)
+                except Exception: pass
+
             if self.conn.motion:
                 try:
                     self.conn.motion.setFallManagerEnabled(True)
@@ -1187,17 +1194,47 @@ class NaoAppWindow(object):
                     self.conn.motion.setMotionConfig([
                         ["ENABLE_FOOT_CONTACT_PROTECTION", True],
                     ])
-                    # Best-effort extra-safety flags (not available on all firmware)
-                    try: self.conn.motion.setExternalCollisionProtectionEnabled("All", True)
+                    # Legs must actually be at full stiffness before walking — a
+                    # partially relaxed leg is the classic cause of a collapse a
+                    # few steps in.
+                    try: self.conn.motion.setStiffnesses("Body", 1.0)
+                    except Exception: pass
+                    # NOTE: setSmartStiffnessEnabled() is deliberately NOT used
+                    # here.  It lets NAOqi lower stiffness on joints it thinks
+                    # are idle, and a leg joint going soft mid-stride is exactly
+                    # what a forward collapse looks like.
+                    #
+                    # "Move" is excluded from collision protection on purpose too:
+                    # it halts the walk abruptly when it predicts contact, and an
+                    # abrupt stop mid-stride is itself a fall risk.  Obstacles are
+                    # handled by the sonar/bumper logic in the loop instead.
+                    try: self.conn.motion.setExternalCollisionProtectionEnabled("Arms", True)
                     except Exception: pass
                 except Exception:
                     pass
 
             # --- Sonar ---
+            # ALSonar must be subscribed or the US/*/Sensor/Value keys simply
+            # stop refreshing — and a frozen "nothing ahead" reading looks
+            # exactly like an empty room.  The old code swallowed the failure
+            # silently, so verify it actually took and say so if it did not.
             sonar = self.conn.get_proxy("ALSonar")
             if sonar:
-                try: sonar.subscribe("WanderSeeker")
-                except Exception: pass
+                try:
+                    sonar.subscribe("WanderSeeker")
+                except Exception as e:
+                    print("[Sense] ALSonar.subscribe failed: %s" % e)
+                try:
+                    subs = sonar.getSubscribersInfo()
+                    if not subs:
+                        print("[Sense] WARNING: ALSonar reports no subscribers — "
+                              "sonar values will be stale. Relying on bumpers.")
+                    else:
+                        print("[Sense] sonar active (%d subscriber(s))." % len(subs))
+                except Exception:
+                    pass
+            else:
+                print("[Sense] WARNING: no ALSonar proxy — bumpers only.")
 
             # --- Face detection (used in face-seek mode only) ---
             if self.conn.face:
@@ -1417,6 +1454,26 @@ class NaoAppWindow(object):
                 finally:
                     _vision_checking[0] = False
 
+            def _capture_and_check():
+                """Grab the frame *and* run the check on this worker thread.
+
+                _capture_image_bytes() costs a camera re-subscribe, a hard 0.4 s
+                exposure settle and two full frame transfers, then a pure-Python
+                PNG encode — on the order of a second.  It used to run on the
+                wander loop itself, and because moveToward() is a continuous
+                velocity command the robot kept walking that entire time with no
+                sonar checks at all.  That was the single biggest source of
+                bumping whenever a search target was set."""
+                img = None
+                try:
+                    img = self._capture_image_bytes(resolution=1)   # QVGA 320x240
+                except Exception as e:
+                    print("[VisionSearch] capture error: %s" % e)
+                if not img:
+                    _vision_checking[0] = False
+                    return
+                _do_gemini_check(img)
+
             # --- Walk config & tuning ---
             walk_config       = getattr(self.controller, "_WALK_CONFIG", [])
 
@@ -1435,19 +1492,33 @@ class NaoAppWindow(object):
                         out.append([key, val])
                 return out
 
-            # MaxStepY must NOT be 0 — NAO requires lateral steps to keep legs
-            # from colliding and to allow ZMP balance.  StepHeight raised to
-            # give the foot proper clearance off the floor.
+            # All values must stay inside the robot's getMoveConfig Min/Max
+            # limits (MaxStepY min is 0.101!) or the gait is left undefined.
+            # See GamepadController._WALK_CONFIG for the full reasoning.
             walk_config = _tuned_walk_config(walk_config, {
-                "Frequency":    0.48,   # slower gait cycle = more balance time per step
-                "MaxStepX":     0.028,  # shorter forward steps
-                "MaxStepY":     0.020,  # less lateral
-                "MaxStepTheta": 0.06,   # gentler turns
-                "StepHeight":   0.020,  # higher foot lift = less tripping on floor
-                "TorsoWy":      0.00,
+                "MaxStepX":         0.030,  # short, deliberate forward steps
+                # Widest legal stance (max is 0.160).  Measured roll oscillated
+                # at ~1 Hz, and this robot's natural lateral rocking frequency
+                # is sqrt(g/h) = sqrt(9.81/0.271) ~= 0.96 Hz — i.e. the gait was
+                # pumping a resonance.  A wider stance raises that natural
+                # frequency and adds lateral margin.
+                "MaxStepY":         0.160,
+                "MaxStepTheta":     0.120,  # gentle turns
+                # Backed off from 1.0: max frequency put the step rate close to
+                # the resonance above.  Detuning the forcing frequency is the
+                # other half of breaking it.
+                "MaxStepFrequency": 0.700,
+                "StepHeight":       0.025,  # clearance so it doesn't catch the floor
+                "TorsoWx":          0.000,
+                "TorsoWy":          0.000,
             })
 
-            max_fwd           = 0.05   # cap forward speed for stability
+            # moveToward() takes velocities NORMALISED to [-1, 1] — a fraction of
+            # MaxStepX, not m/s.  The old 0.05 meant ~5% of max, i.e. ~1.5mm of
+            # travel per step: the robot rocked through a full weight shift for
+            # almost no forward motion, which is the *least* stable regime for a
+            # ZMP walker.  A real step is both faster and far steadier.
+            max_fwd           = 0.45
             wander_turn_bias  = 0.0
             last_bias_t       = time.time()
             next_speech_t     = time.time() + random.uniform(3.0, 20.0)
@@ -1457,18 +1528,128 @@ class NaoAppWindow(object):
             tilt_high_since   = None
             fall_debounce_s   = 0.6
 
+            # --- Stability governor -------------------------------------------
+            # The loop used to react only at _tilt_too_high() = 0.50 rad (~29°),
+            # which is long past recoverable.  These thresholds brake the walk
+            # while the balancer can still plant a corrective step.  Normal
+            # walking oscillates well under _TILT_WARN, so this does not nag.
+            _TILT_WARN   = 0.15   # rad — start scaling speed down
+            _TILT_DANGER = 0.28   # rad — stop dead and let it settle
+            _braking     = [False]
+
+            # Command smoothing: feed the walk engine a continuous velocity
+            # rather than step changes, so it never has to re-plan abruptly.
+            _cur_fwd  = [0.0]
+            _cur_turn = [0.0]
+            _CMD_SMOOTH = 0.25
+
+            # --- Proximity sensing --------------------------------------------
+            # Sonar and both foot bumpers, batched into a single ALMemory read.
+            # NAO's ultrasound is chest-mounted with a ~60° cone and a ~0.25 m
+            # blind spot, and soft or thin things (fabric, chair legs) barely
+            # echo — so sonar alone cannot see everything.  The bumpers are the
+            # backstop: they cannot miss, they just report contact after it has
+            # happened.
+            _SONAR_KEYS = [
+                "Device/SubDeviceList/US/Left/Sensor/Value",
+                "Device/SubDeviceList/US/Right/Sensor/Value",
+            ]
+            _BUMPER_KEYS = [
+                "Device/SubDeviceList/LFoot/Bumper/Left/Sensor/Value",
+                "Device/SubDeviceList/LFoot/Bumper/Right/Sensor/Value",
+                "Device/SubDeviceList/RFoot/Bumper/Left/Sensor/Value",
+                "Device/SubDeviceList/RFoot/Bumper/Right/Sensor/Value",
+            ]
+            # Balance state rides along in the same batch: the loop used to spend
+            # ~9 separate round trips per tick on these, which capped the reaction
+            # rate and therefore the stopping distance.
+            _BALANCE_KEYS = [
+                "Device/SubDeviceList/InertialSensor/AngleX/Sensor/Value",
+                "Device/SubDeviceList/InertialSensor/AngleY/Sensor/Value",
+                "robotHasFallen",
+            ]
+
+            # Validate every key once, up front.  A key this firmware does not
+            # expose would make the batched read throw on every tick, and the
+            # fail-safe below would then hold the robot permanently "blocked" —
+            # so drop unknown keys instead of walking into that.
+            def _key_works(k):
+                try:
+                    self.conn.memory.getData(k)
+                    return True
+                except Exception:
+                    print("[Sense] key unavailable, ignoring: %s" % k)
+                    return False
+
+            if self.conn.memory:
+                _SONAR_KEYS   = [k for k in _SONAR_KEYS   if _key_works(k)]
+                _BUMPER_KEYS  = [k for k in _BUMPER_KEYS  if _key_works(k)]
+                _BALANCE_KEYS = [k for k in _BALANCE_KEYS if _key_works(k)]
+            if not _SONAR_KEYS:
+                print("[Sense] WARNING: no sonar keys available — "
+                      "relying on bumpers and the floor check only.")
+
+            _N_SONAR    = len(_SONAR_KEYS)
+            _N_BUMPER   = len(_BUMPER_KEYS)
+            _SENSE_KEYS = _SONAR_KEYS + _BUMPER_KEYS + _BALANCE_KEYS
+            # Measured on this robot: "no echo" reads as 5.0, real detections at
+            # ~0.5 m come through intermittently, and the sensor refreshes ~5 Hz.
+            _SONAR_CLEAR    = 5.0    # value the sensor reports when nothing is seen
+            _STOP_DIST      = 0.45   # m — hard stop and turn away (blind spot is ~0.25)
+            _SLOW_DIST      = 0.90   # m — start creeping below this
+            _SONAR_WINDOW_S = 0.6    # s — act on the closest reading in this window
+            _sonar_hist     = []     # list of (timestamp, distance)
+            _sense_fail     = [0]
+            _last_trace     = [0.0]  # periodic diagnostic trace
+
+            # Below this normalised forward speed the robot performs a complete
+            # weight-shift cycle for a millimetre of travel — the "shuffle band",
+            # and measurably the least stable thing it can do.  Speed is either
+            # at least this much or exactly zero, never in between.
+            _MIN_WALK = 0.22
+
+            # Divergent lateral oscillation is what actually topples this robot:
+            # roll builds up cycle over cycle until it goes past recovery, and by
+            # the time |tilt| crosses _TILT_DANGER it is already too late to stop.
+            # Track the recent roll peak and back off while it is still growing.
+            _ROLL_WARN   = 0.15   # rad — normal walking roll peaks around 0.09
+            _ROLL_MAX    = 0.24   # rad — treat as a developing topple
+            _ROLL_WINDOW = 2.0    # s
+            _roll_hist   = []     # list of (timestamp, |roll|)
+
+            # --- Burst gait ----------------------------------------------------
+            # This robot cannot sustain a continuous walk.  Measured on NAOqi's
+            # OWN default gait, straight line, head still, one command and none
+            # of this app's logic, roll grows monotonically
+            #     t=0s 0.02 -> t=2s 0.16 -> t=3s 0.22 -> t=4s 0.35 (over)
+            # so it is an accumulation, not an instant failure — and standing
+            # still is rock steady (sd 0.0003 rad) and visibly damps the
+            # oscillation back down.  So: walk in bursts shorter than the
+            # build-up, and stand still between them until it has settled.
+            # Slower over the ground, but it stays upright.
+            _BURST_S      = 1.6    # s of walking before a mandatory pause
+            _SETTLE_MIN_S = 0.7    # s — always pause at least this long
+            _SETTLE_MAX_S = 3.0    # s — resume anyway rather than freezing
+            _RESUME_ROLL  = 0.07   # rad — settled enough to walk again
+            _phase        = ["settle"]   # start by settling after standing up
+            _phase_t      = [time.time()]
+
             # --- Active head-scanning state machine ---
             # The head cycles through 7 positions so the camera covers the whole
             # environment: left/right at three elevations, plus one floor-facing
             # slot used for boundary checks (or always active with bottom cam).
+            # Yaw kept to ±0.40 rad: the head is ~0.5 kg at the top of the mass
+            # column and the walk engine does not model it moving, so wide fast
+            # sweeps shove the CoM sideways mid-stride.  With NAO's ~60° camera
+            # FOV this still covers the room.
             _HEAD_SCAN_POSITIONS = [
                 # (yaw, pitch)  — pitch: +ve = look down, −ve = look up
                 ( 0.0,  0.10),   # forward, slight down
-                ( 0.60, 0.05),   # left, level
-                ( 0.60,-0.12),   # left, slightly up
+                ( 0.40, 0.05),   # left, level
+                ( 0.40,-0.12),   # left, slightly up
                 ( 0.0, -0.12),   # forward up (human face height)
-                (-0.60, 0.05),   # right, level
-                (-0.60,-0.12),   # right, slightly up
+                (-0.40, 0.05),   # right, level
+                (-0.40,-0.12),   # right, slightly up
                 ( 0.0,  0.42),   # forward, floor-facing (boundary check slot)
             ]
             _FLOOR_SLOT       = len(_HEAD_SCAN_POSITIONS) - 1
@@ -1605,15 +1786,16 @@ class NaoAppWindow(object):
                         timer_ready   = (now - _last_vision_t[0] >= _VISION_INTERVAL)
                         if novelty_ready or timer_ready:
                             _novelty_triggered[0] = False
-                            img = self._capture_image_bytes(resolution=1)   # QVGA 320x240
-                            if img:
-                                _vision_checking[0] = True
-                                _last_vision_t[0]   = now
-                                reason = "novelty" if novelty_ready else "timer"
-                                self.auto_status.set("Scanning for %s... (%s)" % (target, reason))
-                                t = threading.Thread(target=_do_gemini_check, args=(img,))
-                                t.daemon = True
-                                t.start()
+                            _vision_checking[0] = True
+                            _last_vision_t[0]   = now
+                            reason = "novelty" if novelty_ready else "timer"
+                            self.auto_status.set("Scanning for %s... (%s)" % (target, reason))
+                            # Capture happens on the worker thread now — see
+                            # _capture_and_check.  Keeping it here blindfolded
+                            # the obstacle checks for ~1-2 s per vision check.
+                            t = threading.Thread(target=_capture_and_check)
+                            t.daemon = True
+                            t.start()
 
                 # 3.5. ACTIVE HEAD SCANNING — advance to next position every dwell period
                 now = time.time()
@@ -1627,20 +1809,84 @@ class NaoAppWindow(object):
                     _head_scan_idx[0]   += 1
                     _novelty_baseline[0] = None   # reset baseline for new viewpoint
                     try:
+                        # Slow (0.08) so the head glides rather than snaps —
+                        # a snap is an impulse the balancer has to absorb.
                         self.conn.motion.setAngles(
-                            ["HeadYaw", "HeadPitch"], [yaw, pitch], 0.20)
+                            ["HeadYaw", "HeadPitch"], [yaw, pitch], 0.08)
                     except Exception:
                         pass
 
-                # 4. SONAR check
-                l_dist = r_dist = 1.0
+                # 4. PROXIMITY SENSING — sonar + foot bumpers in ONE batched read.
+                # Each separate getData is a network round trip; batching raises
+                # the obstacle-check rate, and that rate is exactly what decides
+                # how far the robot travels before it can react.
+                l_dist = r_dist = _SONAR_CLEAR
+                bumped = False
+                tilt_x = tilt_y = 0.0
+                fall_flag = False
                 if self.conn.memory:
+                    vals = None
                     try:
-                        l_dist = self.conn.memory.getData(
-                            "Device/SubDeviceList/US/Left/Sensor/Value")
-                        r_dist = self.conn.memory.getData(
-                            "Device/SubDeviceList/US/Right/Sensor/Value")
-                    except Exception: pass
+                        vals = self.conn.memory.getListData(_SENSE_KEYS)
+                    except Exception:
+                        # Older firmware may not expose getListData — fall back
+                        # to individual reads rather than assuming "blocked".
+                        try:
+                            vals = [self.conn.memory.getData(k)
+                                    for k in _SENSE_KEYS]
+                        except Exception:
+                            vals = None
+                    if vals and len(vals) == len(_SENSE_KEYS):
+                        try:
+                            sonar_v = [float(v) for v in vals[:_N_SONAR]]
+                            if sonar_v:
+                                l_dist = sonar_v[0]
+                                r_dist = sonar_v[-1]
+                            # Bumpers read 1.0 when pressed.  These are the only
+                            # sensors that cannot miss an obstacle — sonar is
+                            # blind to anything low, thin, or soft.
+                            bumped = any(
+                                float(v) > 0.5
+                                for v in vals[_N_SONAR:_N_SONAR + _N_BUMPER])
+                            bal = vals[_N_SONAR + _N_BUMPER:]
+                            if len(bal) >= 3:
+                                tilt_x    = float(bal[0])
+                                tilt_y    = float(bal[1])
+                                fall_flag = bool(bal[2])
+                            _sense_fail[0] = 0
+                        except Exception:
+                            vals = None
+                    if not vals:
+                        # FAIL SAFE, not fail open.  The old code left the
+                        # distances at 1.0 ("all clear") whenever the read threw,
+                        # so a flaky link looked identical to an empty room.
+                        _sense_fail[0] += 1
+                        if _sense_fail[0] >= 3:
+                            l_dist = r_dist = 0.0      # treat as blocked
+                            if _sense_fail[0] % 20 == 3:
+                                print("[Sense] proximity read failing — assuming blocked.")
+
+                # Measured on this robot: the sonar refreshes at only ~5 Hz, and
+                # with an object genuinely present at 0.5 m the readings still
+                # flip between the real distance and 5.0 ("no echo") from one
+                # sample to the next.  So a single reading is not trustworthy —
+                # take the closest value seen in a fixed time window, which
+                # spans several sensor refreshes regardless of loop rate.
+                _sonar_hist.append((now, min(l_dist, r_dist)))
+                _cutoff = now - _SONAR_WINDOW_S
+                while _sonar_hist and _sonar_hist[0][0] < _cutoff:
+                    _sonar_hist.pop(0)
+                near = min([d for _, d in _sonar_hist]) if _sonar_hist else _SONAR_CLEAR
+
+                # Proximity governor: scale speed down with distance so the robot
+                # is never travelling fast toward something close.  Previously the
+                # check was binary at 0.60 m — full speed right up to the trigger.
+                if near <= _STOP_DIST:
+                    prox = 0.0
+                elif near >= _SLOW_DIST:
+                    prox = 1.0
+                else:
+                    prox = ((near - _STOP_DIST) / (_SLOW_DIST - _STOP_DIST))
 
                 # 5. FLOOR BOUNDARY check
                 # Bottom camera: runs every 5 ticks (~0.5 s) regardless of head angle.
@@ -1658,10 +1904,11 @@ class NaoAppWindow(object):
                 if not getattr(self, "_seeking", False):
                     break
 
-                # 6. MOVEMENT DECISION
+                # 6. MOVEMENT DECISION — every sensor value below came from the
+                # single batched read above, so this costs no extra round trips.
                 now = time.time()
-                fall_flag = self._has_fallen()
-                tilt_high = self._tilt_too_high()
+                tilt_mag  = math.sqrt(tilt_x * tilt_x + tilt_y * tilt_y)
+                tilt_high = tilt_mag >= 0.50
                 if fall_flag:
                     if fall_flag_since is None:
                         fall_flag_since = now
@@ -1697,7 +1944,96 @@ class NaoAppWindow(object):
                     self._seeking = False
                     break
 
-                obstacle = (l_dist < 0.60 or r_dist < 0.60) or not boundary_ok
+                # 6a-i. ROLL DIVERGENCE — the measured failure mode is lateral
+                # oscillation growing cycle over cycle until the robot goes over
+                # sideways.  Watching the peak roll across a window catches that
+                # build-up while it can still be damped by slowing down.
+                _roll_hist.append((now, abs(tilt_x)))
+                _rcut = now - _ROLL_WINDOW
+                while _roll_hist and _roll_hist[0][0] < _rcut:
+                    _roll_hist.pop(0)
+                roll_peak = max([r for _, r in _roll_hist]) if _roll_hist else 0.0
+                if roll_peak >= _ROLL_MAX:
+                    roll_ok = 0.0
+                elif roll_peak <= _ROLL_WARN:
+                    roll_ok = 1.0
+                else:
+                    roll_ok = 1.0 - ((roll_peak - _ROLL_WARN) /
+                                     (_ROLL_MAX - _ROLL_WARN))
+
+                # Periodic trace so a fall can be reconstructed afterwards.
+                # tiltX is roll (topple sideways), tiltY is pitch (nose-over).
+                if now - _last_trace[0] >= 0.5:
+                    _last_trace[0] = now
+                    print("[Trace] tiltX=%+.3f tiltY=%+.3f rollpk=%.3f near=%.2f "
+                          "fwd=%.3f turn=%+.3f" % (
+                              tilt_x, tilt_y, roll_peak, near,
+                              _cur_fwd[0], _cur_turn[0]))
+
+                # 6a. STABILITY GOVERNOR — scale the walk down as the torso tilts,
+                # and stop outright before the tilt becomes unrecoverable.
+                if tilt_mag >= _TILT_DANGER:
+                    stab = 0.0
+                elif tilt_mag <= _TILT_WARN:
+                    stab = 1.0
+                else:
+                    stab = 1.0 - ((tilt_mag - _TILT_WARN) /
+                                  (_TILT_DANGER - _TILT_WARN))
+
+                if stab <= 0.0:
+                    # Off balance: stop, hold still, let the balancer catch up.
+                    if not _braking[0]:
+                        _braking[0] = True
+                        print("[Stability] tilt=%.3f rad — braking to recover." % tilt_mag)
+                        self.auto_status.set("Steadying...")
+                    try: self.conn.motion.stopMove()
+                    except Exception: pass
+                    _cur_fwd[0] = _cur_turn[0] = 0.0
+                    walk_start_t = time.time()      # re-ramp gently on resume
+                    time.sleep(0.1)
+                    continue
+                elif _braking[0] and tilt_mag <= _TILT_WARN:
+                    _braking[0] = False
+                    self.auto_status.set("Recovered — resuming.")
+
+                # 6b. BURST GAIT — walk in bursts, stand still between them, so
+                # the lateral build-up never gets near the point of no return.
+                if _phase[0] == "settle":
+                    settled_for = now - _phase_t[0]
+                    ready = (settled_for >= _SETTLE_MIN_S
+                             and roll_peak <= _RESUME_ROLL)
+                    if ready or settled_for >= _SETTLE_MAX_S:
+                        _phase[0]    = "walk"
+                        _phase_t[0]  = now
+                        walk_start_t = now          # re-ramp from standstill
+                        _cur_fwd[0]  = _cur_turn[0] = 0.0
+                    else:
+                        # Hold still and let it damp.  This is also the safest
+                        # moment to look around, so the head scan runs here
+                        # instead of mid-stride.
+                        try: self.conn.motion.stopMove()
+                        except Exception: pass
+                        _cur_fwd[0] = _cur_turn[0] = 0.0
+                        _head_scan_paused[0] = False
+                        self.auto_status.set(
+                            "Steadying (roll %.2f)..." % roll_peak)
+                        time.sleep(0.05)
+                        continue
+                elif (now - _phase_t[0] >= _BURST_S) or roll_peak >= _ROLL_WARN:
+                    _phase[0]   = "settle"
+                    _phase_t[0] = now
+                    try: self.conn.motion.stopMove()
+                    except Exception: pass
+                    _cur_fwd[0] = _cur_turn[0] = 0.0
+                    time.sleep(0.05)
+                    continue
+
+                # Walking now: keep the head still.  It is ~0.5 kg at the top of
+                # the mass column and the walk engine does not model it moving,
+                # so it only sweeps during the settle phase above.
+                _head_scan_paused[0] = True
+
+                obstacle = bumped or (near <= _STOP_DIST) or not boundary_ok
 
                 if obstacle:
                     _head_scan_paused[0] = True
@@ -1709,24 +2045,41 @@ class NaoAppWindow(object):
                     except Exception:
                         pass
                     self.conn.motion.stopMove()
-                    reason_txt = ("boundary" if not boundary_ok else "obstacle")
+                    if bumped:
+                        reason_txt = "bumper"
+                    elif not boundary_ok:
+                        reason_txt = "boundary"
+                    else:
+                        reason_txt = "sonar %.2fm" % near
+                    print("[Avoid] %s — backing off." % reason_txt)
+                    self.auto_status.set("Avoiding (%s)..." % reason_txt)
                     if self.conn.tts:
-                        msg = ("Whoa, leaving the floor! Backing up."
-                               if not boundary_ok
-                               else "Whoa, blocked! Backing up.")
+                        if bumped:
+                            msg = "Oops, I bumped something. Backing up."
+                        elif not boundary_ok:
+                            msg = "Whoa, leaving the floor! Backing up."
+                        else:
+                            msg = "Whoa, blocked! Backing up."
                         try: self.conn.tts.post.say(msg)
                         except Exception: pass
 
-                    # Back up slowly
-                    self.conn.motion.moveToward(-0.10, 0.0, 0.0, walk_config)
+                    # Back up.  These are fractions of MaxStepX/MaxStepTheta, not
+                    # m/s — the old 0.10 was ~0.3mm per step, i.e. the robot
+                    # rocked in place instead of actually retreating.  Backwards
+                    # is the least stable direction, so keep it moderate.
+                    self.conn.motion.moveToward(-0.35, 0.0, 0.0, walk_config)
                     for _ in range(15):
                         if not getattr(self, "_seeking", False): break
                         time.sleep(0.1)
+                    try: self.conn.motion.stopMove()
+                    except Exception: pass
 
-                    # Pivot away from obstacle / back onto floor — keep turns gentle
-                    turn_dir = -(random.uniform(0.07, 0.12))
+                    # Pivot away from the obstacle.  MaxStepTheta is already a
+                    # gentle 0.12 rad/step, so a high fraction here is still a
+                    # slow turn in absolute terms — but it actually turns.
+                    turn_dir = -(random.uniform(0.55, 0.85))
                     if not boundary_ok:
-                        turn_dir = random.choice([-1, 1]) * random.uniform(0.07, 0.12)
+                        turn_dir = random.choice([-1, 1]) * random.uniform(0.55, 0.85)
                     elif l_dist < r_dist:
                         turn_dir = -abs(turn_dir)
                     else:
@@ -1738,6 +2091,16 @@ class NaoAppWindow(object):
                     for _ in range(int(random.uniform(15, 35))):
                         if not getattr(self, "_seeking", False): break
                         time.sleep(0.1)
+                    try: self.conn.motion.stopMove()
+                    except Exception: pass
+
+                    # Resume from a standstill so the ramp/smoothing start clean,
+                    # and settle before walking again — the back-up and pivot are
+                    # themselves walking, so they build up the same wobble.
+                    _cur_fwd[0] = _cur_turn[0] = 0.0
+                    walk_start_t = time.time()
+                    _phase[0]    = "settle"
+                    _phase_t[0]  = time.time()
 
                     # Resume scanning from current position slot
                     _head_scan_paused[0] = False
@@ -1756,15 +2119,43 @@ class NaoAppWindow(object):
                     # Gradual ramp to full speed to avoid sudden jolts
                     ramp = min(1.0, max(0.0, (time.time() - walk_start_t) / 2.0))
 
-                    # Drift change every 6-10 s
-                    if time.time() - last_bias_t > random.uniform(6.0, 10.0):
-                        wander_turn_bias = random.uniform(-0.06, 0.06)
+                    # Drift change every 8-14 s.  Every turn reversal perturbs the
+                    # robot laterally, and the measured roll build-up tracked the
+                    # turn oscillation — so hold a heading for longer, and drop
+                    # the sinusoid that used to layer on top of the random bias.
+                    if time.time() - last_bias_t > random.uniform(8.0, 14.0):
+                        wander_turn_bias = random.uniform(-0.10, 0.10)
                         last_bias_t = time.time()
 
-                    turn = math.sin(time.time() * 0.4) * 0.04 + wander_turn_bias
-                    self.conn.motion.moveToward(max_fwd * ramp, 0.0, turn, walk_config)
+                    # Forward speed: a real walk or a full stop, never the shuffle
+                    # band in between.
+                    scale   = ramp * stab * prox * roll_ok
+                    tgt_fwd = max_fwd * scale
+                    if tgt_fwd < _MIN_WALK:
+                        tgt_fwd = 0.0 if scale < 0.45 else _MIN_WALK
 
-                time.sleep(0.1)
+                    if tgt_fwd <= 0.0:
+                        # Too tight ahead to walk properly: rotate on the spot to
+                        # look for a clear heading rather than creeping forward.
+                        # A pure rotation is a clean, stable gait — what toppled
+                        # the robot was mixing a turn into near-zero translation.
+                        tgt_turn = (0.45 if wander_turn_bias >= 0 else -0.45) * roll_ok
+                    else:
+                        tgt_turn = wander_turn_bias * stab * roll_ok
+
+                    # Ease toward the target so the walk engine sees a smooth
+                    # velocity ramp instead of a new setpoint every 100 ms.
+                    _cur_fwd[0]  += (tgt_fwd  - _cur_fwd[0])  * _CMD_SMOOTH
+                    _cur_turn[0] += (tgt_turn - _cur_turn[0]) * _CMD_SMOOTH
+
+                    self.conn.motion.moveToward(
+                        float(_cur_fwd[0]), 0.0, float(_cur_turn[0]), walk_config)
+
+                # 50 ms, not 100.  Batching the sensor reads cut the per-tick
+                # cost from ~38 ms to ~7 ms (measured), so there is headroom —
+                # and the bumpers are a hardware switch, so polling twice as
+                # often halves how far the robot pushes before it reacts.
+                time.sleep(0.05)
 
         except Exception as e:
             self._set_status("Wander error: " + str(e)[:60], False)
@@ -1823,7 +2214,7 @@ class NaoAppWindow(object):
                 time.sleep(0.5)
             except Exception as e:
                 print("[Celebrate] high-five error: %s" % e)
-        self._run_dance()
+        self._sit_after_task()
 
     def _celebrate_found_object(self, target_name):
         """Victory arm-wave, then full dance sequence."""
@@ -1860,7 +2251,20 @@ class NaoAppWindow(object):
                 time.sleep(0.5)
             except Exception as e:
                 print("[Celebrate] object-dance error: %s" % e)
-        self._run_dance()
+        self._sit_after_task()
+
+    def _sit_after_task(self):
+        """Sit down once a wander/seek task is complete. The full dance
+        sequence is riskier (fall-prone) and is now opt-in only via the
+        'Dance' button in the Posture card, rather than running automatically."""
+        if self.conn.posture:
+            try:
+                self.conn.posture.goToPosture("Sit", 0.5)
+            except Exception:
+                try:
+                    self.conn.posture.goToPosture("SitRelax", 0.5)
+                except Exception as e:
+                    print("[Celebrate] sit error: %s" % e)
 
     def _has_fallen(self):
         if not self.conn.memory:

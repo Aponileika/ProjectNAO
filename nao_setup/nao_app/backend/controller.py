@@ -33,16 +33,26 @@ class GamepadController(object):
         self._SMOOTHING = 0.12
         self._ROTATE_WHILE_FORWARD_FACTOR = 0.45
 
-        # Conservative walk: lower frequency gives the balance system more time
-        # between steps.  MaxStepY must NOT be zero — NAO needs lateral steps
-        # to keep the legs from hitting each other and to maintain ZMP balance.
+        # Gait tuned for stability.  Every value is inside the robot's own
+        # getMoveConfig("Min")/("Max") limits — out-of-range values are not
+        # applied as written, which leaves the effective gait undefined.
+        #
+        #   MaxStepY:  min 0.101, default 0.140.  This is the *lateral foot
+        #     separation*, not "strafe speed".  NAO needs that spread to shift
+        #     its ZMP over each support foot; the previous 0.030 was 3x below
+        #     the legal minimum, i.e. a tightrope stance.
+        #   MaxStepFrequency:  the key is NOT "Frequency" — that spelling is
+        #     silently ignored, so the old "slow gait" never took effect.  High
+        #     frequency is also the stable choice: short quick steps let the
+        #     balancer plant a corrective foot sooner.
         self._WALK_CONFIG = [
-            ["Frequency",     0.60],
-            ["MaxStepX",      0.040],
-            ["MaxStepY",      0.030],
-            ["MaxStepTheta",  0.12],
-            ["StepHeight",    0.016],
-            ["TorsoWy",       0.00],
+            ["MaxStepX",         0.035],
+            ["MaxStepY",         0.140],
+            ["MaxStepTheta",     0.150],
+            ["MaxStepFrequency", 1.000],
+            ["StepHeight",       0.025],
+            ["TorsoWx",          0.000],
+            ["TorsoWy",          0.000],
         ]
 
         self._TILT_WARN = 0.20
@@ -164,44 +174,77 @@ class GamepadController(object):
         if not posture:
             return False
         try:
-            p = posture.getPostureFamily()
-            return p in ("Standing", "StandInit", "Stand", "StandZero")
+            # getPostureFamily() returns a *family*, and the robot's family list
+            # is Belly/Left/Lying*/Right/Sitting/SittingOnChair/Standing/Unknown.
+            # "Stand"/"StandInit"/"StandZero" are posture *names* and are never
+            # returned here, so testing for them was dead code.
+            return posture.getPostureFamily() == "Standing"
         except Exception:
             return False
 
+    def _wait_until_standing(self, timeout=3.0):
+        """Poll the posture classifier until it settles on 'Standing'.
+
+        The classifier reports 'Unknown' whenever the joints are outside the
+        tolerance of any canonical posture — including while the robot is still
+        oscillating right after a transition.  A single check immediately after
+        goToPosture() therefore reports failure for a robot that is, in fact,
+        standing up perfectly well."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._is_robot_standing():
+                return True
+            time.sleep(0.2)
+        return False
+
     def _stand_safely(self):
+        """Bring the robot to a standing posture, retrying if needed.
+
+        Note that a retry is never a replay of the same motion.  goToPosture()
+        is a *planner*, not a fixed animation: it reads the current posture and
+        searches a transition graph for a path to the goal.  A failed attempt
+        leaves the robot somewhere new, so the next attempt plans a different
+        path from a different start — which is exactly why a stand can fail
+        twice and then succeed on the third try."""
         motion = self.get_proxy("motion")
         posture = self.get_proxy("posture")
         if not motion or not posture:
             return False
 
-        try:
-            motion.wakeUp()
-        except Exception:
-            pass
-        try:
-            motion.setStiffnesses("Body", 1.0)
-        except Exception:
-            pass
-        try:
-            motion.setFallManagerEnabled(True)
-        except Exception:
-            pass
-        try:
-            motion.setMoveArmsEnabled(True, True)
-        except Exception:
-            pass
+        for attempt, pose in enumerate(("StandInit", "Stand", "StandInit"), 1):
+            if self._is_robot_standing():
+                return True
 
-        poses = ("StandInit", "Stand")
-        for _ in range(2):
-            for pose in poses:
+            # Re-assert motion state before *every* attempt: if the fall-manager
+            # reflex fired during a failed attempt it will have dropped
+            # stiffness, leaving any later try under-powered.  The old code set
+            # this up once before the loop.
+            for setup in (lambda: motion.wakeUp(),
+                          lambda: motion.setStiffnesses("Body", 1.0),
+                          lambda: motion.setFallManagerEnabled(True),
+                          lambda: motion.setMoveArmsEnabled(True, True)):
                 try:
-                    ok = posture.goToPosture(pose, 1.0)
+                    setup()
                 except Exception:
-                    ok = False
-                time.sleep(0.5)
-                if ok and self._is_robot_standing():
-                    return True
+                    pass
+
+            try:
+                # 0.6, not 1.0.  A max-speed transition overshoots, is far more
+                # likely to trip the fall manager mid-stand, and tends to settle
+                # outside posture tolerance so the classifier says "Unknown".
+                # Every other goToPosture call in this project uses 0.5.
+                ok = posture.goToPosture(pose, 0.6)
+            except Exception as e:
+                ok = False
+                print("[Stand] attempt %d (%s) raised: %s" % (attempt, pose, e))
+
+            # Don't gate on goToPosture's return value alone — poll the
+            # classifier, which needs a moment to settle before it says
+            # "Standing".
+            if self._wait_until_standing(3.0):
+                return True
+            print("[Stand] attempt %d (%s) did not settle into Standing "
+                  "(goToPosture returned %s)." % (attempt, pose, ok))
         return False
 
     def _is_ps_button_down(self, js):
