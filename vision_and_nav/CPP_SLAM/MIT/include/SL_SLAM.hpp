@@ -28,72 +28,71 @@
 #include <stdio.h>
 #include <utility>
 
-typedef struct {
-  typeKeyFrame PreviousFrame;
-  std::vector<typePantoMapPoint> PreviousFrameMapPoints;
-  typeKeyFrame PreviousPreviousFrame;
+typedef struct
+{
+    typeKeyFrame PreviousFrame;
+    std::vector<typePantoMapPoint> PreviousFrameMapPoints;
+    typeKeyFrame PreviousPreviousFrame;
 } typePreviousFrameData;
 
-typedef struct {
+typedef struct
+{
 #if !defined(CONFIG_IMU)
-  typeCamera Pose;
+    typeCamera Pose;
 #else
-  typeNavigationState Pose;
+    typeNavigationState Pose;
 #endif // CONFIG_IMU
 } typePosePrediction;
 
-typedef struct {
-  typeGlobalMap GlobalMapCopy;
-  typeGlobalMap CovisibilityGraphCopy;
-  typePreviousFrameData PreviousFrameData;
-  typeLocalMapTracking TrackingMap;
-  typeKeyFrame NewFrame;
+typedef struct
+{
+    typePreviousFrameData PreviousFrameData;
+    typeLocalMapTracking TrackingMap;
+    typeKeyFrame NewFrame;
+    fp64 AccumulatedDistance;
+    typePosePrediction PosePrediction;
 
-  typeKeyFrameQueue *KeyFrameQueue;
-  typePantoVector<u64> *RecentMapPointIndexes;
-  typePosePrediction *PosePrediction;
-  typeGlobalMap *GlobalMap;
-  typeCovisibilityGraph *CovisibilityGraph;
+    typeKeyFrameQueue *KeyFrameQueue;
+    typeGlobalMap *GlobalMap;
+    typeCovisibilityGraph *CovisibilityGraph;
 } typeTrackingData;
 
-typedef struct {
-  typeGlobalMap GlobalMapCopy;
-  typeGlobalMap CovisibilityGraphCopy;
-  typeLocalMap LocalMap;
+struct typeTimingStatistics
+{
+    u64 Count = 0;
+    fp64 Sum = 0.0;
+    fp64 SumSquared = 0.0;
+};
 
-  typeKeyFrameQueue *KeyFrameQueue;
-  typePantoVector<u64> *RecentMapPointIndexes;
-  typePosePrediction *PosePrediction;
-  typeGlobalMap *GlobalMap;
-  typeCovisibilityGraph *CovisibilityGraph;
+typedef struct
+{
+    typeLocalMap LocalMap;
+    typePantoVector<u64> RecentMapPointIndexes;
+
+    typeKeyFrameQueue *KeyFrameQueue;
+    typeGlobalMap *GlobalMap;
+    typeCovisibilityGraph *CovisibilityGraph;
+    typeTimingStatistics *VisualizationUpdateTiming;
 } typeLocalMapData;
 
 typedef struct {
-  typeGlobalMap *GlobalMap;
-  typeCovisibilityGraph *CovisibilityGraph;
-  typePantoVector<u64> *RecentMapPointIndexes;
-  DBoW3::Vocabulary *Vocabulary;
-  typeKeyFrameQueue *KeyFrameQueue;
-  typePreviousFrameData PreviousFrameData;
-  typePosePrediction NextFramePosePrediction;
-  fp64 AccumulatedDistance;
+    typeGlobalMap *GlobalMap;
+    typeCovisibilityGraph *CovisibilityGraph;
+    typePantoVector<u64> *RecentMapPointIndexes;
+    const DBoW3::Vocabulary *Vocabulary;
+    typeKeyFrameQueue *KeyFrameQueue;
+    typePreviousFrameData PreviousFrameData;
+    typePosePrediction NextFramePosePrediction;
 
-  std::vector<Eigen::Vector3d> TrackingTrajectory;
-  std::vector<fp64> TrackingTrajectoryTimeStamps;
-  bool GroundTruthVisualizationAligned;
-  bool GroundTruthVisualizationAlignmentAttempted;
+    std::vector<Eigen::Vector3d> TrackingTrajectory;
+    std::vector<fp64> TrackingTrajectoryTimeStamps;
+    std::mutex TrackingTrajectoryMutex;
 } typeSLAM;
-
-struct typeTimingStatistics {
-  u64 Count = 0;
-  fp64 Sum = 0.0;
-  fp64 SumSquared = 0.0;
-};
 
 void SL_InitSlam();
 void SL_PantoSLAM(i32 num_loops);
 void SL_AddTimingSample(typeTimingStatistics &Statistics, const fp64 &Time);
 void SL_LogTimingStatistics(const char *Name,
-                            const typeTimingStatistics &Statistics);
+        const typeTimingStatistics &Statistics);
 
 #endif //__SL__SLAM_HPP_

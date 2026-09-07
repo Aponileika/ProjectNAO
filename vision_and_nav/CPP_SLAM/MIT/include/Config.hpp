@@ -32,8 +32,8 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 
 // #define PANTO_DBG
 
-#define CERES_MAX_ITER 200
-#define CERES_NUM_THREADS 4
+#define CERES_MAX_ITER 30
+#define CERES_NUM_THREADS 6
 #define CERES_HUBER_THRESHOLD 2.5
 
 // #define OPENCV_AKAZETHRESHOLD 0.001
@@ -50,10 +50,10 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
 #define PANTO_LOCAL_MAP_SAMPLE_STRIDE 5
-#define PANTO_NUM_BOOTSTRAP_FRAMES 100
+#define PANTO_NUM_BOOTSTRAP_FRAMES 1
 // [Number of frames], from bootstrap learning mean distance * number of frames
 // should trigger keyframe insertion.
-#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 30
+#define PANTO_KEYFRAME_MEAN_DISTANCE_THRESHOLD_GAIN 10
 #define PANTO_KEYFRAME_MEAN_VELOCITY_THRESHOLD_GAIN 4
 #define PANTO_KEYFRAME_MEAN_TRACKING_HIGH_THRESHOLD_GAIN 0.5f
 #define PANTO_KEYFRAME_MEAN_TRACKING_LOW_THRESHOLD_GAIN 0.1f
@@ -76,7 +76,7 @@ constexpr const char* PANTO_PATH_TO_PYTHON_INTERPRETER = "/Users/Jonathan/Progra
 #if defined(DEBUG)
     #define CONFIG_PRINT_LOGS_TO_STDOUT true
 #else
-    #define CONFIG_PRINT_LOGS_TO_STDOUT true
+    #define CONFIG_PRINT_LOGS_TO_STDOUT false 
 #endif
 #define PANTO_MIN_FOUND_RATIO 0.25
 #define PANTO_INIT_MAX_REPROJECTION_ERROR 2.5
@@ -90,8 +90,8 @@ constexpr const char* PANTO_PATH_TO_PYTHON_INTERPRETER = "/Users/Jonathan/Progra
 #define PANTO_NEW_MAPPOINT_RESERVE 500
 
 #if defined(CONFIG_IMU)
-#define PANTO_NUM_TEMPORALLY_CONNECTED_KFS_LOCAL_BA 21
-#define PANTO_MAX_FIXED_KFS_LOCAL_BA 200
+#define PANTO_NUM_TEMPORALLY_CONNECTED_KFS_LOCAL_BA 10
+#define PANTO_MAX_FIXED_KFS_LOCAL_BA 80
 #endif
 
 constexpr fp64 PANTO_MINIMUMPARALLAX = 1.0 * M_PI / 180.0;
@@ -101,6 +101,11 @@ inline const fp64 PANTO_MAXIMUMCOSPARALLAX = std::cos(PANTO_MINIMUMPARALLAX);
 using PantoClock = std::chrono::steady_clock;
 
 #define PANTO_USE_DATASET true
+// true: replay at dataset timestamps and skip frames when tracking is late.
+// false: consume every dataset frame and serialize each queued keyframe with
+//        its complete local-mapping iteration (including full local BA).
+#define PANTO_DATASET_REALTIME_MODE true 
+#define PANTO_REALTIME_FRAME_QUEUE_CAPACITY 4
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
 #ifndef PANTO_ACTIVE_DATASET

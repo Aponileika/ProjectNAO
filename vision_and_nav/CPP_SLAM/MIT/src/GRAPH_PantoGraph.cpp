@@ -6,7 +6,6 @@
 void GRAPH_AddKeyFrame(typeCovisibilityGraph* CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
         const u64 ID)
 {
-    CovisibilityGraph->Mutex.lock();
     assert(KeyFrame.ID == ID);
 
     const u64 GraphID =
@@ -51,7 +50,6 @@ void GRAPH_AddKeyFrame(typeCovisibilityGraph* CovisibilityGraph, const typeKeyFr
     {
         CovisibilityGraph->CovisibilityGraph[OtherKeyFrameID][KeyFrame.ID] = Count;
     }
-    CovisibilityGraph->Mutex.lock();
 }
 
 typeCovisibility GRAPH_GetMostCovisibleFrame(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID)
@@ -173,7 +171,6 @@ std::vector<typeCovisibility> GRAPH_GetTopNExternalCovisibleFrames(const typeCov
 void GRAPH_UpdateCovisibility( typeCovisibilityGraph* CovisibilityGraph, const typePantoVector<typePantoMapPoint>& GlobalMapPoints, const u64 NewKeyFrameID,
         const std::vector<u64>& NewPointIDs)
 {
-    CovisibilityGraph->Mutex.lock();
     std::vector<u64> CovisibilityCount( CovisibilityGraph->CovisibilityGraph.size(), 0);
 
     LG_Log( LogSeverity::DBG,
@@ -214,7 +211,6 @@ void GRAPH_UpdateCovisibility( typeCovisibilityGraph* CovisibilityGraph, const t
         CovisibilityGraph->CovisibilityGraph[NewKeyFrameID][KeyFrameID] += Count;
         CovisibilityGraph->CovisibilityGraph[KeyFrameID][NewKeyFrameID] += Count;
     }
-    CovisibilityGraph->Mutex.unlock();
 }
 
 void GRAPH_CullKeyFrame(typeCovisibilityGraph* CovisibilityGraph, u64 KeyFrameID)
@@ -258,10 +254,10 @@ void GRAPH_DecrementAll(typeCovisibilityGraph* CovisibilityGraph, const typePant
             assert(*CovisibilityAB == *CovisibilityBA);
             assert(*CovisibilityAB > 0);
 
-            CovisibilityAB--;
-            CovisibilityBA--;
+            (*CovisibilityAB)--;
+            (*CovisibilityBA)--;
 
-            if(CovisibilityAB == 0)
+            if(*CovisibilityAB == 0)
             {
                 CovisibilityGraph->CovisibilityGraph[NodeA].erase(NodeB);
                 CovisibilityGraph->CovisibilityGraph[NodeB].erase(NodeA);
@@ -272,7 +268,6 @@ void GRAPH_DecrementAll(typeCovisibilityGraph* CovisibilityGraph, const typePant
 
 void GRAPH_DecrementAllOther(typeCovisibilityGraph* CovisibilityGraph, const typePantoVector<u64>& Nodes, const u64 DecrementIndex)
 {
-    CovisibilityGraph->Mutex.lock();
     assert(Nodes.contains(DecrementIndex));
 
     const u64 DecrementNode = Nodes[DecrementIndex];
@@ -303,22 +298,20 @@ void GRAPH_DecrementAllOther(typeCovisibilityGraph* CovisibilityGraph, const typ
         assert(*CovisibilityAB == *CovisibilityBA);
         assert(*CovisibilityAB > 0);
 
-        CovisibilityAB--;
-        CovisibilityBA--;
+        (*CovisibilityAB)--;
+        (*CovisibilityBA)--;
 
-        if(CovisibilityAB == 0)
+        if(*CovisibilityAB == 0)
         {
             CovisibilityGraph->CovisibilityGraph[NodeA].erase(NodeB);
             CovisibilityGraph->CovisibilityGraph[NodeB].erase(NodeA);
         }
     }
-    CovisibilityGraph->Mutex.unlock();
 }
 
 void GRAPH_DecrementEdge( typeCovisibilityGraph* CovisibilityGraph,
         const u64 NodeA, const u64 NodeB)
 {
-    CovisibilityGraph->Mutex.lock();
     assert(NodeA != NodeB);
 
     assert(CovisibilityGraph->CovisibilityGraph.contains(NodeA));
@@ -334,15 +327,14 @@ void GRAPH_DecrementEdge( typeCovisibilityGraph* CovisibilityGraph,
     assert(*CovisibilityAB == *CovisibilityBA);
     assert(*CovisibilityAB > 0);
 
-    CovisibilityAB--;
-    CovisibilityBA--;
+    (*CovisibilityAB)--;
+    (*CovisibilityBA)--;
 
-    if(CovisibilityAB == 0)
+    if(*CovisibilityAB == 0)
     {
         CovisibilityGraph->CovisibilityGraph[NodeA].erase(NodeB);
         CovisibilityGraph->CovisibilityGraph[NodeB].erase(NodeA);
     }
-    CovisibilityGraph->Mutex.unlock();
 }
 
 void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)

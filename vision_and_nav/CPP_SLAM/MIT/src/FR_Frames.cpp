@@ -1,7 +1,11 @@
 #include "../include/FR_Frames.hpp"
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <fstream>
+#include <mutex>
 #include <sstream>
+#include <thread>
 
 namespace 
 {
@@ -16,6 +20,14 @@ namespace
 
 namespace 
 {
+    struct typeDecodedDataSetFrame
+    {
+        cv::Mat Color;
+        cv::Mat Gray;
+        fp64 TimeStamp = PANTO_TIMESTAMP_NOT_SET;
+        std::string SourcePath;
+    };
+
     struct dataset_read 
     {
         std::string ImagePath;
@@ -24,6 +36,12 @@ namespace
         std::string BufferedFramePath;
         fp64 BufferedTimeStamp;
         bool HasBufferedFrame;
+        std::deque<typeDecodedDataSetFrame> PreloadedFrames;
+        std::mutex PreloadMutex;
+        std::condition_variable PreloadNotEmpty;
+        std::condition_variable_any PreloadNotFull;
+        std::jthread PreloadThread;
+        bool PreloadEndOfStream = false;
     };
     struct dataset_read reader;
 }
@@ -36,11 +54,25 @@ namespace
 typePantoFrame __FR_GetFrameDataSet();
 cv::Mat __FR_GetFrameWebCam(void);
 static bool FRPriv_BufferNextDataSetFrame(void);
+static bool FRPriv_ReadNextDataSetEntry(std::string& FramePath,
+        fp64& TimeStamp);
+static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(
+        const std::string& FramePath, const fp64 TimeStamp);
+static typePantoFrame FRPriv_FinalizeDataSetFrame(
+        typeDecodedDataSetFrame Frame);
+static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken);
 
 int FR_InitFrameGetter()
 {
     if(PANTO_USE_DATASET == true)
     {
+        if(reader.PreloadThread.joinable())
+        {
+            reader.PreloadThread.request_stop();
+            reader.PreloadNotFull.notify_all();
+            reader.PreloadThread.join();
+        }
+
         const std::string DatasetPath =
             std::string(PANTO_DATASET_BASE_PATH) +
             std::string(panto_dataset_path);
@@ -51,6 +83,11 @@ int FR_InitFrameGetter()
         reader.BufferedFramePath.clear();
         reader.BufferedTimeStamp = PANTO_TIMESTAMP_NOT_SET;
         reader.HasBufferedFrame = false;
+        {
+            std::lock_guard<std::mutex> Lock(reader.PreloadMutex);
+            reader.PreloadedFrames.clear();
+            reader.PreloadEndOfStream = false;
+        }
 
         const std::string TimeStampPath =
             DatasetPath + "/cam0/data.csv";
@@ -74,6 +111,12 @@ int FR_InitFrameGetter()
                 "[FR_InitFrameGetter] Dataset images: %s, timestamps: %s\n",
                 reader.ImagePath.c_str(),
                 TimeStampPath.c_str());
+
+        if(PANTO_DATASET_REALTIME_MODE)
+        {
+            reader.PreloadThread = std::jthread(
+                    FRPriv_PreloadDataSetFrames);
+        }
     }
     else
     {
@@ -115,12 +158,76 @@ fp64 FR_PeekNextFrameTimeStamp(void)
         return PANTO_TIMESTAMP_NOT_SET;
     }
 
+    if(PANTO_DATASET_REALTIME_MODE)
+    {
+        std::unique_lock<std::mutex> Lock(reader.PreloadMutex);
+        reader.PreloadNotEmpty.wait(
+                Lock,
+                []()
+                {
+                    return !reader.PreloadedFrames.empty() ||
+                        reader.PreloadEndOfStream;
+                });
+        return reader.PreloadedFrames.empty()
+            ? PANTO_TIMESTAMP_NOT_SET
+            : reader.PreloadedFrames.front().TimeStamp;
+    }
+
     if(!FRPriv_BufferNextDataSetFrame())
     {
         return PANTO_TIMESTAMP_NOT_SET;
     }
 
     return reader.BufferedTimeStamp;
+}
+
+fp64 FR_SkipNextFrame(void)
+{
+    if(!PANTO_USE_DATASET)
+    {
+        return PANTO_TIMESTAMP_NOT_SET;
+    }
+
+    if(PANTO_DATASET_REALTIME_MODE)
+    {
+        std::unique_lock<std::mutex> Lock(reader.PreloadMutex);
+        reader.PreloadNotEmpty.wait(
+                Lock,
+                []()
+                {
+                    return !reader.PreloadedFrames.empty() ||
+                        reader.PreloadEndOfStream;
+                });
+        if(reader.PreloadedFrames.empty())
+        {
+            return PANTO_TIMESTAMP_NOT_SET;
+        }
+
+        const fp64 SkippedTimeStamp =
+            reader.PreloadedFrames.front().TimeStamp;
+        reader.PreloadedFrames.pop_front();
+        Lock.unlock();
+        reader.PreloadNotFull.notify_one();
+        return SkippedTimeStamp;
+    }
+
+    if(!FRPriv_BufferNextDataSetFrame())
+    {
+        return PANTO_TIMESTAMP_NOT_SET;
+    }
+
+    const fp64 SkippedTimeStamp = reader.BufferedTimeStamp;
+
+    LG_Log(LogSeverity::DBG,
+            "[FR_SkipNextFrame] Skipping frame %s at %.9f s\n",
+            reader.BufferedFramePath.c_str(),
+            SkippedTimeStamp);
+
+    reader.BufferedFramePath.clear();
+    reader.BufferedTimeStamp = PANTO_TIMESTAMP_NOT_SET;
+    reader.HasBufferedFrame = false;
+
+    return SkippedTimeStamp;
 }
 
 cv::Mat __FR_GetFrameWebCam(void)
@@ -152,6 +259,34 @@ cv::Mat __FR_GetFrameWebCam(void)
 
 typePantoFrame __FR_GetFrameDataSet()
 {
+    if(PANTO_DATASET_REALTIME_MODE)
+    {
+        std::unique_lock<std::mutex> Lock(reader.PreloadMutex);
+        reader.PreloadNotEmpty.wait(
+                Lock,
+                []()
+                {
+                    return !reader.PreloadedFrames.empty() ||
+                        reader.PreloadEndOfStream;
+                });
+        if(reader.PreloadedFrames.empty())
+        {
+            return
+            {
+                .Frame = cv::Mat{},
+                .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
+                .Path = ""
+            };
+        }
+
+        typeDecodedDataSetFrame Frame =
+            std::move(reader.PreloadedFrames.front());
+        reader.PreloadedFrames.pop_front();
+        Lock.unlock();
+        reader.PreloadNotFull.notify_one();
+        return FRPriv_FinalizeDataSetFrame(std::move(Frame));
+    }
+
     if(!FRPriv_BufferNextDataSetFrame())
     {
         LG_Log(LogSeverity::DBG,
@@ -171,40 +306,8 @@ typePantoFrame __FR_GetFrameDataSet()
     reader.BufferedTimeStamp = PANTO_TIMESTAMP_NOT_SET;
     reader.HasBufferedFrame = false;
 
-    LG_Log(LogSeverity::DBG, "[__FR_GetFrameDataSet] Getting frame %s\n", FramePath.c_str());
-    cv::Mat Frame = cv::imread(FramePath, cv::IMREAD_COLOR);
-
-    if(Frame.empty())
-    {
-        LG_Log(LogSeverity::DBG,
-                "[__FR_GetFrameDataSet] cv::imread returned empty frame for %s\n",
-                FramePath.c_str());
-        return 
-        {
-            .Frame = cv::Mat{},
-            .TimeStamp = -1.0,
-            .Path = "" 
-        };
-    }
-
-    const std::string WritePath =
-        "./colmap/images/frame" +
-        std::to_string(reader.OutputFrameIndex) +
-        ".png";
-
-    cv::imwrite(WritePath, Frame);
-
-    cv::Mat Gray;
-    cv::cvtColor(Frame, Gray, cv::COLOR_BGR2GRAY);
-
-    reader.OutputFrameIndex++;
-
-    return 
-    {
-        .Frame = Gray,
-        .TimeStamp = TimeStamp,
-        .Path = WritePath
-    };
+    return FRPriv_FinalizeDataSetFrame(
+            FRPriv_DecodeDataSetFrame(FramePath, TimeStamp));
 }
 
 static bool FRPriv_BufferNextDataSetFrame(void)
@@ -221,6 +324,15 @@ static bool FRPriv_BufferNextDataSetFrame(void)
         return false;
     }
 
+    reader.HasBufferedFrame = FRPriv_ReadNextDataSetEntry(
+            reader.BufferedFramePath,
+            reader.BufferedTimeStamp);
+    return reader.HasBufferedFrame;
+}
+
+static bool FRPriv_ReadNextDataSetEntry(std::string& FramePath,
+        fp64& TimeStamp)
+{
     std::string Line;
 
     while(std::getline(reader.TimeStampFile, Line))
@@ -245,12 +357,94 @@ static bool FRPriv_BufferNextDataSetFrame(void)
             continue;
         }
 
-        reader.BufferedTimeStamp =
-            static_cast<fp64>(std::stoull(TimeStampToken)) * 1e-9;
-        reader.BufferedFramePath = reader.ImagePath + "/" + FileName;
-        reader.HasBufferedFrame = true;
+        TimeStamp = static_cast<fp64>(
+                std::stoull(TimeStampToken)) * 1e-9;
+        FramePath = reader.ImagePath + "/" + FileName;
         return true;
     }
 
     return false;
+}
+
+static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(
+        const std::string& FramePath, const fp64 TimeStamp)
+{
+    typeDecodedDataSetFrame Result{};
+    Result.TimeStamp = TimeStamp;
+    Result.SourcePath = FramePath;
+    Result.Color = cv::imread(FramePath, cv::IMREAD_COLOR);
+    if(!Result.Color.empty())
+    {
+        cv::cvtColor(Result.Color, Result.Gray, cv::COLOR_BGR2GRAY);
+    }
+    return Result;
+}
+
+static typePantoFrame FRPriv_FinalizeDataSetFrame(
+        typeDecodedDataSetFrame Frame)
+{
+    if(Frame.Color.empty() || Frame.Gray.empty())
+    {
+        return
+        {
+            .Frame = cv::Mat{},
+            .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
+            .Path = ""
+        };
+    }
+
+    const std::string WritePath =
+        "./colmap/images/frame" +
+        std::to_string(reader.OutputFrameIndex++) +
+        ".png";
+    if(!cv::imwrite(WritePath, Frame.Color))
+    {
+        return
+        {
+            .Frame = cv::Mat{},
+            .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
+            .Path = ""
+        };
+    }
+
+    return
+    {
+        .Frame = std::move(Frame.Gray),
+        .TimeStamp = Frame.TimeStamp,
+        .Path = WritePath
+    };
+}
+
+static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
+{
+    while(!StopToken.stop_requested())
+    {
+        std::string FramePath;
+        fp64 TimeStamp = PANTO_TIMESTAMP_NOT_SET;
+        if(!FRPriv_ReadNextDataSetEntry(FramePath, TimeStamp))
+        {
+            std::lock_guard<std::mutex> Lock(reader.PreloadMutex);
+            reader.PreloadEndOfStream = true;
+            reader.PreloadNotEmpty.notify_all();
+            return;
+        }
+
+        typeDecodedDataSetFrame Frame =
+            FRPriv_DecodeDataSetFrame(FramePath, TimeStamp);
+        std::unique_lock<std::mutex> Lock(reader.PreloadMutex);
+        if(!reader.PreloadNotFull.wait(
+                    Lock,
+                    StopToken,
+                    []()
+                    {
+                        return reader.PreloadedFrames.size() <
+                            PANTO_REALTIME_FRAME_QUEUE_CAPACITY;
+                    }))
+        {
+            return;
+        }
+        reader.PreloadedFrames.push_back(std::move(Frame));
+        Lock.unlock();
+        reader.PreloadNotEmpty.notify_one();
+    }
 }

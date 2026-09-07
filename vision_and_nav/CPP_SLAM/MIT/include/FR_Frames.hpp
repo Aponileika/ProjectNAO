@@ -18,5 +18,6 @@ typedef struct
 int FR_InitFrameGetter();
 typePantoFrame FR_GetFrame(void);
 fp64 FR_PeekNextFrameTimeStamp(void);
+fp64 FR_SkipNextFrame(void);
 
 #endif //__FR_FRAMES_HPP

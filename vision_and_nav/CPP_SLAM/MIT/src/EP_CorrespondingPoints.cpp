@@ -3,8 +3,10 @@
 #include "CM_Camera.hpp"
 #include "LG_Logging.hpp"
 #include "PT_Points.hpp"
+#include <mutex>
 
 struct AKAZEExtract AkazeExtract;
+static std::once_flag AkazeInitializationFlag;
 
 struct typeDescriptorTimingStatistics
 {
@@ -183,14 +185,22 @@ cv::Mat __EP_CrossProdMat(cv::Mat x)
 
 void __EP_InitAkaze(void)
 {
-    const fp64 Threshold = OPENCV_AKAZETHRESHOLD;
-    LG_Log(LogSeverity::DBG, "[__EP_Init__EP] initing AkazeExtract with %lf\n", Threshold);
-    AkazeExtract.akaze = cv::AKAZE::create();
-    AkazeExtract.akaze->setThreshold(Threshold);
-    AkazeExtract.akaze->setNOctaves(4);
-    AkazeExtract.akaze->setNOctaveLayers(4);
-    AkazeExtract.matcher = cv::BFMatcher(cv::NORM_HAMMING, false);
-    AkazeExtract.matchratio = PANTO_MATCHRATIO;
+    std::call_once(
+            AkazeInitializationFlag,
+            []()
+            {
+                const fp64 Threshold = OPENCV_AKAZETHRESHOLD;
+                AkazeExtract.akaze = cv::AKAZE::create();
+                AkazeExtract.akaze->setThreshold(Threshold);
+                AkazeExtract.akaze->setNOctaves(
+                        OPENCV_AKAZE_NOCTAVES);
+                AkazeExtract.akaze->setNOctaveLayers(
+                        OPENCV_AKAZE_NOCTAVELAYERS);
+                AkazeExtract.matcher =
+                    cv::BFMatcher(cv::NORM_HAMMING, false);
+                AkazeExtract.threshold = Threshold;
+                AkazeExtract.matchratio = PANTO_MATCHRATIO;
+            });
 }
 
 DescRet __EP_GetDesc(const cv::Mat& img)

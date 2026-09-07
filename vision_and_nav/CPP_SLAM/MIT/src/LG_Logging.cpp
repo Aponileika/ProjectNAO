@@ -1,8 +1,11 @@
 #include "../include/LG_Logging.hpp"
 #include <cstdio>
+#include <mutex>
 
 struct Logger glogger;
 bool gloggerisinit = false;
+static std::recursive_mutex LoggerMutex;
+static thread_local bool DataSummaryLoggingEnabled = false;
 void LGPriv_Log(FILE* fp, const char*fmt, ...);
 
 static std::string LG_MakeTimestampedLogPath(const std::string& basePath, const std::string& Type)
@@ -51,6 +54,8 @@ static std::string LG_MakeTimestampedLogPath(const std::string& basePath, const 
 
 void LG_InitLogger()
 {
+    std::lock_guard<std::recursive_mutex> Lock(LoggerMutex);
+
     if (gloggerisinit) return;
 
     std::string logPath = PANTO_LOGPATH;
@@ -84,6 +89,8 @@ void LG_InitLogger()
 
 void LG_CloseLogger()
 {
+    std::lock_guard<std::recursive_mutex> Lock(LoggerMutex);
+
     if (glogger.Debugfp)
     {
         std::fclose(glogger.Debugfp);
@@ -103,8 +110,25 @@ void LG_CloseLogger()
     gloggerisinit = false;
 }
 
+void LG_EnableDataSummaryLoggingForCurrentThread(const bool Enabled)
+{
+    DataSummaryLoggingEnabled = Enabled;
+}
+
 void LG_Log(LogSeverity severity, const char* fmt, ...)
 {
+    // Runtime logging is intentionally disabled. Only the local-mapping
+    // thread enables its final aggregate DATA summaries.
+    if(severity != LogSeverity::DATA || !DataSummaryLoggingEnabled)
+    {
+        return;
+    }
+
+    // Keep initialization, formatting, file output, optional stdout output,
+    // and flushing in one transaction. This prevents tracking and local
+    // mapping messages from being interleaved within a single log call.
+    std::lock_guard<std::recursive_mutex> Lock(LoggerMutex);
+
     if (!gloggerisinit)
     {
         LG_InitLogger();
@@ -151,4 +175,3 @@ void LG_Log(LogSeverity severity, const char* fmt, ...)
 
     std::fflush(fp);
 }
-

@@ -17,7 +17,7 @@ static void VIZPriv_WriteTimeStampFile(
 
 void VIZ_InitVisualization(void)
 {
-    VIZPriv_KeyFrameImages.clear();
+    VIZ_ResetMapVisualization();
     VIZPriv_IMUTestTrajectory.clear();
     VIZPriv_SnapshotID = 0;
 
@@ -70,6 +70,13 @@ void VIZ_InitVisualization(void)
 
     LG_Log(LogSeverity::DBG, "[VIZ_StartViewer] Started viewer process PID = %d\n",
             static_cast<i32>(PID));
+}
+
+void VIZ_ResetMapVisualization(void)
+{
+    // Keyframe IDs restart from zero after SLAM reinitialization. Discard the
+    // old ID-indexed cache so the next snapshot loads the new frame images.
+    VIZPriv_KeyFrameImages.clear();
 }
 
 void VIZ_StopViewer()

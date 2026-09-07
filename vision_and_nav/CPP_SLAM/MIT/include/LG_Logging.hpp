@@ -34,6 +34,7 @@ enum class LogSeverity : u8
 
 void LG_InitLogger();
 void LG_CloseLogger();
+void LG_EnableDataSummaryLoggingForCurrentThread(bool Enabled);
 void LG_Log(LogSeverity severity, const char* fmt, ...);
 
 #endif //__LG_LOGGING_HPP_

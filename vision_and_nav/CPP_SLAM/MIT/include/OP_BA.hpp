@@ -3,6 +3,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <ceres/ceres.h>
+#include <unordered_map>
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"
 #include "Config.hpp"
@@ -15,7 +16,8 @@ typedef enum
     OptimizationTypePoseAndPoints = 0,
     OptimizationTypePose = 1,
     OptimizationTypeTracking = 2,
-    OptimizationTypeLocal = 3
+    OptimizationTypeLocal = 3,
+    OptimizationTypePointsOnly = 4
 }typeOptimizationTarget;
 
 /*see https://ceres-solver.googlesource.com/ceres-solver/+/master/examples/simple_bundle_adjuster.cc
@@ -209,8 +211,44 @@ struct OP_IMUResidual
 
 };
 
-void OP_BundleAdjust(typeGlobalMap* Map, typeOptimizationTarget Target,
+class OP_LocalBAAbortCallback : public ceres::IterationCallback
+{
+public:
+    OP_LocalBAAbortCallback(
+        const std::atomic<u64>& Generation,
+        const u64 StartGeneration)
+        : Generation(Generation),
+          StartGeneration(StartGeneration)
+    {
+    }
+
+    ceres::CallbackReturnType operator()(
+        const ceres::IterationSummary&) override
+    {
+        if(Generation.load(std::memory_order_relaxed)
+                != StartGeneration)
+        {
+            WasAborted = true;
+            return ceres::SOLVER_TERMINATE_SUCCESSFULLY;
+        }
+
+        return ceres::SOLVER_CONTINUE;
+    }
+
+    bool WasAborted = false;
+
+private:
+    const std::atomic<u64>& Generation;
+    const u64 StartGeneration;
+};
+
+bool OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
         const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame,
-        typeKeyFrame* PreviousFrame = nullptr);
+        typeKeyFrame* PreviousFrame = nullptr,
+        typeKeyFrameQueue* KeyFrameQueue = nullptr);
+bool OP_BundleAdjustTracking(typeLocalMapTracking& TrackingMap,
+        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame);
+bool OP_BundleAdjustLocal(typeLocalMap& LocalMap,
+        typeKeyFrameQueue* KeyFrameQueue);
 
 #endif //__OP_BA_HPP_

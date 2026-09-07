@@ -18,6 +18,7 @@
 #include "PANTOVEC_PantoVector.hpp"
 
 void VIZ_InitVisualization(void);
+void VIZ_ResetMapVisualization(void);
 void VIZ_StopViewer();
 void VIZ_SignalHandler(int Signal);
 void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory);

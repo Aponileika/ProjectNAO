@@ -20,6 +20,9 @@ typedef struct
     std::mutex Mutex;
 }typeCovisibilityGraph;
 
+// Graph mutation functions do not acquire Mutex themselves. During
+// multithreaded operation the caller must hold typeCovisibilityGraph::Mutex;
+// operations that also touch typeGlobalMap must lock both objects together.
 void GRAPH_AddKeyFrame(typeCovisibilityGraph* CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
         const u64 ID);
 typeCovisibility GRAPH_GetMostCovisibleFrame(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID);

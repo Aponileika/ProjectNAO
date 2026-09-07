@@ -1,4 +1,5 @@
 #include "PT_PantoImagePoint.hpp"
+#include "MAP_Mapping.hpp"
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -16,8 +17,9 @@
  * it is accepted as a match and its MapPointID is set
  * */
 typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>& Points, 
-        const cv::Mat& Descriptors, std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose,
-        typePantoVector<typePantoMapPoint>& GlobalMapPoints)
+        const cv::Mat& Descriptors,
+        std::vector<typePantoMapPoint>& CandidateMapPoints,
+        const typeCamera& Pose)
 {
     const std::size_t NumImagePoints = Points.size();
     assert((static_cast<std::size_t>(Descriptors.rows) == NumImagePoints));
@@ -50,7 +52,8 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>&
         ImagePoints.CellIndexingArray[CellIndex].push_back(i);
     }
 
-    const u64 NumMatchedMapPoints = PT_MatchMapPointsToKeyFrame(ImagePoints, CandidateMapPoints, Pose, GlobalMapPoints);
+    const u64 NumMatchedMapPoints = MAP_MatchMapPointsToKeyFrame(
+            ImagePoints, CandidateMapPoints, Pose, nullptr);
     LG_Log(LogSeverity::DBG, "[PT_CreatePantoImagePoints] Matched %llu/%zu map points\n",
         static_cast<unsigned long long>(NumMatchedMapPoints),
         CandidateMapPoints.size());
@@ -92,4 +95,3 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
 
     return ImagePoints;
 }
-

@@ -45,7 +45,22 @@ struct typeKeyFrame
     typeNavigationState NavigationState;
     typePreIntegrationData PreIntegrationData;
     u64 PreviousKFID = PANTO_ID_NOT_SET;
+    // Complete state of the inertial reference keyframe in the map snapshot
+    // used by tracking. Before an asynchronously queued reference has a map
+    // ID, TrackingReferenceMappingGeneration identifies it instead.
+    typeCameraPose TrackingReferencePose;
+    typeNavigationState TrackingReferenceNavigationState;
+    // IMU integration from the tracking reference keyframe to this frame.
+    // This is distinct from PreIntegrationData, which is frame-to-frame for
+    // ordinary tracking frames and keyframe-to-keyframe in the mapper copy.
+    typePreIntegrationData TrackingReferencePreIntegrationData;
+    u64 TrackingReferenceMappingGeneration = PANTO_ID_NOT_SET;
+    bool HasTrackingReferenceState = false;
 #endif
+    // Queue generation assigned when this tracking frame is submitted to
+    // local mapping. It lets tracking recognize the optimized global copy
+    // without blocking for the mapper.
+    u64 MappingGeneration = PANTO_ID_NOT_SET;
     u64 ID;
     std::string ImagePath;
 };
@@ -54,12 +69,11 @@ typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typeP
         const u64 ID);
 typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints);
 #if !defined(CONFIG_IMU)
-typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints,
-        typePantoVector<typePantoMapPoint>& GlobalMapPoints);
+typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose,
+        std::vector<typePantoMapPoint>& LastFrameMapPoints);
 #else
 typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
-        std::vector<typePantoMapPoint>& LastFrameMapPoints,
-        typePantoVector<typePantoMapPoint>& GlobalMapPoints);
+        std::vector<typePantoMapPoint>& LastFrameMapPoints);
 #endif
 void KEY_LogGetKeyFrameTimingStatistics(void);
 void KEY_LogIsKeyFrameStatistics(void);

@@ -4,6 +4,6 @@
 #include "Config.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 
-DBoW3::Vocabulary* DBOW3_GetVocabulary(void);
+const DBoW3::Vocabulary* DBOW3_GetVocabulary(void);
 
 #endif // __DBOW3_DEEPBAGOFWORDS_HPP_

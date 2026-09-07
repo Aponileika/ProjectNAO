@@ -912,7 +912,7 @@ void INITPriv_AppendFrame(const std::vector<cv::Point2d>& Points,
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
 
-    DBoW3::Vocabulary* Vocabulary = DBOW3_GetVocabulary();
+    const DBoW3::Vocabulary* Vocabulary = DBOW3_GetVocabulary();
     Vocabulary->transform(DescriptorVector, InitFrame.BoWVector, InitFrame.FeatureVector, Levels);
 
     const std::size_t NPoints = Points.size();

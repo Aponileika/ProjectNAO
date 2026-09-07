@@ -1,9 +1,6 @@
 #include "KEY_Keyframe.hpp"
 #include "KEY_KeyFramePriv.hpp"
 
-// Since getkeyframe can be reached before setaskeyframe is called this has to be a deque (or just a que really)
-static std::queue<cv::Mat> CurrentDescriptors{};
-
 struct typeKeyFrameTimingStatistics
 {
     u64 Count = 0;
@@ -89,7 +86,7 @@ typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typeP
 {
     typeKeyFrame KeyFrame{};
 
-    DBoW3::Vocabulary* Vocab = DBOW3_GetVocabulary();
+    const DBoW3::Vocabulary* Vocab = DBOW3_GetVocabulary();
     const typePose BodyToCamera = CM_GetBodyToSensor(CM_GetIntrinsics());
     DescRet Desc = EP_GetDescriptors(Frame.Frame);
     std::vector<cv::Mat> DescriptorVector;
@@ -169,7 +166,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
     }
 
     u64 LevelsUp = PANTO_DBOW_LEVELSUP;
-    DBoW3::Vocabulary* Vocabulary = DBOW3_GetVocabulary();
+    const DBoW3::Vocabulary* Vocabulary = DBOW3_GetVocabulary();
 
     DBoW3::BowVector NewBowVector;
     DBoW3::FeatureVector NewFeatureVector;
@@ -313,12 +310,10 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
 #if !defined(CONFIG_IMU)
 typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose,
-        std::vector<typePantoMapPoint>& LastFrameMapPoints,
-        typePantoVector<typePantoMapPoint>& GlobalMapPoints)
+        std::vector<typePantoMapPoint>& LastFrameMapPoints)
 #else
 typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
-        std::vector<typePantoMapPoint>& LastFrameMapPoints,
-        typePantoVector<typePantoMapPoint>& GlobalMapPoints)
+        std::vector<typePantoMapPoint>& LastFrameMapPoints)
 #endif
 {
 #if defined(CONFIG_IMU)
@@ -383,11 +378,10 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
 
     KEYPriv_AddTimingSample(GetDescriptorsTiming, GetDescriptorsTime);
 
-    CurrentDescriptors.push(Descriptors.Descriptors);
-
     const PantoClock::time_point CreateImagePointsStartTime = PantoClock::now();
-    typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePoints(Descriptors.Points, Descriptors.Descriptors, LastFrameMapPoints, PredictedPose,
-            GlobalMapPoints);
+    typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePoints(
+            Descriptors.Points, Descriptors.Descriptors,
+            LastFrameMapPoints, PredictedPose);
     const fp64 CreateImagePointsTime =
         std::chrono::duration<fp64>(PantoClock::now() - CreateImagePointsStartTime).count();
 
@@ -463,7 +457,6 @@ void KEY_LogIsKeyFrameStatistics(void)
 
 void KEY_Reset(void)
 {
-    CurrentDescriptors = {};
     IsKeyFrameStatistics = {};
 
     BootStrapData =
@@ -541,12 +534,19 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
 {
     const u64 ID = KeyFrame.ID;
     LG_Log(LogSeverity::DBG, "[KEY_SetAsKeyFrame] ID = %llu\n", ID);
-    const cv::Mat& Descriptors = CurrentDescriptors.front();
     std::vector<cv::Mat> DescriptorVector;
-    DescriptorVector.reserve(Descriptors.rows);
-    for(i32 i{}; i < Descriptors.rows; i++)
+    DescriptorVector.reserve(KeyFrame.Points.ImagePoints.active_size());
+    for(const typePantoImagePoint& ImagePoint :
+            KeyFrame.Points.ImagePoints)
     {
-        DescriptorVector.push_back(Descriptors.row(i));
+        // Descriptors belong to the frame. Keeping them in a process-global
+        // FIFO lets tracking pop a pending keyframe's descriptors while local
+        // mapping is behind, and is also a data race between the two workers.
+        DescriptorVector.emplace_back(
+                1,
+                PANTO_DESCRIPTOR_SIZE,
+                CV_8U,
+                const_cast<u8*>(ImagePoint.Descriptor.data()));
     }
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
@@ -630,7 +630,6 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
     }
 
     Vocabulary->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
-    CurrentDescriptors.pop();
 }
 
 std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, const u64 MapAge)
@@ -689,6 +688,7 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
 
     typePantoVector<typePantoImagePoint>& AllImagePoints1 = KeyFrame1.Points.ImagePoints;
     typePantoVector<typePantoImagePoint>& AllImagePoints2 = KeyFrame2.Points.ImagePoints;
+    std::unordered_set<u64> SelectedImagePointIDs2;
 
     const DBoW3::FeatureVector& FeatureVector1 = KeyFrame1.FeatureVector;
     const DBoW3::FeatureVector& FeatureVector2 = KeyFrame2.FeatureVector;
@@ -766,7 +766,8 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
                     }
                     typePantoImagePoint& ImagePoint2 = AllImagePoints2[FeatureID2];
 
-                    if(ImagePoint2.MapPointID != PANTO_ID_NOT_SET)
+                    if(ImagePoint2.MapPointID != PANTO_ID_NOT_SET ||
+                       SelectedImagePointIDs2.contains(ImagePoint2.ID))
                     {
                         NumImagePoint2AssociatedSkips++;
                         continue;
@@ -962,6 +963,7 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
                     const typePantoMapPoint NewPoint = PT_CreatePantoMapPoint(MapPoint, ImagePoint1.Descriptor, 
                             KeyFrameIDs, ImagePointIDs, PANTO_ID_NOT_SET, MapAge);
                     MapPoints.push_back(NewPoint);
+                    SelectedImagePointIDs2.insert(ImagePoint2.ID);
                 }
                 else
                 {
@@ -1187,7 +1189,8 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
 
 void KEY_NonValidKeyFrame(void)
 {
-    CurrentDescriptors.pop();
+    // Descriptors are owned by each frame; there is no cross-thread pending
+    // state to discard for a frame that was not selected as a keyframe.
 }
 
 fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints)
@@ -1324,11 +1327,11 @@ void KEYPriv_SolveBootStrapData(void)
     // FuzzyInference.TrackingRatioParameters.second = 0.155848;
     // FuzzyInference.TrackingRatioParameters.first = 0.038962;
     //
-    // FuzzyInference.AccumulatedDistanceParameters.second = 0.258651;
+    // FuzzyInference.AccumulatedDistanceParameters.second = 0.10;
     // FuzzyInference.AccumulatedDistanceParameters.first = 0.012933; 
-    
-    FuzzyInference.MaxRuleThreshold = PANTO_KEYFRAME_FUZZY_MAX_RULE_THRESHOLD;
-    FuzzyInference.SpatialTrackingThreshold = PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD;
+
+    // FuzzyInference.MaxRuleThreshold = PANTO_KEYFRAME_FUZZY_MAX_RULE_THRESHOLD;
+    // FuzzyInference.SpatialTrackingThreshold = PANTO_KEYFRAME_FUZZY_SPATIAL_TRACKING_THRESHOLD;
 
     BootStrapData.BootStrapDataSolved = true;
 }
