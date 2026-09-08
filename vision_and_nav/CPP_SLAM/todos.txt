@@ -69,6 +69,8 @@ make viser not exit
       so if a detect -> compute has been called in order, upyr is saved for compute, when compute is called the upyr must be marked as invalid.
     - M-LDB descriptor to TEBLID (remember to train a new vocabulary)? Optimize opencv akaze implementation. 
 
+    - Deferred triangulation.
+
     - Add scale information to descriptor usage, this is a major flaw currently, kind of a big change.
 
     - Actually implement a robust fuzzy keyframe decision maker.
