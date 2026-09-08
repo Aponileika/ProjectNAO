@@ -17,6 +17,91 @@ typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameDat
         const typeLocalMapInfo& LocalMapInfo, fp64& AccumulatedDistance);
 void SLPriv_ResetMapAndTracking(void);
 void SLPriv_InitializeMap(void);
+enum class typeTrackingTimingStage : std::size_t
+{
+    FrameQueuePeek,
+    RealtimePacingSleep,
+    SkipFrame,
+    IterationTotal,
+    MapSnapshotTransaction,
+    CreateTrackingMap,
+    GetPreviousFrameMapPoints,
+    UpdateCorrectedTrajectory,
+    IMUStateArrival,
+    IntegrateIMU,
+    PredictPose,
+    GetKeyFrame,
+    CountMatchedMapPoints,
+    FirstTrackingBA,
+    MatchLocalMap,
+    CommitTrackingStatistics,
+    SecondTrackingBA,
+    UpdatePreviousFrameMapPoints,
+    GetKeyFrameInformation,
+    IsKeyFrame,
+    EnqueueKeyFrame,
+    WaitForLocalMapping,
+    InitializeKeyFramePreintegration,
+    RejectKeyFrame,
+    AppendTrackingTrajectory,
+    UpdateVisualization,
+    ShutdownMappingQueue,
+    Count
+};
+
+static constexpr std::array<const char*,
+    static_cast<std::size_t>(typeTrackingTimingStage::Count)>
+TrackingTimingNames =
+{
+    "tracking/frame queue peek",
+    "tracking/realtime pacing sleep",
+    "tracking/skip late frame",
+    "tracking/complete processed-frame iteration",
+    "tracking/map snapshot critical section",
+    "tracking/create tracking map",
+    "tracking/get previous-frame map points",
+    "tracking/update corrected trajectory",
+    "tracking/IMU state arrival",
+    "tracking/integrate IMU",
+    "tracking/predict pose",
+    "tracking/get keyframe and descriptors",
+    "tracking/count matched map points",
+    "tracking/first pose optimization",
+    "tracking/match local map",
+    "tracking/commit tracking statistics",
+    "tracking/second pose optimization",
+    "tracking/update previous-frame map points",
+    "tracking/get keyframe information",
+    "tracking/keyframe decision",
+    "tracking/enqueue keyframe",
+    "tracking/wait for local mapping",
+    "tracking/initialize keyframe preintegration",
+    "tracking/reject keyframe",
+    "tracking/append trajectory",
+    "tracking/update visualization",
+    "tracking/shutdown mapping queue"
+};
+
+class typeTrackingScopedTimer
+{
+    public:
+        explicit typeTrackingScopedTimer(typeTimingStatistics& Statistics)
+            : Statistics(Statistics), Start(PantoClock::now())
+        {}
+
+        ~typeTrackingScopedTimer()
+        {
+            SL_AddTimingSample(
+                    Statistics,
+                    std::chrono::duration<fp64>(
+                        PantoClock::now() - Start).count());
+        }
+
+    private:
+        typeTimingStatistics& Statistics;
+        PantoClock::time_point Start;
+};
+
 void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         typePreIntegration& PreIntegrationBetweenKF,
         bool& TrackingLost, i32& NumProcessedLoops);
@@ -912,6 +997,15 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         typePreIntegration& PreIntegrationBetweenKF,
         bool& TrackingLost, i32& NumProcessedLoops)
 {
+    std::array<typeTimingStatistics,
+        static_cast<std::size_t>(typeTrackingTimingStage::Count)>
+        Timing{};
+    const auto Statistics = [&Timing](const typeTrackingTimingStage Stage)
+        -> typeTimingStatistics&
+    {
+        return Timing[static_cast<std::size_t>(Stage)];
+    };
+
     TrackingLost = false;
     NumProcessedLoops = 0;
 #if !defined(CONFIG_IMU)
@@ -953,7 +1047,11 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 
         if(PANTO_USE_DATASET)
         {
-            NextFrameTimeStamp = FR_PeekNextFrameTimeStamp();
+            {
+                typeTrackingScopedTimer Timer(
+                        Statistics(typeTrackingTimingStage::FrameQueuePeek));
+                NextFrameTimeStamp = FR_PeekNextFrameTimeStamp();
+            }
             if(NextFrameTimeStamp < 0.0)
             {
                 break;
@@ -970,7 +1068,13 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                 {
                     const fp64 Lateness = std::chrono::duration<fp64>(
                             CurrentWallTime - TargetWallTime).count();
-                    const fp64 SkippedTimeStamp = FR_SkipNextFrame();
+                    fp64 SkippedTimeStamp = PANTO_TIMESTAMP_NOT_SET;
+                    {
+                        typeTrackingScopedTimer Timer(
+                                Statistics(typeTrackingTimingStage::
+                                    SkipFrame));
+                        SkippedTimeStamp = FR_SkipNextFrame();
+                    }
                     if(SkippedTimeStamp < 0.0)
                     {
                         break;
@@ -983,17 +1087,27 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                     continue;
                 }
 
-                std::this_thread::sleep_until(TargetWallTime);
+                {
+                    typeTrackingScopedTimer Timer(
+                            Statistics(typeTrackingTimingStage::
+                                RealtimePacingSleep));
+                    std::this_thread::sleep_until(TargetWallTime);
+                }
             }
         }
 
         NumProcessedLoops++;
+        typeTrackingScopedTimer IterationTimer(
+                Statistics(typeTrackingTimingStage::IterationTotal));
 #if defined(CONFIG_IMU)
         bool UpdatePreviousTrajectory = false;
         typeCamera PreviousTrajectoryCamera{};
 #endif
 
         {
+            typeTrackingScopedTimer TransactionTimer(
+                    Statistics(typeTrackingTimingStage::
+                        MapSnapshotTransaction));
 #if defined(CONFIG_IMU)
             // Take one coherent, bounded map/graph snapshot for the whole
             // tracking iteration. Building a second snapshot after feature
@@ -1162,28 +1276,46 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                     }
                 }
             }
-            TrackingData.TrackingMap = MAP_CreateLocalMapTracking(
-                    *TrackingData.GlobalMap,
-                    *TrackingData.CovisibilityGraph,
-                    PreviousFrame);
-            TrackingData.PreviousFrameData.PreviousFrameMapPoints =
-                MAP_GetLastFrameMapPoints(
-                        TrackingData.TrackingMap.MapPoints,
+            {
+                typeTrackingScopedTimer Timer(
+                        Statistics(typeTrackingTimingStage::
+                            CreateTrackingMap));
+                TrackingData.TrackingMap = MAP_CreateLocalMapTracking(
+                        *TrackingData.GlobalMap,
+                        *TrackingData.CovisibilityGraph,
                         PreviousFrame);
+            }
+            {
+                typeTrackingScopedTimer Timer(
+                        Statistics(typeTrackingTimingStage::
+                            GetPreviousFrameMapPoints));
+                TrackingData.PreviousFrameData.PreviousFrameMapPoints =
+                    MAP_GetLastFrameMapPoints(
+                            TrackingData.TrackingMap.MapPoints,
+                            PreviousFrame);
+            }
 #else
             // Local mapping may have culled or optimized points since the
             // previous frame was processed. Match against a fresh snapshot.
             std::lock_guard<std::mutex> Lock(TrackingData.GlobalMap->Mutex);
-            TrackingData.PreviousFrameData.PreviousFrameMapPoints =
-                MAP_GetLastFrameMapPoints(
-                        *TrackingData.GlobalMap,
-                        TrackingData.PreviousFrameData.PreviousFrame);
+            {
+                typeTrackingScopedTimer Timer(
+                        Statistics(typeTrackingTimingStage::
+                            GetPreviousFrameMapPoints));
+                TrackingData.PreviousFrameData.PreviousFrameMapPoints =
+                    MAP_GetLastFrameMapPoints(
+                            *TrackingData.GlobalMap,
+                            TrackingData.PreviousFrameData.PreviousFrame);
+            }
 #endif
         }
 
 #if defined(CONFIG_IMU)
         if(UpdatePreviousTrajectory)
         {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::
+                        UpdateCorrectedTrajectory));
             SLPriv_UpdateTrackingTrajectoryPose(
                     PreviousTrajectoryCamera.TimeStamp,
                     PreviousTrajectoryCamera);
@@ -1191,22 +1323,44 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 #endif
 
 #if defined(CONFIG_IMU)
-        IMU_NewNavigationStateArrival(
-                TrackingData.PreviousFrameData.PreviousFrame.NavigationState);
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::IMUStateArrival));
+            IMU_NewNavigationStateArrival(
+                    TrackingData.PreviousFrameData.PreviousFrame.
+                        NavigationState);
+        }
 
-        if(!SLPriv_IntegrateIMUUntil(NextFrameTimeStamp,
-                    nullptr, &PreIntegrationBetweenKF))
+        bool IMUIntegrated = false;
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::IntegrateIMU));
+            IMUIntegrated = SLPriv_IntegrateIMUUntil(
+                    NextFrameTimeStamp,
+                    nullptr,
+                    &PreIntegrationBetweenKF);
+        }
+        if(!IMUIntegrated)
         {
             break;
         }
 
-        TrackingData.PosePrediction.Pose =
-            KEY_PredictPose(TrackingData.PreviousFrameData.PreviousFrame);
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::PredictPose));
+            TrackingData.PosePrediction.Pose =
+                KEY_PredictPose(
+                        TrackingData.PreviousFrameData.PreviousFrame);
+        }
 #endif
 
-        TrackingData.NewFrame = KEY_GetKeyFrame(
-                TrackingData.PosePrediction.Pose,
-                TrackingData.PreviousFrameData.PreviousFrameMapPoints);
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::GetKeyFrame));
+            TrackingData.NewFrame = KEY_GetKeyFrame(
+                    TrackingData.PosePrediction.Pose,
+                    TrackingData.PreviousFrameData.PreviousFrameMapPoints);
+        }
 
         if(TrackingData.NewFrame.Camera.TimeStamp < 0.0f)
         {
@@ -1269,7 +1423,13 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             return Count;
         };
 
-        u64 NumMatchedMapPoints = CountMatchedMapPoints();
+        u64 NumMatchedMapPoints = 0;
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::
+                        CountMatchedMapPoints));
+            NumMatchedMapPoints = CountMatchedMapPoints();
+        }
         typeLocalMapInfo LocalMapInfo{};
         bool LocalMapAlreadyMatched = false;
 
@@ -1325,10 +1485,14 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             const Eigen::Matrix3d RBefore = TrackingData.NewFrame.Camera.Pose.R;
             const Eigen::Vector3d tBefore = TrackingData.NewFrame.Camera.Pose.t;
 
-            OP_BundleAdjustTracking(
-                    TrackingData.TrackingMap,
-                    &TrackingData.NewFrame,
-                    &TrackingData.PreviousFrameData.PreviousFrame);
+            {
+                typeTrackingScopedTimer Timer(
+                        Statistics(typeTrackingTimingStage::FirstTrackingBA));
+                OP_BundleAdjustTracking(
+                        TrackingData.TrackingMap,
+                        &TrackingData.NewFrame,
+                        &TrackingData.PreviousFrameData.PreviousFrame);
+            }
 
             /*
              * Compare optimized pose against predicted/input pose.
@@ -1371,22 +1535,40 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Matching local map points\n");
         if(!LocalMapAlreadyMatched)
         {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::MatchLocalMap));
             LocalMapInfo = MAP_MatchMapPointLocalMap(
                     TrackingData.TrackingMap, TrackingData.NewFrame);
         }
-        MAP_CommitTrackingStatistics(TrackingData.GlobalMap, LocalMapInfo);
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::
+                        CommitTrackingStatistics));
+            MAP_CommitTrackingStatistics(
+                    TrackingData.GlobalMap,
+                    LocalMapInfo);
+        }
 
-        OP_BundleAdjustTracking(
-                TrackingData.TrackingMap,
-                &TrackingData.NewFrame,
-                &TrackingData.PreviousFrameData.PreviousFrame);
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::SecondTrackingBA));
+            OP_BundleAdjustTracking(
+                    TrackingData.TrackingMap,
+                    &TrackingData.NewFrame,
+                    &TrackingData.PreviousFrameData.PreviousFrame);
+        }
 
         const typePreviousFrameData PreviousFrameDataCopy =
             TrackingData.PreviousFrameData;
-        TrackingData.PreviousFrameData.PreviousFrameMapPoints =
-            MAP_GetLastFrameMapPoints(
-                    TrackingData.TrackingMap.MapPoints,
-                    TrackingData.NewFrame);
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::
+                        UpdatePreviousFrameMapPoints));
+            TrackingData.PreviousFrameData.PreviousFrameMapPoints =
+                MAP_GetLastFrameMapPoints(
+                        TrackingData.TrackingMap.MapPoints,
+                        TrackingData.NewFrame);
+        }
         TrackingData.PreviousFrameData.PreviousPreviousFrame =
             TrackingData.PreviousFrameData.PreviousFrame;
         TrackingData.PreviousFrameData.PreviousFrame = TrackingData.NewFrame;
@@ -1397,12 +1579,23 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                 TrackingData.PreviousFrameData.PreviousPreviousFrame.Camera.Pose);
 #endif
 
-        typeKeyFrameInformation KeyFrameInfo = SLPriv_GetKeyFrameInformation(
-                PreviousFrameDataCopy,
-                TrackingData.NewFrame,
-                LocalMapInfo,
-                TrackingData.AccumulatedDistance);
-        bool IsKeyFrame = KEY_IsKeyFrame(KeyFrameInfo);
+        typeKeyFrameInformation KeyFrameInfo{};
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::
+                        GetKeyFrameInformation));
+            KeyFrameInfo = SLPriv_GetKeyFrameInformation(
+                    PreviousFrameDataCopy,
+                    TrackingData.NewFrame,
+                    LocalMapInfo,
+                    TrackingData.AccumulatedDistance);
+        }
+        bool IsKeyFrame = false;
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::IsKeyFrame));
+            IsKeyFrame = KEY_IsKeyFrame(KeyFrameInfo);
+        }
         // if(IsKeyFrame)
         if(((NumProcessedLoops % 5) == 0))
         {
@@ -1410,8 +1603,14 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             // Let the local mapping thread get the KF <-> KF preintegration data.
             TrackingData.NewFrame.PreIntegrationData = PreIntegrationBetweenKF;
 #endif
-            const u64 QueuedGeneration =
-                TrackingData.KeyFrameQueue->enque(TrackingData.NewFrame);
+            u64 QueuedGeneration = PANTO_ID_NOT_SET;
+            {
+                typeTrackingScopedTimer Timer(
+                        Statistics(typeTrackingTimingStage::EnqueueKeyFrame));
+                QueuedGeneration =
+                    TrackingData.KeyFrameQueue->enque(
+                            TrackingData.NewFrame);
+            }
             TrackingData.NewFrame.MappingGeneration = QueuedGeneration;
             TrackingData.PreviousFrameData.PreviousFrame.MappingGeneration =
                 QueuedGeneration;
@@ -1427,8 +1626,13 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 
             if(!PANTO_DATASET_REALTIME_MODE)
             {
-                TrackingData.KeyFrameQueue->WaitUntilProcessed(
-                        QueuedGeneration);
+                {
+                    typeTrackingScopedTimer Timer(
+                            Statistics(typeTrackingTimingStage::
+                                WaitForLocalMapping));
+                    TrackingData.KeyFrameQueue->WaitUntilProcessed(
+                            QueuedGeneration);
+                }
 
                 // The mapper owns a copy of the queued frame and local BA may
                 // change both its pose and navigation state. In serialized
@@ -1471,16 +1675,27 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             }
 
 #if defined(CONFIG_IMU)
-            IMU_InitializePreIntegration(PreIntegrationBetweenKF,
-                    TrackingData.NewFrame.NavigationState);
+            {
+                typeTrackingScopedTimer Timer(
+                        Statistics(typeTrackingTimingStage::
+                            InitializeKeyFramePreintegration));
+                IMU_InitializePreIntegration(
+                        PreIntegrationBetweenKF,
+                        TrackingData.NewFrame.NavigationState);
+            }
 #endif
         }
         else
         {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::RejectKeyFrame));
             KEY_NonValidKeyFrame();
         }
 
         {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::
+                        AppendTrackingTrajectory));
             std::lock_guard<std::mutex> Lock(
                     PantoSLAM.TrackingTrajectoryMutex);
             PantoSLAM.TrackingTrajectory.push_back(
@@ -1490,10 +1705,32 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         }
 #if !defined(DEBUG)
         typeTimingStatistics Stats;
-        SLPriv_UpdateVisualization(TrackingData.GlobalMap, Stats);
+        {
+            typeTrackingScopedTimer Timer(
+                    Statistics(typeTrackingTimingStage::
+                        UpdateVisualization));
+            SLPriv_UpdateVisualization(TrackingData.GlobalMap, Stats);
+        }
 #endif
     }
-    TrackingData.KeyFrameQueue->ShutDown();
+    {
+        typeTrackingScopedTimer Timer(
+                Statistics(typeTrackingTimingStage::ShutdownMappingQueue));
+        TrackingData.KeyFrameQueue->ShutDown();
+    }
+
+    LG_EnableDataSummaryLoggingForCurrentThread(true);
+    for(std::size_t StageIndex = 0; StageIndex < Timing.size(); StageIndex++)
+    {
+        if(Timing[StageIndex].Count == 0)
+        {
+            continue;
+        }
+        SL_LogTimingStatistics(
+                TrackingTimingNames[StageIndex],
+                Timing[StageIndex]);
+    }
+    LG_EnableDataSummaryLoggingForCurrentThread(false);
 }
 
 typeKeyFrameInformation SLPriv_GetKeyFrameInformation(const typePreviousFrameData& PreviousFrameDataCopy, const typeKeyFrame& NewKeyFrame,

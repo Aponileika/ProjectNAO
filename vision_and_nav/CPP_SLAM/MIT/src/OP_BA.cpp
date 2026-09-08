@@ -1,4 +1,5 @@
 #include "../include/OP_BA.hpp"
+#include "Config.hpp"
 #include "LG_Logging.hpp"
 
 /*see https://ceres-solver.googlesource.com/ceres-solver/+/master/examples/simple_bundle_adjuster.cc
@@ -17,12 +18,12 @@ void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
         ceres::Problem& Problem);
 void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem);
 void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
-        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame);
+        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering);
 void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
         ceres::Problem& Problem, typeKeyFrame* NewKeyFrame,
-        typeKeyFrame* PreviousFrame);
+        typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering);
 void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
-        ceres::Problem& Problem);
+        ceres::Problem& Problem, ceres::ParameterBlockOrdering& Ordering);
 
 bool OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
         const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame,
@@ -37,6 +38,8 @@ bool OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
     options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
 
     options.num_threads = CERES_NUM_THREADS;
+
+    auto Ordering = std::make_shared<ceres::ParameterBlockOrdering>();
 
     switch(Target)
     {
@@ -53,8 +56,12 @@ bool OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
             options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
             break;
         case OptimizationTypeTracking:
-            __OP_BuildProblemTracking(Map, Problem, NewKeyFrame, PreviousFrame);
+            __OP_BuildProblemTracking(Map, Problem, NewKeyFrame, PreviousFrame, *Ordering);
             options.linear_solver_type = ceres::DENSE_QR;
+            if(CERES_EXPLICIT_ORDERING)
+            {
+                options.linear_solver_ordering = Ordering;
+            }
             break;
         case OptimizationTypeLocal:
             LG_Log(LogSeverity::ERROR,
@@ -102,8 +109,14 @@ bool OP_BundleAdjustTracking(typeLocalMapTracking& TrackingMap,
     Options.num_threads = CERES_NUM_THREADS;
     Options.linear_solver_type = ceres::DENSE_QR;
 
-    __OP_BuildProblemTrackingLocal(
-            TrackingMap, Problem, NewKeyFrame, PreviousFrame);
+    auto Ordering = std::make_shared<ceres::ParameterBlockOrdering>();
+
+    __OP_BuildProblemTrackingLocal(TrackingMap, Problem, NewKeyFrame, PreviousFrame, *Ordering);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Options.linear_solver_ordering = Ordering;
+    }
 
     ceres::Solver::Summary Summary;
     ceres::Solve(Options, &Problem, &Summary);
@@ -122,8 +135,12 @@ bool OP_BundleAdjustLocal(typeLocalMap& LocalMap,
 {
     assert(KeyFrameQueue != nullptr);
 
+    auto Ordering = std::make_shared<ceres::ParameterBlockOrdering>();
+
     ceres::Problem Problem;
-    __OP_BuildProblemLocal(LocalMap, Problem);
+
+    __OP_BuildProblemLocal(LocalMap, Problem, *Ordering);
+
 
     u64 Generation = 0;
     if(PANTO_DATASET_REALTIME_MODE && !KeyFrameQueue->PrepareForBA(Generation))
@@ -131,9 +148,13 @@ bool OP_BundleAdjustLocal(typeLocalMap& LocalMap,
         return false;
     }
 
-    OP_LocalBAAbortCallback AbortCallback( KeyFrameQueue->KeyFrameGen, Generation);
+    OP_LocalBAAbortCallback AbortCallback(KeyFrameQueue->KeyFrameGen, Generation);
 
     ceres::Solver::Options Options;
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Options.linear_solver_ordering = Ordering;
+    }
     Options.max_num_iterations = CERES_MAX_ITER;
     Options.minimizer_progress_to_stdout = false;
     Options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
@@ -540,7 +561,7 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
 }
 
 void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
-        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame)
+        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering)
 {
     /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
      *Optimizing on manifolds seemingly has many benefits, one of them is that
@@ -571,13 +592,22 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
     Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
     Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(),
                          new ceres::EigenQuaternionManifold());
-
     Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
+
 
 #if defined(CONFIG_IMU)
     Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
     Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
     Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.Velocity.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.GyroBias.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
 
     Problem.AddParameterBlock(PreviousCameraParameters.Quaternion.coeffs().data(), 4);
     Problem.SetManifold(PreviousCameraParameters.Quaternion.coeffs().data(),
@@ -585,9 +615,19 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
 
     Problem.AddParameterBlock(PreviousCameraParameters.tParametrization.data(), 3);
 
+
     Problem.AddParameterBlock(PreviousIMUParameters.Velocity.data(), 3);
     Problem.AddParameterBlock(PreviousIMUParameters.GyroBias.data(), 3);
     Problem.AddParameterBlock(PreviousIMUParameters.AccelorometerBias.data(), 3);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(PreviousCameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousCameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.Velocity.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.GyroBias.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
 
     Problem.SetParameterBlockConstant(PreviousCameraParameters.Quaternion.coeffs().data());
     Problem.SetParameterBlockConstant(PreviousCameraParameters.tParametrization.data());
@@ -623,6 +663,10 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
                 continue;
             }
             Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+            if(CERES_EXPLICIT_ORDERING)
+            {
+                Ordering.AddElementToGroup(MapPoint.Point.data(), CERES_3D_POINT_GROUP);
+            }
             Problem.SetParameterBlockConstant(MapPoint.Point.data());
 
             ceres::CostFunction* CostFunc =
@@ -666,7 +710,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
 
 void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
         ceres::Problem& Problem, typeKeyFrame* NewKeyFrame,
-        typeKeyFrame* PreviousFrame)
+        typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering)
 {
     typeCameraPose& CameraParameters = NewKeyFrame->Camera.Pose;
 
@@ -676,6 +720,12 @@ void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
             new ceres::EigenQuaternionManifold());
     Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
 
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
+
 #if defined(CONFIG_IMU)
     assert(PreviousFrame != nullptr);
     const Eigen::Vector3d Grav = *IMU_GetGravity();
@@ -684,21 +734,38 @@ void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
     typeNavigationState& PreviousIMUParameters =
         PreviousFrame->NavigationState;
 
-    Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
-    Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
+    Problem.AddParameterBlock(IMUParameters.Velocity.data(),          3);
+    Problem.AddParameterBlock(IMUParameters.GyroBias.data(),          3);
     Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
 
-    Problem.AddParameterBlock(
-            PreviousCameraParameters.Quaternion.coeffs().data(), 4);
-    Problem.SetManifold(
-            PreviousCameraParameters.Quaternion.coeffs().data(),
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(IMUParameters.Velocity.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.GyroBias.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
+
+    Problem.AddParameterBlock( PreviousCameraParameters.Quaternion.coeffs().data(), 4);
+    Problem.SetManifold( PreviousCameraParameters.Quaternion.coeffs().data(),
             new ceres::EigenQuaternionManifold());
-    Problem.AddParameterBlock(
-            PreviousCameraParameters.tParametrization.data(), 3);
+
+    Problem.AddParameterBlock( PreviousCameraParameters.tParametrization.data(), 3);
+
+
     Problem.AddParameterBlock(PreviousIMUParameters.Velocity.data(), 3);
     Problem.AddParameterBlock(PreviousIMUParameters.GyroBias.data(), 3);
-    Problem.AddParameterBlock(
-            PreviousIMUParameters.AccelorometerBias.data(), 3);
+    Problem.AddParameterBlock( PreviousIMUParameters.AccelorometerBias.data(), 3);
+
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(PreviousCameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousCameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.Velocity.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.GyroBias.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
 
     Problem.SetParameterBlockConstant(
             PreviousCameraParameters.Quaternion.coeffs().data());
@@ -719,8 +786,7 @@ void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
         MapPointsByID.emplace(MapPoint.ID, &MapPoint);
     }
 
-    ceres::LossFunction* LossFunc =
-        new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+    ceres::LossFunction* LossFunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
 
     u64 NumAssociatedMapPoints = 0;
     for(typePantoImagePoint& ImagePoint : NewKeyFrame->Points.ImagePoints)
@@ -739,6 +805,10 @@ void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
 
         NumAssociatedMapPoints++;
         Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(MapPoint.Point.data(), CERES_3D_POINT_GROUP);
+        }
         Problem.SetParameterBlockConstant(MapPoint.Point.data());
 
         ceres::CostFunction* CostFunc = OP_ReprojectionError::Create(
@@ -782,7 +852,7 @@ void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
 }
 
 void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
-        ceres::Problem& Problem)
+        ceres::Problem& Problem, ceres::ParameterBlockOrdering& Ordering)
 {
     /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
      *Optimizing on manifolds seemingly has many benefits, one of them is that
@@ -793,8 +863,8 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
     */
 
     std::unordered_map<u64, typeKeyFrame*> KeyFramesByID;
-    KeyFramesByID.reserve(
-            LocalMap.KeyFrames.size() + LocalMap.FixedKeyFrames.size());
+    KeyFramesByID.reserve( LocalMap.KeyFrames.size() + LocalMap.FixedKeyFrames.size());
+
     for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
     {
         KeyFramesByID.emplace(KeyFrame.ID, &KeyFrame);
@@ -812,6 +882,7 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
     }
 
     std::unordered_set<u64> FixedKeyFrameIDs;
+
 #if defined(CONFIG_IMU)
     const Eigen::Vector3d Grav = *IMU_GetGravity();
 #endif
@@ -828,11 +899,24 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
 
         Problem.AddParameterBlock(Camera.tParametrization.data(), 3);
 
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(Camera.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(Camera.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        }
+
 #if defined(CONFIG_IMU)
         typeNavigationState& Nav = KeyFrame.NavigationState;
         Problem.AddParameterBlock(Nav.Velocity.data(), 3);
         Problem.AddParameterBlock(Nav.GyroBias.data(), 3);
         Problem.AddParameterBlock(Nav.AccelorometerBias.data(), 3);
+
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(Nav.Velocity.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(Nav.GyroBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(Nav.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        }
 #endif
     }
 
@@ -864,9 +948,19 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
     Problem.SetManifold(Anchor.Camera.Pose.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
     Problem.AddParameterBlock(Anchor.Camera.Pose.tParametrization.data(), 3);
 
+
     Problem.AddParameterBlock(LocalMap.IMUAnchor.Velocity.data(), 3);
     Problem.AddParameterBlock(LocalMap.IMUAnchor.GyroBias.data(), 3);
     Problem.AddParameterBlock(LocalMap.IMUAnchor.AccelorometerBias.data(), 3);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(Anchor.Camera.Pose.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(Anchor.Camera.Pose.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(LocalMap.IMUAnchor.Velocity.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(LocalMap.IMUAnchor.GyroBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(LocalMap.IMUAnchor.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
 
     Problem.SetParameterBlockConstant(Anchor.Camera.Pose.Quaternion.coeffs().data());
     Problem.SetParameterBlockConstant(Anchor.Camera.Pose.tParametrization.data());
@@ -893,6 +987,12 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
         Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
         Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
 
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        }
+
         Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
         Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
 
@@ -916,6 +1016,13 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
 
             Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
             Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
+
+            if(CERES_EXPLICIT_ORDERING)
+            {
+                Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+                Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            }
+
             FixedKeyFrameIDs.insert(KeyFrame.ID);
 
             if(FixedKeyFrameIDs.size() == 2)
@@ -935,9 +1042,14 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
             continue;
         }
 
-        Problem.AddParameterBlock( MapPoint.Point.data(), 4);
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
         Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
         LocalMapPointIDs.insert(MapPoint.ID);
+
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(MapPoint.Point.data(), CERES_3D_POINT_GROUP);
+        }
     }
 
     ceres::LossFunction* lossfunc = new ceres::HuberLoss( CERES_HUBER_THRESHOLD);

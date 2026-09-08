@@ -1,2 +1,3 @@
 -   (DONE) Implement multithreading, so two threads, tracking and local mapping, local mapping:
+-   Optimize opencv akaze implementation.
 -   Cool demo with stereo camera
