@@ -26,6 +26,7 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <stdio.h>
+#include <unordered_set>
 #include <utility>
 
 typedef struct
@@ -67,7 +68,7 @@ struct typeTimingStatistics
 typedef struct
 {
     typeLocalMap LocalMap;
-    typePantoVector<u64> RecentMapPointIndexes;
+    std::unordered_set<u64> RecentMapPointIndexes;
 
     typeKeyFrameQueue *KeyFrameQueue;
     typeGlobalMap *GlobalMap;
@@ -78,7 +79,7 @@ typedef struct
 typedef struct {
     typeGlobalMap *GlobalMap;
     typeCovisibilityGraph *CovisibilityGraph;
-    typePantoVector<u64> *RecentMapPointIndexes;
+    std::unordered_set<u64> *RecentMapPointIndexes;
     const DBoW3::Vocabulary *Vocabulary;
     typeKeyFrameQueue *KeyFrameQueue;
     typePreviousFrameData PreviousFrameData;

@@ -168,13 +168,13 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeLocalMapTracking& LocalMap,
 void MAP_CullLocalMap(typeGlobalMap* GlobalMap,
         typeCovisibilityGraph* CovisibilityGraph,
         const u64 CurrentFrameID);
-void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes,
+void MAP_CullRecentMapPoints(std::unordered_set<u64>& RecentMapPointIndexes,
         typeGlobalMap* GlobalMap, typeCovisibilityGraph* CovisibilityGraph);
 void MAP_CullObservationEdges(typeGlobalMap* GlobalMap, typeCovisibilityGraph* CovisibilityGraph);
 
 std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& NewKeyFrame, typeCovisibilityGraph* CovisibilityGraph,
         const u64 LatestKeyFrameID);
-std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& NewKeyFrame);
+std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGraph* CovisibilityGraph, typeKeyFrame& NewKeyFrame);
 void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap);
 void MAP_LogKeyFrameProjectionError(const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints);
 void MAP_LogGlobalMapProjectionErrors(const typeGlobalMap& GlobalMap);

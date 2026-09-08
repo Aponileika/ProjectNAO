@@ -34,7 +34,9 @@ void GRAPH_UpdateCovisibility( typeCovisibilityGraph* CovisibilityGraph, const t
 void GRAPH_CullKeyFrame(typeCovisibilityGraph* CovisibilityGraph, u64 KeyFrameID);
 void GRAPH_DecrementAll(typeCovisibilityGraph* CovisibilityGraph, const typePantoVector<u64>& Nodes);
 void GRAPH_DecrementAllOther(typeCovisibilityGraph* CovisibilityGraph, const typePantoVector<u64>& Nodes, const u64 DecrementIndex);
-void GRAPH_DecrementEdge( typeCovisibilityGraph* CovisibilityGraph,
+void GRAPH_DecrementEdge(typeCovisibilityGraph* CovisibilityGraph,
+        const u64 NodeA, const u64 NodeB);
+void GRAPH_IncrementEdge(typeCovisibilityGraph* CovisibilityGraph,
         const u64 NodeA, const u64 NodeB);
 void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph);
 

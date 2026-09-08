@@ -9,6 +9,7 @@
 #include "PT_PantoMapPoints.hpp"
 #include "PT_Types.hpp"
 #include "opencv2/flann.hpp"
+#include <MIT/src/INITPriv_InitializeSLAM.hpp>
 #include <limits>
 #include <unordered_map>
 
@@ -621,29 +622,22 @@ void MAP_CullLocalMap(typeGlobalMap* GlobalMap, typeCovisibilityGraph* Covisibil
             CulledKeyFrameIDs.size());
 }
 
-void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes,
+void MAP_CullRecentMapPoints(std::unordered_set<u64>& RecentMapPointIndexes,
         typeGlobalMap* GlobalMap, typeCovisibilityGraph* CovisibilityGraph)
 {
     LG_Log( LogSeverity::DBG, "[MAP_CullRecentMapPoints] Culling recent mappoints\n");
     std::vector<u64> RemoveRecentIndexes;
-    RemoveRecentIndexes.reserve(RecentMapPointIndexes.active_size());
+    RemoveRecentIndexes.reserve(RecentMapPointIndexes.size());
     std::vector<u64> MapPointRemovalIndexes;
-    MapPointRemovalIndexes.reserve(RecentMapPointIndexes.active_size());
+    MapPointRemovalIndexes.reserve(RecentMapPointIndexes.size());
 
     u64 NumRemoved = 0;
 
-    for(std::size_t i{}; i < RecentMapPointIndexes.size(); i++)
+    for(const u64 MapPointID : RecentMapPointIndexes)
     {
-        if(!RecentMapPointIndexes.contains(i))
-        {
-            continue;
-        }
-
-        const u64 MapPointID = RecentMapPointIndexes[i];
-
         if(!GlobalMap->MapPoints.contains(MapPointID))
         {
-            RemoveRecentIndexes.push_back(i);
+            RemoveRecentIndexes.push_back(MapPointID);
             continue;
         }
 
@@ -652,7 +646,7 @@ void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes,
         const u64 NumObservations = static_cast<u64>(MapPoint.KeyFrameIDs.active_size());
         if(PT_GetFoundRatio(MapPoint) < PANTO_MIN_FOUND_RATIO)
         {
-            RemoveRecentIndexes.push_back(i);
+            RemoveRecentIndexes.push_back(MapPointID);
             MapPointRemovalIndexes.push_back(MapPointID);
             NumRemoved++;
             MappingData.RecentMapPointsCulled++;
@@ -660,7 +654,7 @@ void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes,
         }
         else if(Age >= 2 && NumObservations <= 2)
         {
-            RemoveRecentIndexes.push_back(i);
+            RemoveRecentIndexes.push_back(MapPointID);
             MapPointRemovalIndexes.push_back(MapPointID);
             NumRemoved++;
             MappingData.RecentMapPointsCulled++;
@@ -668,13 +662,13 @@ void MAP_CullRecentMapPoints(typePantoVector<u64>& RecentMapPointIndexes,
         }
         else if(Age >= 3)
         {
-            RemoveRecentIndexes.push_back(i);
+            RemoveRecentIndexes.push_back(MapPointID);
         }
     }
 
     for(const u64 Index : RemoveRecentIndexes)
     {
-        RecentMapPointIndexes.remove(Index);
+        RecentMapPointIndexes.erase(Index);
     }
 
     for(const u64 Index : MapPointRemovalIndexes)
@@ -1011,6 +1005,7 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
         std::vector<typeCovisibility> Top20SecondOrderNeighbours = GRAPH_GetTopNCovisibleFrames(*CovisibilityGraph, KeyFrameID, 20);
         EligibleNeighbours.insert(EligibleNeighbours.end(), Top20SecondOrderNeighbours.begin(), Top20SecondOrderNeighbours.end());
         NumberOfCandidates += static_cast<u64>(Top20SecondOrderNeighbours.size());
+        i++;
     }
 
     std::vector<typePantoMapPoint> LatestFrameMapPoints;
@@ -1024,9 +1019,57 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
         }
     }
 
+    // Contains the indexes of mappoints absorbed into a different mappoint
+    std::vector<u64> FusedMapPoints;
+    FusedMapPoints.reserve(LatestFrameMapPoints.size());
+    std::unordered_set<u64> FusedMapPointIDs;
+
+    const auto HasObservation = [](const typePantoMapPoint& MapPoint,
+            const u64 KeyFrameID)
+    {
+        for(const u64 ObservingKeyFrameID : MapPoint.KeyFrameIDs)
+        {
+            if(ObservingKeyFrameID == KeyFrameID)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const auto RecalculateDescriptor = [GlobalMap](typePantoMapPoint& MapPoint)
+    {
+        std::vector<typeDescriptor> Descriptors;
+        Descriptors.reserve(MapPoint.KeyFrameIDs.active_size());
+        for(std::size_t ObservationIndex = 0;
+            ObservationIndex < MapPoint.KeyFrameIDs.size();
+            ObservationIndex++)
+        {
+            if(!MapPoint.KeyFrameIDs.contains(ObservationIndex))
+            {
+                continue;
+            }
+            const u64 KeyFrameID = MapPoint.KeyFrameIDs[ObservationIndex];
+            const u64 ImagePointID = MapPoint.ImagePointIDs[ObservationIndex];
+            Descriptors.push_back(GlobalMap->KeyFrames[KeyFrameID].
+                    Points.ImagePoints[ImagePointID].Descriptor);
+        }
+        if(!Descriptors.empty())
+        {
+            MapPoint.Descriptor = Descriptors.size() == 1
+                ? Descriptors.front()
+                : PT_CalculateNewDescriptor(Descriptors);
+        }
+    };
 
     for(const typePantoMapPoint& MapPoint : LatestFrameMapPoints)
     {
+        if(FusedMapPointIDs.contains(MapPoint.ID) ||
+           !GlobalMap->MapPoints.contains(MapPoint.ID))
+        {
+            continue;
+        }
+
         std::vector<typeDescriptor> Descriptors;
         Descriptors.reserve(MapPoint.ImagePointIDs.active_size() + 1);
         for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
@@ -1042,7 +1085,9 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
         for(const typeCovisibility& Neighbour : EligibleNeighbours)
         {
             typeKeyFrame& NeighbourKeyFrame = GlobalMap->KeyFrames[Neighbour.KeyFrameID];
-            if(MapPoint.KeyFrameIDs.contains(NeighbourKeyFrame.ID))
+            typePantoMapPoint& LiveMapPoint =
+                GlobalMap->MapPoints[MapPoint.ID];
+            if(HasObservation(LiveMapPoint, NeighbourKeyFrame.ID))
             {
                 // Already observed
                 continue;
@@ -1052,8 +1097,17 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
             Eigen::Vector2d ProjectedPoint;
             if(PROJ_Project(MapPoint.Point, ProjectedPoint, NeighbourPose))
             {
+                if(!ProjectedPoint.allFinite() ||
+                   ProjectedPoint.x() < 0.0 ||
+                   ProjectedPoint.y() < 0.0 ||
+                   ProjectedPoint.x() >= static_cast<fp64>(PANTO_IMAGE_WIDTH) ||
+                   ProjectedPoint.y() >= static_cast<fp64>(PANTO_IMAGE_HEIGHT))
+                {
+                    continue;
+                }
+
                 const u64 Truncatedx = static_cast<u64>(ProjectedPoint.x());
-                const u64 Truncatedy = static_cast<u64>(ProjectedPoint.x());
+                const u64 Truncatedy = static_cast<u64>(ProjectedPoint.y());
                 const u64 CellX = (Truncatedx) / PANTO_CELL_SIZE;
                 const u64 CellY = (Truncatedy) / PANTO_CELL_SIZE;
 
@@ -1083,15 +1137,91 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                     const u64 AssociatedMapPointID = ImagePoints[ClosestPointIndex].MapPointID;
                     if(AssociatedMapPointID != PANTO_ID_NOT_SET)
                     {
+                        if(AssociatedMapPointID == MapPoint.ID ||
+                           !GlobalMap->MapPoints.contains(AssociatedMapPointID))
+                        {
+                            continue;
+                        }
+
                         const u64 NumVisibleLatest = static_cast<u64>(MapPoint.KeyFrameIDs.active_size());
                         const u64 NumVisibleHistoric = static_cast<u64>(GlobalMap->MapPoints[AssociatedMapPointID].KeyFrameIDs.active_size());
                         if(NumVisibleLatest > NumVisibleHistoric)
                         {
                             // Fuse historic into latest
+                            typePantoMapPoint& MapPointMutable = GlobalMap->MapPoints[MapPoint.ID];
+                            const typePantoMapPoint& HistoricMapPoint = GlobalMap->MapPoints[AssociatedMapPointID];
+                            GRAPH_DecrementAll(CovisibilityGraph,
+                                    HistoricMapPoint.KeyFrameIDs);
+                            for(std::size_t i{}; i < HistoricMapPoint.KeyFrameIDs.size(); i++)
+                            {
+                                if(HistoricMapPoint.KeyFrameIDs.contains(i))
+                                {
+                                    assert(HistoricMapPoint.ImagePointIDs.contains(i));
+                                    const u64 KeyFrameID = HistoricMapPoint.KeyFrameIDs[i];
+                                    const u64 ImagePointID = HistoricMapPoint.ImagePointIDs[i];
+                                    if(HasObservation(MapPointMutable, KeyFrameID))
+                                    {
+                                        GlobalMap->KeyFrames[KeyFrameID].Points.
+                                            ImagePoints[ImagePointID].MapPointID =
+                                            PANTO_ID_NOT_SET;
+                                        continue;
+                                    }
+                                    for(const u64 ExistingKeyFrameID :
+                                            MapPointMutable.KeyFrameIDs)
+                                    {
+                                        GRAPH_IncrementEdge(CovisibilityGraph,
+                                                ExistingKeyFrameID,
+                                                KeyFrameID);
+                                    }
+                                    MapPointMutable.KeyFrameIDs.push_back(KeyFrameID);
+                                    MapPointMutable.ImagePointIDs.push_back(ImagePointID);
+                                    GlobalMap->KeyFrames[KeyFrameID].Points.ImagePoints[ImagePointID].MapPointID = MapPointMutable.ID;
+                                }
+                            }
+                            if(FusedMapPointIDs.insert(HistoricMapPoint.ID).second)
+                            {
+                                FusedMapPoints.push_back(HistoricMapPoint.ID);
+                            }
+                            RecalculateDescriptor(MapPointMutable);
                         }
                         else
                         {
                             // Fuse latest into historic 
+                            const typePantoMapPoint& MapPointNonMutable = GlobalMap->MapPoints[MapPoint.ID];
+                            typePantoMapPoint& HistoricMapPoint = GlobalMap->MapPoints[AssociatedMapPointID];
+                            GRAPH_DecrementAll(CovisibilityGraph,
+                                    MapPointNonMutable.KeyFrameIDs);
+                            for(std::size_t i{}; i < MapPointNonMutable.KeyFrameIDs.size(); i++)
+                            {
+                                if(MapPointNonMutable.KeyFrameIDs.contains(i))
+                                {
+                                    assert(MapPointNonMutable.ImagePointIDs.contains(i));
+                                    const u64 KeyFrameID = MapPointNonMutable.KeyFrameIDs[i];
+                                    const u64 ImagePointID = MapPointNonMutable.ImagePointIDs[i];
+                                    if(HasObservation(HistoricMapPoint, KeyFrameID))
+                                    {
+                                        GlobalMap->KeyFrames[KeyFrameID].Points.
+                                            ImagePoints[ImagePointID].MapPointID =
+                                            PANTO_ID_NOT_SET;
+                                        continue;
+                                    }
+                                    for(const u64 ExistingKeyFrameID :
+                                            HistoricMapPoint.KeyFrameIDs)
+                                    {
+                                        GRAPH_IncrementEdge(CovisibilityGraph,
+                                                ExistingKeyFrameID,
+                                                KeyFrameID);
+                                    }
+                                    HistoricMapPoint.KeyFrameIDs.push_back(KeyFrameID);
+                                    HistoricMapPoint.ImagePointIDs.push_back(ImagePointID);
+                                    GlobalMap->KeyFrames[KeyFrameID].Points.ImagePoints[ImagePointID].MapPointID = HistoricMapPoint.ID;
+                                }
+                            }
+                            if(FusedMapPointIDs.insert(MapPointNonMutable.ID).second)
+                            {
+                                FusedMapPoints.push_back(MapPointNonMutable.ID);
+                            }
+                            RecalculateDescriptor(HistoricMapPoint);
                         }
                     }
                     else
@@ -1099,16 +1229,33 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                         Descriptors.push_back(ClosestDescriptor);
                         typePantoMapPoint& MapPointMutable = GlobalMap->MapPoints[MapPoint.ID];
                         MapPointMutable.Descriptor = PT_CalculateNewDescriptor(Descriptors);
+                        for(const u64 ExistingKeyFrameID :
+                                MapPointMutable.KeyFrameIDs)
+                        {
+                            GRAPH_IncrementEdge(CovisibilityGraph,
+                                    ExistingKeyFrameID,
+                                    NeighbourKeyFrame.ID);
+                        }
                         MapPointMutable.KeyFrameIDs.push_back(NeighbourKeyFrame.ID);
                         MapPointMutable.ImagePointIDs.push_back(ClosestPointIndex);
                         MapPointMutable.NumFound++;
                         MapPointMutable.NumVisible++;
+                        NeighbourKeyFrame.Points.ImagePoints[ClosestPointIndex].MapPointID = MapPointMutable.ID;
                     }
                     break;
                 }
             }
         }
     }
+
+    for(const u64 FusedMapPointID : FusedMapPoints)
+    {
+        if(GlobalMap->MapPoints.contains(FusedMapPointID))
+        {
+            GlobalMap->MapPoints.remove(FusedMapPointID);
+        }
+    }
+    return FusedMapPoints;
 }
 
 void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap)

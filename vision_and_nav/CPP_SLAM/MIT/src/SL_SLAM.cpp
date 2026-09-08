@@ -11,6 +11,7 @@
 #include <cmath>
 #include <functional>
 #include <thread>
+#include <unordered_set>
 
 typeSLAM PantoSLAM;
 
@@ -517,7 +518,7 @@ void SLPriv_ResetMapAndTracking(void)
 
     PantoSLAM.GlobalMap = new typeGlobalMap();
     PantoSLAM.CovisibilityGraph = new typeCovisibilityGraph();
-    PantoSLAM.RecentMapPointIndexes = new typePantoVector<u64>;
+    PantoSLAM.RecentMapPointIndexes = new std::unordered_set<u64>;
     PantoSLAM.KeyFrameQueue = new typeKeyFrameQueue();
 
     PantoSLAM.TrackingTrajectory = std::vector<Eigen::Vector3d>{};
@@ -792,7 +793,7 @@ void SLPriv_InitializeMap(void)
         PantoSLAM.RecentMapPointIndexes->reserve(PantoSLAM.GlobalMap->MapPoints.size());
         for(const typePantoMapPoint& MapPoint : PantoSLAM.GlobalMap->MapPoints)
         {
-            PantoSLAM.RecentMapPointIndexes->push_back(MapPoint.ID);
+            PantoSLAM.RecentMapPointIndexes->insert(MapPoint.ID);
         }
 
         typeKeyFrame ThirdKeyFrame = KEY_GetThirdKeyFrame(PantoSLAM.GlobalMap->KeyFrames.back(), PantoSLAM.GlobalMap->MapPoints);
@@ -1834,6 +1835,7 @@ enum class typeLocalMappingTimingStage : std::size_t
     AddCovisibilityKeyFrame,
     CullRecentMapPoints,
     CreateNewMapPoints,
+    FuseMapPoints,
     CreateLocalMap,
     BundleAdjustLocal,
     CommitLocalMap,
@@ -1860,6 +1862,7 @@ LocalMappingTimingNames =
     "add covisibility keyframe",
     "cull recent map points",
     "create new map points",
+    "fuse mappoints",
     "create local map snapshot",
     "local bundle adjustment",
     "commit local map",
@@ -1927,6 +1930,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                 Statistics(typeLocalMappingTimingStage::IterationTotal));
         u64 ID = PANTO_ID_NOT_SET;
         std::vector<u64> NewPointIndexes;
+        std::vector<u64> FusedPointIndexes;
         {
             typeLocalMappingScopedTimer TransactionTimer(
                     Statistics( typeLocalMappingTimingStage::TopologyTransaction));
@@ -2040,6 +2044,13 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                         ID);
             }
 
+            {
+                typeLocalMappingScopedTimer Timer(
+                         Statistics(typeLocalMappingTimingStage::
+                            FuseMapPoints));
+                FusedPointIndexes = MAP_FuseMapPoints(LocalMap.GlobalMap, LocalMap.CovisibilityGraph, CurrentKeyFrame);
+            }
+
 #if defined(DEBUG)
             MAP_AssertGraphEqual(
                     *LocalMap.GlobalMap,
@@ -2057,13 +2068,17 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
 
             for(const u64 MapPointID : NewPointIndexes)
             {
-                LocalMap.RecentMapPointIndexes.push_back(MapPointID);
+                LocalMap.RecentMapPointIndexes.insert(MapPointID);
+            }
+            for(const u64 MapPointID : FusedPointIndexes)
+            {
+                LocalMap.RecentMapPointIndexes.erase(MapPointID);
             }
         }
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Created %llu new map points\n", static_cast<u64>(NewPointIndexes.size()));
-
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Running local bundle adjustment\n");
+
         bool LocalBACompleted = false;
         {
             typeLocalMappingScopedTimer Timer(

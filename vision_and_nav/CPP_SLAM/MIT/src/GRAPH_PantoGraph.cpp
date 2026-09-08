@@ -337,6 +337,23 @@ void GRAPH_DecrementEdge( typeCovisibilityGraph* CovisibilityGraph,
     }
 }
 
+void GRAPH_IncrementEdge( typeCovisibilityGraph* CovisibilityGraph,
+        const u64 NodeA, const u64 NodeB)
+{
+    assert(NodeA != NodeB);
+
+    assert(CovisibilityGraph->CovisibilityGraph.contains(NodeA));
+    assert(CovisibilityGraph->CovisibilityGraph.contains(NodeB));
+
+    u64* CovisibilityAB = &CovisibilityGraph->CovisibilityGraph[NodeA][NodeB];
+    u64* CovisibilityBA = &CovisibilityGraph->CovisibilityGraph[NodeB][NodeA];
+
+    assert(*CovisibilityAB == *CovisibilityBA);
+
+    (*CovisibilityAB)++;
+    (*CovisibilityBA)++;
+}
+
 void GRAPH_Log(const typeCovisibilityGraph& CovisibilityGraph)
 {
     LG_Log(

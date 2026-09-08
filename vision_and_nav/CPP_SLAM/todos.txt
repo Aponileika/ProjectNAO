@@ -63,21 +63,15 @@ make viser not exit
 
     - (DONE) Add min num of 3d points for reconstruction.
 
-    - (NOT DONE IGNORE FOR NOW) Robustify, what happens if no map associations are found from the last frame?
-
-    From here it is stalled, current work focuses on IMU
-
     - (STALLED) Optimize KeyGetKeyFrame, investigate what is taking time, getting descriptors -> detect and compute? anything else? Probably alter
       opencv AKAZE code so nonlinear scale space is not thrown away. So make a "custom" version that just caches the nonlinear scale space,
       like detect and compute does, easy, just add a local private variable in AKAZE_impl that stores upyr and keeps track if it is current or not
       so if a detect -> compute has been called in order, upyr is saved for compute, when compute is called the upyr must be marked as invalid.
+    - M-LDB descriptor to TEBLID (remember to train a new vocabulary)? Optimize opencv akaze implementation. 
 
-    - Add DATA for keyframe inference, probably remove velocity change -> feature distribution, why would we want to insert an image
-      with high acceleration, it should be more likely to be blurry, it should really be the inverse, so stable velocity should make keyframe insertion
-      more likely, maybe it should be more of a weight rather than a fuzzy parameter.
+    - Add scale information to descriptor usage, this is a major flaw currently, kind of a big change.
 
-    - Add better data logs for localmapping, how many anchors, mow many frames are selected for the local map? Do the same
-      for the tracking local map, how many frames?
+    - Actually implement a robust fuzzy keyframe decision maker.
 
     - Clean up the code a bit, right now it is a bit ugly, things are passed everywhere, work with pointers to objects or something like that,
       right now it is very messy to add anything to the code, probably change from ID -> pointer, but again not sure about this point, but the 
