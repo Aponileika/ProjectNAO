@@ -1,6 +1,7 @@
 #include "MAP_Mapping.hpp"
 #include "Config.hpp"
 #include "GRAPH_PantoGraph.hpp"
+#include "IMU_IMUReader.hpp"
 #include "MAPPriv_Mapping.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 #include "PT_Types.hpp"
@@ -20,10 +21,13 @@ typeMappingData MappingData =
 };
 
 void MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNavigationState& SecondNavState,
-        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame, typeGlobalMap* GlobalMap)
+        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame, const std::vector<typeIMUMeasurement>& IMUMeasurementsFrame1to2, typeGlobalMap* GlobalMap)
 {
     typeKeyFrame FirstKF = KEY_CreateKeyFrame(FirstNavState, FirstFrame, 0);
     typeKeyFrame SecondKF = KEY_CreateKeyFrame(SecondNavState, SecondFrame, 1);
+
+    FirstKF.Measurements = {};
+    SecondKF.Measurements = IMUMeasurementsFrame1to2;
 
     const std::vector<typePantoMapPoint>& MapPoints = KEY_InsertNewMapPoints(FirstKF, SecondKF, GlobalMap->Age);
 
@@ -526,6 +530,9 @@ void MAP_CullLocalMap(typeGlobalMap* GlobalMap, typeCovisibilityGraph* Covisibil
     for(const u64 CulledID : CulledKeyFrameIDs)
     {
         typeKeyFrame& KeyFrame = GlobalMap->KeyFrames[CulledID];
+        typeKeyFrame& PreviousKeyFrame = GlobalMap->KeyFrames[KeyFrame.PreviousKFID];
+        typeKeyFrame& NextKeyFrame = GlobalMap->KeyFrames[KeyFrame.NextKFID];
+        KEY_ReIntegrate(PreviousKeyFrame, NextKeyFrame, KeyFrame.Measurements);
         for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
             const u64 MapPointID = ImagePoint.MapPointID;

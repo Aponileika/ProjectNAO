@@ -45,6 +45,7 @@ struct typeKeyFrame
     typeNavigationState NavigationState;
     typePreIntegrationData PreIntegrationData;
     u64 PreviousKFID = PANTO_ID_NOT_SET;
+    u64 NextKFID = PANTO_ID_NOT_SET;
     // Complete state of the inertial reference keyframe in the map snapshot
     // used by tracking. Before an asynchronously queued reference has a map
     // ID, TrackingReferenceMappingGeneration identifies it instead.
@@ -56,6 +57,7 @@ struct typeKeyFrame
     typePreIntegrationData TrackingReferencePreIntegrationData;
     u64 TrackingReferenceMappingGeneration = PANTO_ID_NOT_SET;
     bool HasTrackingReferenceState = false;
+    std::vector<typeIMUMeasurement> Measurements;
 #endif
     // Queue generation assigned when this tracking frame is submitted to
     // local mapping. It lets tracking recognize the optimized global copy
@@ -65,16 +67,15 @@ struct typeKeyFrame
     std::string ImagePath;
 };
 
-typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame,
-        const u64 ID);
+typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame, const u64 ID);
 typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints);
+
 #if !defined(CONFIG_IMU)
-typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose,
-        std::vector<typePantoMapPoint>& LastFrameMapPoints);
+typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMapPoint>& LastFrameMapPoints);
 #else
-typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
-        std::vector<typePantoMapPoint>& LastFrameMapPoints);
+typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState, std::vector<typePantoMapPoint>& LastFrameMapPoints);
 #endif
+
 void KEY_LogGetKeyFrameTimingStatistics(void);
 void KEY_LogIsKeyFrameStatistics(void);
 void KEY_Reset(void);
@@ -85,8 +86,9 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
 void KEY_NonValidKeyFrame(void);
 fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<typePantoMapPoint>& LocalMapPoints);
 #if defined(CONFIG_IMU)
-void KEY_IntegrationStep(void);
+typeIMUMeasurement KEY_IntegrationStep();
 typeNavigationState KEY_PredictPose(typeKeyFrame& PreviousKeyFrame);
+void KEY_ReIntegrate(typeKeyFrame& PreviousKeyFrame, typeKeyFrame& NextKeyFrame, const std::vector<typeIMUMeasurement>& MeasurementsFromPreviousToRemoved);
 
 // Assumes that the optimized camera pose is correct. Velocity and biases are
 // intentionally left unchanged until visual-inertial optimization is added.

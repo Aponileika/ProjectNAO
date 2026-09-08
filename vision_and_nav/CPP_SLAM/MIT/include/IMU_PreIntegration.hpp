@@ -107,6 +107,22 @@ class typePreIntegration : public typePreIntegrationData
             Covariance = {};
         }
 
+        typePreIntegration(const Eigen::Vector3d& GyrometerBias, const Eigen::Vector3d& AccelerationBias)
+        {
+            DeltaR = Eigen::Matrix3d::Identity();
+            DeltaVelocity = {};
+            DeltaPosition = {};
+            DeltaT = 0.0;
+            GyroBias = GyrometerBias;
+            AccelBias = AccelerationBias;
+            InitialNavigationState = {};
+            PreviousMeasurement = {};
+            HasPreviousMeasurement = false;
+
+            Qc = {};
+            Covariance = {};
+        }
+
         void Reset(const typeNavigationState& NavigationState)
         {
             DeltaR.setIdentity();

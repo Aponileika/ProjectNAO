@@ -144,8 +144,9 @@ class typeKeyFrameQueue
     private:
 };
 
-void MAP_InitializeFromGT(const typeNavigationState& First, const typeNavigationState& Second,
-        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame, typeGlobalMap* GlobalMap);
+void MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNavigationState& SecondNavState,
+        const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame, 
+        const std::vector<typeIMUMeasurement>& IMUMeasurementsFrame1to2, typeGlobalMap* GlobalMap);
 // MAP_AppendKeyFrame, MAP_CullLocalMap, MAP_CullRecentMapPoints,
 // MAP_CullObservationEdges, and MAP_CreateNewMapPoints do not lock internally.
 // During multithreaded operation their caller must hold the global-map mutex

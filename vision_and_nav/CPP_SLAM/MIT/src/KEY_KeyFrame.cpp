@@ -1,4 +1,6 @@
 #include "KEY_Keyframe.hpp"
+#include "IMU_IMUReader.hpp"
+#include "IMU_PreIntegration.hpp"
 #include "KEY_KeyFramePriv.hpp"
 
 struct typeKeyFrameTimingStatistics
@@ -1234,10 +1236,11 @@ fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<
 }
 
 #if defined(CONFIG_IMU)
-void KEY_IntegrationStep()
+typeIMUMeasurement KEY_IntegrationStep()
 {
     typeIMUMeasurement Measurement = IMU_GetMeasurement();
     IMU_IngegrationStep(Measurement);
+    return Measurement;
 }
 
 typeNavigationState KEY_PredictPose(typeKeyFrame& PreviousKeyFrame)
@@ -1246,9 +1249,6 @@ typeNavigationState KEY_PredictPose(typeKeyFrame& PreviousKeyFrame)
     return IMU_PredictNavigationState(PreviousKeyFrame.NavigationState, PreIntegrationData);
 }
 
-#endif
-
-#if defined(CONFIG_IMU)
 void KEY_UpdateNavState(typeKeyFrame* KeyFrame)
 {
     const Eigen::Matrix4d& TBS = KeyFrame->Camera.Intrinsics->T_BS;
@@ -1271,7 +1271,25 @@ void KEY_UpdateNavState(typeKeyFrame* KeyFrame)
     NavigationState.q = Eigen::Quaterniond(NavigationState.Rwb).normalized();
     NavigationState.t = NavigationState.Position;
 }
-#endif
+
+void KEY_ReIntegrate(typeKeyFrame& PreviousKeyFrame, typeKeyFrame& NextKeyFrame, const std::vector<typeIMUMeasurement>& MeasurementsFromPreviousToRemoved)
+{
+    typePreIntegration NewIntegrationDataForNext(NextKeyFrame.PreIntegrationData.GyroBias, NextKeyFrame.PreIntegrationData.AccelBias);
+
+    std::vector<typeIMUMeasurement> AllIMUMeasurements;
+    AllIMUMeasurements.insert(AllIMUMeasurements.end(), MeasurementsFromPreviousToRemoved.begin(),
+                MeasurementsFromPreviousToRemoved.end());
+
+    AllIMUMeasurements.insert(AllIMUMeasurements.end(), NextKeyFrame.Measurements.begin(),
+                NextKeyFrame.Measurements.end());
+
+    // Loop through all and integrate. with 
+// static void IMUPriv_IntegrationStep(const typeIMUMeasurement& Current, typePreIntegration& PreIntegrationState)
+
+}
+
+#endif // CONFIG_IMU
+
 
 void KEYPriv_SolveBootStrapData(void)
 {

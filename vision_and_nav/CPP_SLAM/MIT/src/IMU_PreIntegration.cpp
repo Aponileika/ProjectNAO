@@ -85,8 +85,7 @@ Eigen::Vector3d* IMU_GetGravity(void)
     return &g;
 }
 
-static void IMUPriv_IntegrationStep(const typeIMUMeasurement& Current,
-        typePreIntegration& PreIntegrationState)
+static void IMUPriv_IntegrationStep(const typeIMUMeasurement& Current, typePreIntegration& PreIntegrationState)
 {
     if(!PreIntegrationState.HasPreviousMeasurement)
     {

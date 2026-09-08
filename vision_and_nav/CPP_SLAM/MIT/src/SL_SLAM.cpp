@@ -1,6 +1,7 @@
 #include "../include/SL_SLAM.hpp"
 #include "Config.hpp"
 #include "GRAPH_PantoGraph.hpp"
+#include "IMU_IMUReader.hpp"
 #include "IMU_PreIntegration.hpp"
 #include "KEY_Keyframe.hpp"
 #include "MAP_Mapping.hpp"
@@ -49,8 +50,8 @@ enum class typeTrackingTimingStage : std::size_t
     Count
 };
 
-static constexpr std::array<const char*,
-    static_cast<std::size_t>(typeTrackingTimingStage::Count)>
+static constexpr std::array<const char*, static_cast<std::size_t>(typeTrackingTimingStage::Count)>
+
 TrackingTimingNames =
 {
     "tracking/frame queue peek",
@@ -301,6 +302,7 @@ static void SLPriv_ReconstructFrameFromReferenceKF(typeKeyFrame& Frame,
 }
 
 static bool SLPriv_IntegrateIMUUntil(const fp64 TimeStamp,
+        std::vector<typeIMUMeasurement>& IMUMeasurements,
         typeIMUMeasurement* LastMeasurement = nullptr,
         typePreIntegration* KeyFramePreIntegration = nullptr)
 {
@@ -361,8 +363,7 @@ static bool SLPriv_IntegrateIMUUntil(const fp64 TimeStamp,
                 return false;
             }
 
-            const fp64 Alpha =
-                (TimeStamp - LastIntegratedMeasurement.TimeStamp) / Interval;
+            const fp64 Alpha = (TimeStamp - LastIntegratedMeasurement.TimeStamp) / Interval;
             typeIMUMeasurement InterpolatedMeasurement
             {
                 .TimeStamp = TimeStamp,
@@ -375,10 +376,11 @@ static bool SLPriv_IntegrateIMUUntil(const fp64 TimeStamp,
             };
 
             IMU_IngegrationStep(InterpolatedMeasurement);
+            IMUMeasurements.push_back(InterpolatedMeasurement);
+
             if(KeyFramePreIntegration != nullptr)
             {
-                IMU_IngegrationStep(
-                        InterpolatedMeasurement,
+                IMU_IngegrationStep(InterpolatedMeasurement,
                         *KeyFramePreIntegration);
             }
 
@@ -394,6 +396,8 @@ static bool SLPriv_IntegrateIMUUntil(const fp64 TimeStamp,
         }
 
         IMU_IngegrationStep(Measurement);
+        IMUMeasurements.push_back(Measurement);
+
         if(KeyFramePreIntegration != nullptr)
         {
             IMU_IngegrationStep(Measurement, *KeyFramePreIntegration);
@@ -441,7 +445,7 @@ static Eigen::Vector3d SLPriv_GetGroundTruthAcceleration( const std::size_t Grou
 #endif
 
 static bool SLPriv_GetNextGroundTruthFrame(typePantoFrame& Frame, typeGroundTruth& Measurement, std::size_t& GroundTruthIndex,
-        const fp64 MinimumTimeStamp, const bool IntegrateIMU)
+        const fp64 MinimumTimeStamp, const bool IntegrateIMU, std::vector<typeIMUMeasurement>& IMUMeasurements)
 {
     constexpr fp64 TimeStampTolerance = 1e-6;
 
@@ -457,7 +461,7 @@ static bool SLPriv_GetNextGroundTruthFrame(typePantoFrame& Frame, typeGroundTrut
         {
             const fp64 NextFrameTimeStamp = FR_PeekNextFrameTimeStamp();
 
-            if(!SLPriv_IntegrateIMUUntil(NextFrameTimeStamp))
+            if(!SLPriv_IntegrateIMUUntil(NextFrameTimeStamp, IMUMeasurements))
             {
                 return false;
             }
@@ -537,6 +541,7 @@ void SLPriv_ResetMapAndTracking(void)
 
 void SLPriv_InitializeMap(void)
 {
+
     if(PANTO_GROUNDTRUTH_INIT)
     {
         if(GroundTruth.empty())
@@ -554,13 +559,15 @@ void SLPriv_InitializeMap(void)
         std::size_t GroundTruthIndex = 0;
         typePantoFrame FirstFrame{};
         typeGroundTruth FirstGT{};
+        std::vector<typeIMUMeasurement> IMUMeasurements;
 
         if(!SLPriv_GetNextGroundTruthFrame(
                     FirstFrame,
                     FirstGT,
                     GroundTruthIndex,
                     GroundTruth.front().TimeStamp,
-                    false))
+                    false,
+                    IMUMeasurements))
         {
             LG_Log(LogSeverity::ERROR,
                     "[SLPriv_InitializeMap] Could not find a first frame with a matching ground-truth timestamp\n");
@@ -578,11 +585,11 @@ void SLPriv_InitializeMap(void)
         // Advance the IMU reader to the first image and then make the first
         // ground-truth state the actual start of preintegration.
         IMU_NewNavigationStateArrival(First);
+        std::vector<typeIMUMeasurement> IMUMeasurements2;
 
         typeIMUMeasurement FirstIMUMeasurement{};
 
-        if(!SLPriv_IntegrateIMUUntil(
-                    FirstFrame.TimeStamp, &FirstIMUMeasurement))
+        if(!SLPriv_IntegrateIMUUntil(FirstFrame.TimeStamp, IMUMeasurements2, &FirstIMUMeasurement))
         {
             LG_Log(LogSeverity::ERROR,
                     "[SLPriv_InitializeMap] Could not synchronize IMU data with the first ground-truth frame\n");
@@ -606,19 +613,19 @@ void SLPriv_InitializeMap(void)
         IMU_NewNavigationStateArrival(First);
 #endif
 
+        std::vector<typeIMUMeasurement> IMUMeasurementsFrame2;
         while(SLPriv_GetNextGroundTruthFrame(
                     SecondFrame, SecondGT, GroundTruthIndex,
                     FirstFrame.TimeStamp,
-                    true))
+                    true,
+                    IMUMeasurementsFrame2))
         {
             typeNavigationState Second(SecondGT.Orientation, SecondGT.Velocity,
                     SecondGT.Position, SecondGT.GyroBias, SecondGT.AccelBias);
 
 #if defined(CONFIG_IMU)
             typeIMUMeasurement SecondIMUMeasurement{};
-            if(!SLPriv_IntegrateIMUUntil(
-                        SecondFrame.TimeStamp,
-                        &SecondIMUMeasurement))
+            if(!SLPriv_IntegrateIMUUntil(SecondFrame.TimeStamp, IMUMeasurementsFrame2, &SecondIMUMeasurement))
             {
                 LG_Log(LogSeverity::ERROR,
                         "[SLPriv_InitializeMap] Could not retrieve the IMU measurement for GT candidate %.9f\n",
@@ -653,15 +660,15 @@ void SLPriv_InitializeMap(void)
                         Baseline,
                         PANTO_MIN_INITIALIZATION_BASELINE_METERS,
                         BodyBaseline);
+                IMUMeasurementsFrame2.clear();
                 continue;
             }
 
 #if defined(CONFIG_IMU)
-            const typePreIntegrationData FirstToSecondPreIntegration =
-                IMU_GetLatestPreIntegrationData();
+            const typePreIntegrationData FirstToSecondPreIntegration = IMU_GetLatestPreIntegrationData();
 #endif
 
-            MAP_InitializeFromGT(First, Second, FirstFrame, SecondFrame, PantoSLAM.GlobalMap);
+            MAP_InitializeFromGT(First, Second, FirstFrame, SecondFrame, IMUMeasurementsFrame2, PantoSLAM.GlobalMap);
 
 #if defined(CONFIG_IMU)
             PantoSLAM.GlobalMap->KeyFrames[0].PreviousKFID = PANTO_ID_NOT_SET;
@@ -994,8 +1001,7 @@ void SL_PantoSLAM(i32 num_loops)
 }
 
 void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
-        typePreIntegration& PreIntegrationBetweenKF,
-        bool& TrackingLost, i32& NumProcessedLoops)
+        typePreIntegration& PreIntegrationBetweenKF, bool& TrackingLost, i32& NumProcessedLoops)
 {
     std::array<typeTimingStatistics,
         static_cast<std::size_t>(typeTrackingTimingStage::Count)>
@@ -1006,10 +1012,15 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         return Timing[static_cast<std::size_t>(Stage)];
     };
 
+
     TrackingLost = false;
     NumProcessedLoops = 0;
 #if !defined(CONFIG_IMU)
     (void)PreIntegrationBetweenKF;
+#endif
+
+#if defined(CONFIG_IMU)
+    std::vector<typeIMUMeasurement> IMUMeasurementsBetweenKF;
 #endif
 
     LG_Log(LogSeverity::DATA,
@@ -1335,10 +1346,8 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         {
             typeTrackingScopedTimer Timer(
                     Statistics(typeTrackingTimingStage::IntegrateIMU));
-            IMUIntegrated = SLPriv_IntegrateIMUUntil(
-                    NextFrameTimeStamp,
-                    nullptr,
-                    &PreIntegrationBetweenKF);
+            IMUIntegrated = SLPriv_IntegrateIMUUntil(NextFrameTimeStamp, IMUMeasurementsBetweenKF
+                    nullptr, &PreIntegrationBetweenKF);
         }
         if(!IMUIntegrated)
         {
@@ -1349,8 +1358,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             typeTrackingScopedTimer Timer(
                     Statistics(typeTrackingTimingStage::PredictPose));
             TrackingData.PosePrediction.Pose =
-                KEY_PredictPose(
-                        TrackingData.PreviousFrameData.PreviousFrame);
+                KEY_PredictPose(TrackingData.PreviousFrameData.PreviousFrame);
         }
 #endif
 
@@ -1602,6 +1610,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 #if defined(CONFIG_IMU)
             // Let the local mapping thread get the KF <-> KF preintegration data.
             TrackingData.NewFrame.PreIntegrationData = PreIntegrationBetweenKF;
+            TrackingData.NewFrame.Measurements = IMUMeasurementsBetweenKF;
 #endif
             u64 QueuedGeneration = PANTO_ID_NOT_SET;
             {
@@ -2098,8 +2107,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
             }
 #if !defined(CONFIG_IMU)
             {
-                typeLocalMappingScopedTimer Timer(
-                        Statistics(typeLocalMappingTimingStage::CullLocalMap));
+                typeLocalMappingScopedTimer Timer(Statistics(typeLocalMappingTimingStage::CullLocalMap));
                 MAP_CullLocalMap(
                         LocalMap.GlobalMap,
                         LocalMap.CovisibilityGraph,
