@@ -292,12 +292,10 @@ static void SLPriv_ReconstructFrameFromReferenceKF(typeKeyFrame& Frame,
     }
 
     Frame.NavigationState = IMU_PredictNavigationState(
-            CurrentReference.NavigationState,
-            ReferenceToFramePreIntegration);
+            CurrentReference.NavigationState, ReferenceToFramePreIntegration);
     SLPriv_UpdateCameraFromNavigationState(Frame);
     Frame.TrackingReferencePose = CurrentReference.Camera.Pose;
-    Frame.TrackingReferenceNavigationState =
-        CurrentReference.NavigationState;
+    Frame.TrackingReferenceNavigationState = CurrentReference.NavigationState;
     Frame.HasTrackingReferenceState = true;
 }
 
@@ -672,7 +670,9 @@ void SLPriv_InitializeMap(void)
 
 #if defined(CONFIG_IMU)
             PantoSLAM.GlobalMap->KeyFrames[0].PreviousKFID = PANTO_ID_NOT_SET;
+            PantoSLAM.GlobalMap->KeyFrames[0].NextKFID = 1;
             PantoSLAM.GlobalMap->KeyFrames[1].PreviousKFID = 0;
+            PantoSLAM.GlobalMap->KeyFrames[1].NextKFID = PANTO_ID_NOT_SET;
             PantoSLAM.GlobalMap->KeyFrames[1].PreIntegrationData =
                 FirstToSecondPreIntegration;
 #endif
@@ -1346,7 +1346,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         {
             typeTrackingScopedTimer Timer(
                     Statistics(typeTrackingTimingStage::IntegrateIMU));
-            IMUIntegrated = SLPriv_IntegrateIMUUntil(NextFrameTimeStamp, IMUMeasurementsBetweenKF
+            IMUIntegrated = SLPriv_IntegrateIMUUntil(NextFrameTimeStamp, IMUMeasurementsBetweenKF,
                     nullptr, &PreIntegrationBetweenKF);
         }
         if(!IMUIntegrated)
@@ -1610,19 +1610,19 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 #if defined(CONFIG_IMU)
             // Let the local mapping thread get the KF <-> KF preintegration data.
             TrackingData.NewFrame.PreIntegrationData = PreIntegrationBetweenKF;
-            TrackingData.NewFrame.Measurements = IMUMeasurementsBetweenKF;
+            TrackingData.NewFrame.Measurements = std::move(IMUMeasurementsBetweenKF);
+            TrackingData.NewFrame.PreviousKFID = InertialReferenceKFID;
+            IMUMeasurementsBetweenKF.clear();
 #endif
             u64 QueuedGeneration = PANTO_ID_NOT_SET;
             {
                 typeTrackingScopedTimer Timer(
                         Statistics(typeTrackingTimingStage::EnqueueKeyFrame));
-                QueuedGeneration =
-                    TrackingData.KeyFrameQueue->enque(
+                QueuedGeneration = TrackingData.KeyFrameQueue->enque(
                             TrackingData.NewFrame);
             }
             TrackingData.NewFrame.MappingGeneration = QueuedGeneration;
-            TrackingData.PreviousFrameData.PreviousFrame.MappingGeneration =
-                QueuedGeneration;
+            TrackingData.PreviousFrameData.PreviousFrame.MappingGeneration = QueuedGeneration;
 #if defined(CONFIG_IMU)
             InertialReferenceKeyFrame = TrackingData.NewFrame;
             InertialReferenceMappingGeneration = QueuedGeneration;
@@ -1636,29 +1636,38 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             if(!PANTO_DATASET_REALTIME_MODE)
             {
                 {
-                    typeTrackingScopedTimer Timer(
-                            Statistics(typeTrackingTimingStage::
+                    typeTrackingScopedTimer Timer( Statistics(typeTrackingTimingStage::
                                 WaitForLocalMapping));
-                    TrackingData.KeyFrameQueue->WaitUntilProcessed(
-                            QueuedGeneration);
+                    TrackingData.KeyFrameQueue->WaitUntilProcessed(QueuedGeneration);
                 }
 
                 // The mapper owns a copy of the queued frame and local BA may
                 // change both its pose and navigation state. In serialized
                 // mode, hand that committed state back to tracking before the
                 // next IMU prediction and before recording the trajectory.
-                std::lock_guard<std::mutex> Lock(
-                        TrackingData.GlobalMap->Mutex);
+                std::lock_guard<std::mutex> Lock(TrackingData.GlobalMap->Mutex);
+                const typeKeyFrame* CommittedKeyFramePtr = nullptr;
+                for(const typeKeyFrame& KeyFrame :
+                        TrackingData.GlobalMap->KeyFrames)
+                {
+                    if(KeyFrame.MappingGeneration == QueuedGeneration)
+                    {
+                        CommittedKeyFramePtr = &KeyFrame;
+                        break;
+                    }
+                }
+                assert(CommittedKeyFramePtr != nullptr);
                 const typeKeyFrame& CommittedKeyFrame =
-                    TrackingData.GlobalMap->KeyFrames.back();
+                    *CommittedKeyFramePtr;
+
                 assert(std::abs(CommittedKeyFrame.Camera.TimeStamp -
                             TrackingData.NewFrame.Camera.TimeStamp) < 1e-6);
 
                 TrackingData.NewFrame = CommittedKeyFrame;
+
 #if defined(CONFIG_IMU)
                 if(TrackingData.NewFrame.PreviousKFID != PANTO_ID_NOT_SET &&
-                   TrackingData.GlobalMap->KeyFrames.contains(
-                       TrackingData.NewFrame.PreviousKFID))
+                   TrackingData.GlobalMap->KeyFrames.contains(TrackingData.NewFrame.PreviousKFID))
                 {
                     TrackingData.NewFrame.TrackingReferencePose =
                         TrackingData.GlobalMap->KeyFrames[
@@ -1872,8 +1881,7 @@ class typeLocalMappingScopedTimer
         ~typeLocalMappingScopedTimer()
         {
             SL_AddTimingSample(
-                    Statistics,
-                    std::chrono::duration<fp64>(
+                    Statistics, std::chrono::duration<fp64>(
                         PantoClock::now() - Start).count());
         }
 
@@ -1894,6 +1902,14 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
     };
 
     typeKeyFrame NewKeyFrame{};
+#if defined(CONFIG_IMU)
+    u64 PreviousKFID = PANTO_ID_NOT_SET;
+    {
+        std::lock_guard<std::mutex> Lock(LocalMap.GlobalMap->Mutex);
+        PreviousKFID = LocalMap.GlobalMap->KeyFrames.back().ID;
+    }
+#endif
+
     while(true)
     {
         bool HasKeyFrame = false;
@@ -1913,8 +1929,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
         std::vector<u64> NewPointIndexes;
         {
             typeLocalMappingScopedTimer TransactionTimer(
-                    Statistics(
-                        typeLocalMappingTimingStage::TopologyTransaction));
+                    Statistics( typeLocalMappingTimingStage::TopologyTransaction));
             // All topology changes are one map/graph transaction. The local
             // optimization snapshot is copied before releasing these locks.
             std::scoped_lock Lock(LocalMap.GlobalMap->Mutex, LocalMap.CovisibilityGraph->Mutex);
@@ -1929,24 +1944,24 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                 typeLocalMappingScopedTimer Timer(
                         Statistics(typeLocalMappingTimingStage::
                             RemoveMissingAssociations));
-                SLPriv_RemoveMissingMapPointAssociations(
-                        NewKeyFrame, *LocalMap.GlobalMap);
+                SLPriv_RemoveMissingMapPointAssociations(NewKeyFrame, *LocalMap.GlobalMap);
             }
 
 #if defined(CONFIG_IMU)
-            const u64 PreviousKFID = LocalMap.GlobalMap->KeyFrames.back().ID;
-
             // Repropagate the complete queued state from its actual temporal
-            // parent before its pose is used for triangulation.
+            // predecessor in mapper dequeue order before its pose is used for
+            // triangulation. A queued predecessor may not have had a map ID
+            // when tracking submitted this frame.
+            assert(LocalMap.GlobalMap->KeyFrames.contains(PreviousKFID));
             const typeKeyFrame& CurrentReference =
                 LocalMap.GlobalMap->KeyFrames[PreviousKFID];
+
             {
                 typeLocalMappingScopedTimer Timer(
                         Statistics(typeLocalMappingTimingStage::
                             ReconstructInertialState));
                 SLPriv_ReconstructFrameFromReferenceKF(
-                        NewKeyFrame,
-                        CurrentReference,
+                        NewKeyFrame, CurrentReference,
                         NewKeyFrame.PreIntegrationData);
             }
 #endif
@@ -1957,17 +1972,18 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                 ID = MAP_AppendKeyFrame(LocalMap.GlobalMap, NewKeyFrame);
             }
 
-            typeKeyFrame& CurrentKeyFrame =
-                LocalMap.GlobalMap->KeyFrames[ID];
+            typeKeyFrame& CurrentKeyFrame = LocalMap.GlobalMap->KeyFrames[ID];
+
 #if defined(CONFIG_IMU)
             // Keyframe insertion is serialized by the map lock, so the
             // last keyframe observed before insertion is the temporal parent.
             CurrentKeyFrame.PreviousKFID = PreviousKFID;
-            CurrentKeyFrame.TrackingReferencePose =
-                LocalMap.GlobalMap->KeyFrames[PreviousKFID].Camera.Pose;
-            CurrentKeyFrame.TrackingReferenceNavigationState =
-                LocalMap.GlobalMap->KeyFrames[PreviousKFID].NavigationState;
+            CurrentKeyFrame.NextKFID = PANTO_ID_NOT_SET;
+            LocalMap.GlobalMap->KeyFrames[PreviousKFID].NextKFID = ID;
+            CurrentKeyFrame.TrackingReferencePose = LocalMap.GlobalMap->KeyFrames[PreviousKFID].Camera.Pose;
+            CurrentKeyFrame.TrackingReferenceNavigationState = LocalMap.GlobalMap->KeyFrames[PreviousKFID].NavigationState;
             CurrentKeyFrame.HasTrackingReferenceState = true;
+            PreviousKFID = ID;
 #endif
 
             {
@@ -2105,13 +2121,12 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                         LocalMap.GlobalMap,
                         LocalMap.CovisibilityGraph);
             }
-#if !defined(CONFIG_IMU)
+
+#if defined(DEBUG)
             {
                 typeLocalMappingScopedTimer Timer(Statistics(typeLocalMappingTimingStage::CullLocalMap));
-                MAP_CullLocalMap(
-                        LocalMap.GlobalMap,
-                        LocalMap.CovisibilityGraph,
-                        ID);
+                MAP_CullLocalMap(LocalMap.GlobalMap,
+                        LocalMap.CovisibilityGraph, ID);
             }
 #endif
 

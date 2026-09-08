@@ -148,7 +148,7 @@ void MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNa
         const typePantoFrame& FirstFrame, const typePantoFrame& SecondFrame, 
         const std::vector<typeIMUMeasurement>& IMUMeasurementsFrame1to2, typeGlobalMap* GlobalMap);
 // MAP_AppendKeyFrame, MAP_CullLocalMap, MAP_CullRecentMapPoints,
-// MAP_CullObservationEdges, and MAP_CreateNewMapPoints do not lock internally.
+// MAP_CullObservationEdges, MAP_CreateNewMapPoints, and MAP_FuseMapPoints do not lock internally.
 // During multithreaded operation their caller must hold the global-map mutex
 // and, where supplied, the covisibility-graph mutex as one transaction.
 u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame);
@@ -174,6 +174,7 @@ void MAP_CullObservationEdges(typeGlobalMap* GlobalMap, typeCovisibilityGraph* C
 
 std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& NewKeyFrame, typeCovisibilityGraph* CovisibilityGraph,
         const u64 LatestKeyFrameID);
+std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& NewKeyFrame);
 void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap);
 void MAP_LogKeyFrameProjectionError(const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints);
 void MAP_LogGlobalMapProjectionErrors(const typeGlobalMap& GlobalMap);
@@ -187,7 +188,7 @@ u64 MAP_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame,
 void MAP_AssertGraphEqual(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph);
 void MAP_AssertMapPointObservations(const typeGlobalMap& GlobalMap);
 void MAP_LogGlobalMap(const typeGlobalMap& GlobalMap);
-void MAP_LogGraphConsistency( const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph);
+void MAP_LogGraphConsistency(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph);
 void MAP_LogMappingData(void);
 
 #endif // __MAP_MAPPING_HPP_

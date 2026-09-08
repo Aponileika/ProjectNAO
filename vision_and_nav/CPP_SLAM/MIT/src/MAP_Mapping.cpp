@@ -4,7 +4,12 @@
 #include "IMU_IMUReader.hpp"
 #include "MAPPriv_Mapping.hpp"
 #include "PANTOVEC_PantoVector.hpp"
+#include "PANTO_Utils.hpp"
+#include "PROJ_ProjectiveUtils.hpp"
+#include "PT_PantoMapPoints.hpp"
 #include "PT_Types.hpp"
+#include "opencv2/flann.hpp"
+#include <limits>
 #include <unordered_map>
 
 typeMappingData MappingData = 
@@ -452,6 +457,35 @@ typeLocalMapInfo MAP_MatchMapPointLocalMap(typeLocalMapTracking& LocalMap,
     return LocalMapInfo;
 }
 
+/*several problems with this function:
+ * 1. no temporal check in inertial
+ * 2. num observations for a mappoint is a weak requirement, no descriptor checks for its observations
+ * 3. culls even when the globalmap is tiny
+ *    what chat gpt thinks:
+     *    CULLING CANDIDATE SET
+     *    current KF
+     *    ↓
+     *    all local covisible KFs
+     *    ↓
+     *    test redundancy
+
+     *    VI safeguards:
+     *    - map > 21 KFs
+     *    - don't remove newest ~2 KFs
+     *    - keep recent 21-KF temporal window relatively dense
+
+     *    Resulting Prev → Next IMU interval:
+
+     *    recent region:
+     *    t < 0.5 s
+
+     *    older than recent 21-KF window:
+     *    t < 3.0 s, once IMU initialized
+
+     *    special early inertial low-motion case:
+     *    t < 3.0 s
+     *    and displacement < 0.02 m
+    */
 void MAP_CullLocalMap(typeGlobalMap* GlobalMap, typeCovisibilityGraph* CovisibilityGraph, const u64 CurrentFrameID)
 {
     assert(GlobalMap->KeyFrames.contains(CurrentFrameID));
@@ -477,7 +511,6 @@ void MAP_CullLocalMap(typeGlobalMap* GlobalMap, typeCovisibilityGraph* Covisibil
             CurrentFrameID);
 
     std::vector<u64> CulledKeyFrameIDs;
-
     for(const u64 KeyFrameID : CovisibleKeyFrameIDs)
     {
         if(KeyFrameID == CurrentFrameID)
@@ -491,6 +524,16 @@ void MAP_CullLocalMap(typeGlobalMap* GlobalMap, typeCovisibilityGraph* Covisibil
         }
 
         typeKeyFrame& KeyFrame = GlobalMap->KeyFrames[KeyFrameID];
+
+#if defined(CONFIG_IMU)
+        if(KeyFrame.PreviousKFID == PANTO_ID_NOT_SET ||
+           KeyFrame.NextKFID == PANTO_ID_NOT_SET ||
+           !GlobalMap->KeyFrames.contains(KeyFrame.PreviousKFID) ||
+           !GlobalMap->KeyFrames.contains(KeyFrame.NextKFID))
+        {
+            continue;
+        }
+#endif
 
         u64 NumMapPoints = 0;
         u64 NumRedundantMapPoints = 0;
@@ -530,9 +573,14 @@ void MAP_CullLocalMap(typeGlobalMap* GlobalMap, typeCovisibilityGraph* Covisibil
     for(const u64 CulledID : CulledKeyFrameIDs)
     {
         typeKeyFrame& KeyFrame = GlobalMap->KeyFrames[CulledID];
+
+#if defined(CONFIG_IMU)
         typeKeyFrame& PreviousKeyFrame = GlobalMap->KeyFrames[KeyFrame.PreviousKFID];
         typeKeyFrame& NextKeyFrame = GlobalMap->KeyFrames[KeyFrame.NextKFID];
-        KEY_ReIntegrate(PreviousKeyFrame, NextKeyFrame, KeyFrame.Measurements);
+        KEY_ReIntegrate(NextKeyFrame, KeyFrame.Measurements);
+        PreviousKeyFrame.NextKFID = NextKeyFrame.ID;
+        NextKeyFrame.PreviousKFID = PreviousKeyFrame.ID;
+#endif
         for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
             const u64 MapPointID = ImagePoint.MapPointID;
@@ -568,6 +616,7 @@ void MAP_CullLocalMap(typeGlobalMap* GlobalMap, typeCovisibilityGraph* Covisibil
         GlobalMap->KeyFrames.remove(CulledID);
         LG_Log(LogSeverity::DBG, "[MAP_CullLocalMap] culled keyframe %llu\n", CulledID);
     }
+
     LG_Log(LogSeverity::DBG, "[MAP_CullLocalMap] Culled %zu kfs",
             CulledKeyFrameIDs.size());
 }
@@ -946,6 +995,120 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& 
     GRAPH_UpdateCovisibility(CovisibilityGraph, GlobalMap->MapPoints, LatestKeyFrameID, NewPointIDs);
 
     return NewPointIDs;
+}
+
+std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGraph* CovisibilityGraph, typeKeyFrame& NewKeyFrame)
+{
+    std::vector<typeCovisibility> Top30Neighbours = GRAPH_GetTopNCovisibleFrames(*CovisibilityGraph, NewKeyFrame.ID, PANTO_MAPPOINT_FUSION_N_FIRST_ORDER_NEIGHBOURS);
+    std::vector<typeCovisibility> EligibleNeighbours;
+    EligibleNeighbours.insert(EligibleNeighbours.end(), Top30Neighbours.begin(), Top30Neighbours.end());
+
+    u64 NumberOfCandidates = Top30Neighbours.size();
+    u64 i = 0;
+    while(NumberOfCandidates < 20 && i < static_cast<u64>(Top30Neighbours.size()))
+    {
+        const u64 KeyFrameID = Top30Neighbours[i].KeyFrameID;
+        std::vector<typeCovisibility> Top20SecondOrderNeighbours = GRAPH_GetTopNCovisibleFrames(*CovisibilityGraph, KeyFrameID, 20);
+        EligibleNeighbours.insert(EligibleNeighbours.end(), Top20SecondOrderNeighbours.begin(), Top20SecondOrderNeighbours.end());
+        NumberOfCandidates += static_cast<u64>(Top20SecondOrderNeighbours.size());
+    }
+
+    std::vector<typePantoMapPoint> LatestFrameMapPoints;
+    for(const typePantoImagePoint& ImagePoint : NewKeyFrame.Points.ImagePoints)
+    {
+        const u64 MapPointID = ImagePoint.MapPointID;
+        if(MapPointID != PANTO_ID_NOT_SET)
+        {
+            assert(GlobalMap->MapPoints.contains(MapPointID));
+            LatestFrameMapPoints.push_back(GlobalMap->MapPoints[MapPointID]);
+        }
+    }
+
+
+    for(const typePantoMapPoint& MapPoint : LatestFrameMapPoints)
+    {
+        std::vector<typeDescriptor> Descriptors;
+        Descriptors.reserve(MapPoint.ImagePointIDs.active_size() + 1);
+        for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
+        {
+            if(MapPoint.KeyFrameIDs.contains(i))
+            {
+                assert(MapPoint.ImagePointIDs.contains(i));
+                const u64 KFID = MapPoint.KeyFrameIDs[i];
+                const u64 ImagePointID = MapPoint.ImagePointIDs[i];
+                Descriptors.push_back(GlobalMap->KeyFrames[KFID].Points.ImagePoints[ImagePointID].Descriptor);
+            }
+        }
+        for(const typeCovisibility& Neighbour : EligibleNeighbours)
+        {
+            typeKeyFrame& NeighbourKeyFrame = GlobalMap->KeyFrames[Neighbour.KeyFrameID];
+            if(MapPoint.KeyFrameIDs.contains(NeighbourKeyFrame.ID))
+            {
+                // Already observed
+                continue;
+            }
+
+            const typeCamera NeighbourPose = NeighbourKeyFrame.Camera;
+            Eigen::Vector2d ProjectedPoint;
+            if(PROJ_Project(MapPoint.Point, ProjectedPoint, NeighbourPose))
+            {
+                const u64 Truncatedx = static_cast<u64>(ProjectedPoint.x());
+                const u64 Truncatedy = static_cast<u64>(ProjectedPoint.x());
+                const u64 CellX = (Truncatedx) / PANTO_CELL_SIZE;
+                const u64 CellY = (Truncatedy) / PANTO_CELL_SIZE;
+
+                const u64 CellIndex = CellY * PANTO_GRID_COLUMNS + CellX;
+                std::vector<u64> EligibleImagePointIDs = NeighbourKeyFrame.Points.CellIndexingArray[CellIndex];
+                const typeDescriptor MapPointDescriptor = MapPoint.Descriptor;
+
+                const typePantoVector<typePantoImagePoint> ImagePoints = NeighbourKeyFrame.Points.ImagePoints;
+                u32 ShortestHamming = std::numeric_limits<u32>::max();
+                u64 ClosestPointIndex = PANTO_ID_NOT_SET;
+                typeDescriptor ClosestDescriptor = typeDescriptor{};
+
+                for(const u64 PointIndex : EligibleImagePointIDs)
+                {
+                    const u32 HammingDistance = PANTO_HammingDistance(MapPointDescriptor, ImagePoints[PointIndex].Descriptor);
+                    if(HammingDistance < ShortestHamming)
+                    {
+                        ShortestHamming = HammingDistance;
+                        ClosestPointIndex = PointIndex;
+                        ClosestDescriptor = ImagePoints[PointIndex].Descriptor;
+                    }
+                }
+
+                if(ShortestHamming < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW)
+                {
+                    //TODO update covisibility graph too! 
+                    const u64 AssociatedMapPointID = ImagePoints[ClosestPointIndex].MapPointID;
+                    if(AssociatedMapPointID != PANTO_ID_NOT_SET)
+                    {
+                        const u64 NumVisibleLatest = static_cast<u64>(MapPoint.KeyFrameIDs.active_size());
+                        const u64 NumVisibleHistoric = static_cast<u64>(GlobalMap->MapPoints[AssociatedMapPointID].KeyFrameIDs.active_size());
+                        if(NumVisibleLatest > NumVisibleHistoric)
+                        {
+                            // Fuse historic into latest
+                        }
+                        else
+                        {
+                            // Fuse latest into historic 
+                        }
+                    }
+                    else
+                    {
+                        Descriptors.push_back(ClosestDescriptor);
+                        typePantoMapPoint& MapPointMutable = GlobalMap->MapPoints[MapPoint.ID];
+                        MapPointMutable.Descriptor = PT_CalculateNewDescriptor(Descriptors);
+                        MapPointMutable.KeyFrameIDs.push_back(NeighbourKeyFrame.ID);
+                        MapPointMutable.ImagePointIDs.push_back(ClosestPointIndex);
+                        MapPointMutable.NumFound++;
+                        MapPointMutable.NumVisible++;
+                    }
+                    break;
+                }
+            }
+        }
+    }
 }
 
 void MAP_LogGlobalMapPoses(const typeGlobalMap& GlobalMap)

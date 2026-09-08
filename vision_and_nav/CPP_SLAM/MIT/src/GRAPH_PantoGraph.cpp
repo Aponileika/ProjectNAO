@@ -80,7 +80,7 @@ typeCovisibility GRAPH_GetMostCovisibleFrame(const typeCovisibilityGraph& Covisi
     return MostCovisible;
 }
 
-std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames( const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID, const u64 N)
+std::vector<typeCovisibility> GRAPH_GetTopNCovisibleFrames(const typeCovisibilityGraph& CovisibilityGraph, const u64 KeyFrameID, const u64 N)
 {
     std::vector<typeCovisibility> Covisibility;
 

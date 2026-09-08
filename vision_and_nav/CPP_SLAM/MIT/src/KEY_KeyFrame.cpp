@@ -2,6 +2,7 @@
 #include "IMU_IMUReader.hpp"
 #include "IMU_PreIntegration.hpp"
 #include "KEY_KeyFramePriv.hpp"
+#include "PT_PantoMapPoints.hpp"
 
 struct typeKeyFrameTimingStatistics
 {
@@ -598,37 +599,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
             continue;
         }
 
-        u64 BestDescriptorID = 0;
-        fp64 BestMedianDistance = std::numeric_limits<fp64>::max();
-
-        for(std::size_t i{}; i < Descriptors.size(); i++)
-        {
-            std::vector<i32> Distances;
-            Distances.reserve(Descriptors.size() - 1);
-
-            for(std::size_t j{}; j < Descriptors.size(); j++)
-            {
-                if(i == j)
-                {
-                    continue;
-                }
-
-                Distances.push_back(PANTO_HammingDistance( Descriptors[i],
-                                Descriptors[j]));
-            }
-
-            std::sort(Distances.begin(), Distances.end());
-
-            const fp64 MedianDistance = Distances[Distances.size() / 2];
-
-            if(MedianDistance < BestMedianDistance)
-            {
-                BestMedianDistance = MedianDistance;
-                BestDescriptorID = i;
-            }
-        }
-
-        MapPoint.Descriptor = Descriptors[BestDescriptorID];
+        MapPoint.Descriptor = PT_CalculateNewDescriptor(Descriptors);
     }
 
     Vocabulary->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
@@ -1272,7 +1243,7 @@ void KEY_UpdateNavState(typeKeyFrame* KeyFrame)
     NavigationState.t = NavigationState.Position;
 }
 
-void KEY_ReIntegrate(typeKeyFrame& PreviousKeyFrame, typeKeyFrame& NextKeyFrame, const std::vector<typeIMUMeasurement>& MeasurementsFromPreviousToRemoved)
+void KEY_ReIntegrate(typeKeyFrame& NextKeyFrame, const std::vector<typeIMUMeasurement>& MeasurementsFromPreviousToRemoved)
 {
     typePreIntegration NewIntegrationDataForNext(NextKeyFrame.PreIntegrationData.GyroBias, NextKeyFrame.PreIntegrationData.AccelBias);
 
@@ -1283,9 +1254,13 @@ void KEY_ReIntegrate(typeKeyFrame& PreviousKeyFrame, typeKeyFrame& NextKeyFrame,
     AllIMUMeasurements.insert(AllIMUMeasurements.end(), NextKeyFrame.Measurements.begin(),
                 NextKeyFrame.Measurements.end());
 
-    // Loop through all and integrate. with 
-// static void IMUPriv_IntegrationStep(const typeIMUMeasurement& Current, typePreIntegration& PreIntegrationState)
+    for(const typeIMUMeasurement& IMUMeasurement : AllIMUMeasurements)
+    {
+        IMU_IngegrationStep(IMUMeasurement, NewIntegrationDataForNext);
+    }
 
+    NextKeyFrame.PreIntegrationData = NewIntegrationDataForNext;
+    NextKeyFrame.Measurements = AllIMUMeasurements;
 }
 
 #endif // CONFIG_IMU

@@ -88,7 +88,7 @@ fp64 KEY_GetLocalMapMedianDepth(const typeKeyFrame& KeyFrame, const std::vector<
 #if defined(CONFIG_IMU)
 typeIMUMeasurement KEY_IntegrationStep();
 typeNavigationState KEY_PredictPose(typeKeyFrame& PreviousKeyFrame);
-void KEY_ReIntegrate(typeKeyFrame& PreviousKeyFrame, typeKeyFrame& NextKeyFrame, const std::vector<typeIMUMeasurement>& MeasurementsFromPreviousToRemoved);
+void KEY_ReIntegrate(typeKeyFrame& NextKeyFrame, const std::vector<typeIMUMeasurement>& MeasurementsFromPreviousToRemoved);
 
 // Assumes that the optimized camera pose is correct. Velocity and biases are
 // intentionally left unchanged until visual-inertial optimization is added.

@@ -1,10 +1,10 @@
 -   (DONE) Implement multithreading, so two threads, tracking and local mapping, local mapping:
--   Add back keyframe culling for VI ie preintegration recalculation between kf needs to be added.
+-   (DONE, needs improvement, not used) Add back keyframe culling for VI ie preintegration recalculation between kf needs to be added.
 -   Add map point fusing, works like this:
     search in 30 best covisible neighbours -> 20 second order covisible neigbours per one of those neighbours ->
     if not enough neighbours in inertial walk back temporally (remember to skip duplicates) -> searches for new matches
     between mappoints and image points -> if a matched image point already has a mappoint fuse (select the mp with highest visibility)
     -> else associate the image point with the mappoint.
-
+-   Add scale information to descriptor usage, this is a major flaw currently.
 -   M-LDB descriptor to TEBLID (remember to train a new vocabulary)? Optimize opencv akaze implementation. 
 -   Cool demo with stereo camera
