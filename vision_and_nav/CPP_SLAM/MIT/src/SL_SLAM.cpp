@@ -1703,7 +1703,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
                     TrackingData.NewFrame.Camera.TimeStamp);
         }
-#if !defined(DEBUG)
+#if !defined(DEBUG) && !PANTO_DATASET_REALTIME_MODE
         typeTimingStatistics Stats;
         {
             typeTrackingScopedTimer Timer(

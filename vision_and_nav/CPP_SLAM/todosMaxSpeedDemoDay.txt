@@ -1,3 +1,3 @@
 -   (DONE) Implement multithreading, so two threads, tracking and local mapping, local mapping:
--   Optimize opencv akaze implementation.
+-   M-LDB descriptor to TEBLID (remember to train a new vocabulary)? Optimize opencv akaze implementation. 
 -   Cool demo with stereo camera
