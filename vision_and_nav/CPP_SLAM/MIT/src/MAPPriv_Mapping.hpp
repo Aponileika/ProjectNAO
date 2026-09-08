@@ -10,6 +10,9 @@ typedef struct
 
     u64 MapPointsCulled;
 
+    u64 MapPointFusionObservations;
+    u64 MapPointFusions;
+
     u64 ObservationEdgesCulled;
     u64 NumObservationEdgesPixelErrorHigh;
     u64 NumObservationEdgesFailedProjection;

@@ -18,6 +18,8 @@ typeMappingData MappingData =
     .RecentMapPointsCulled = 0,
     .KeyFramesCulled = 0,
     .MapPointsCulled = 0,
+    .MapPointFusionObservations = 0,
+    .MapPointFusions = 0,
 
     .ObservationEdgesCulled = 0,
     .NumObservationEdgesPixelErrorHigh = 0,
@@ -1181,6 +1183,7 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                             if(FusedMapPointIDs.insert(HistoricMapPoint.ID).second)
                             {
                                 FusedMapPoints.push_back(HistoricMapPoint.ID);
+                                MappingData.MapPointFusions++;
                             }
                             RecalculateDescriptor(MapPointMutable);
                         }
@@ -1220,6 +1223,7 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                             if(FusedMapPointIDs.insert(MapPointNonMutable.ID).second)
                             {
                                 FusedMapPoints.push_back(MapPointNonMutable.ID);
+                                MappingData.MapPointFusions++;
                             }
                             RecalculateDescriptor(HistoricMapPoint);
                         }
@@ -1240,6 +1244,7 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                         MapPointMutable.ImagePointIDs.push_back(ClosestPointIndex);
                         MapPointMutable.NumFound++;
                         MapPointMutable.NumVisible++;
+                        MappingData.MapPointFusionObservations++;
                         NeighbourKeyFrame.Points.ImagePoints[ClosestPointIndex].MapPointID = MapPointMutable.ID;
                     }
                     break;
@@ -2143,6 +2148,10 @@ void MAP_LogMappingData(void)
         "   Keyframes culled                  : %llu\n"
         "   Map points culled                 : %llu\n"
         "\n"
+        " Map-point fusion\n"
+        "   New observations found            : %llu\n"
+        "   Map-point fusions                 : %llu\n"
+        "\n"
         " Observation edges\n"
         "   Total edges culled                : %llu\n"
         "   Pixel error too high              : %llu\n"
@@ -2161,6 +2170,12 @@ void MAP_LogMappingData(void)
         ),
         static_cast<unsigned long long>(
             MappingData.MapPointsCulled
+        ),
+        static_cast<unsigned long long>(
+            MappingData.MapPointFusionObservations
+        ),
+        static_cast<unsigned long long>(
+            MappingData.MapPointFusions
         ),
         static_cast<unsigned long long>(
             MappingData.ObservationEdgesCulled

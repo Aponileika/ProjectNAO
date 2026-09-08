@@ -981,6 +981,10 @@ void SL_PantoSLAM(i32 num_loops)
 #endif
     }
 
+    LG_EnableDataSummaryLoggingForCurrentThread(true);
+    MAP_LogMappingData();
+    LG_EnableDataSummaryLoggingForCurrentThread(false);
+
 #if !defined(DEBUG)
     if(PantoSLAM.GlobalMap->KeyFrames.active_size() > 0)
     {
