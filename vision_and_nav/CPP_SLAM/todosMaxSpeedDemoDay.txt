@@ -1,6 +1,65 @@
 -   (DONE) Implement multithreading, so two threads, tracking and local mapping, local mapping:
 -   (DONE, needs improvement, not used) Add back keyframe culling for VI ie preintegration recalculation between kf needs to be added.
 -   (DONE) Add map point fusing, WIP see mapping.cpp:
--   Cool demo with stereo camera, ideas:
+-   Cool demo with stereo camera, idea:
         (YES) Disparity map -> rgb 3d, 3d from images is cool. Just make a point cloud every frame that fully refreshes, if you have time
         make stationary objects not refresh (probably not).
+        for left image, Y + YUV, convert YUV -> RGB on mac, right image Y only (only need grayscale for disparity).
+        Calculate disparity with SGBM (with opencv) -> 3d point cloud with rgb
+-   Plan work demo:
+        verify the existing stereo live feed code.
+
+        figure out an easy and reliable way to tell if camera 0 is left or right and vice versa for camera 1, 
+        probably just add a physical marker on the stereo rig and then keep the software IDs fixed.
+
+        verify that stereo frame pairing is reasonable using the timestamps, and reject pairs where the left/right timestamp difference is too large.
+
+        lock camera settings before calibration, especially focus, and preferably keep exposure/gain reasonably consistent between the two cameras.
+
+        use the live feed to gather stereo calibration images with the calibration board at different positions, rotations, depths, and near the image corners.
+
+        stereo calibrate the cameras and save the calibration somewhere, since it will be needed later anyway:
+        i) save left/right intrinsics and distortion parameters.
+        ii) save stereo extrinsics \(R,T\).
+        iii) calculate and save the rectification transforms/projection matrices and \(Q\).
+        iv) precompute the rectification maps with initUndistortRectifyMap.
+write the code for running a live feed from the raspberry -> 3d point cloud:
+        i) add YUV420 transfer for one camera while keeping the other grayscale, so:
+        - left: YUV420.
+        - right: grayscale Y.
+        ii) rectify both images using the precomputed maps.
+        iii) downsample both rectified images to something like 640x360.
+        iv) calculate a disparity map using OpenCV StereoSGBM:
+        Stereo->setP1(8 * BlockSize * BlockSize);
+        Stereo->setP2(32 * BlockSize * BlockSize);
+        Stereo->setUniquenessRatio(10);
+        Stereo->setSpeckleWindowSize(100);
+        Stereo->setSpeckleRange(2);
+        Stereo->setDisp12MaxDiff(1);
+        v) choose sensible values for:
+        - MinDisparity.
+        - NumDisparities (multiple of 16).
+        - BlockSize.
+        vi) convert the OpenCV disparity from fixed point to float using /16.0.
+        vii) reject invalid disparity values, including d <= 0.
+        viii) use the built-in disp12MaxDiff consistency check initially rather than implementing explicit left-right disparity calculation.
+        ix) remove invalid edge regions created by stereo rectification if necessary.
+        x) convert disparity to 3d points, probably using cv::reprojectImageTo3D.
+        xi) make sure the calibration / Q matrix is adjusted correctly for the downsampled resolution.
+        xii) remove points closer than some sensible minimum working distance, e.g. around 0.3 m.
+        xiii) remove points farther away, e.g. 3 m.
+        xiv) use the rectified/downsampled left color image to assign RGB values to each 3d point.
+        xv) downsample the point cloud to a point where Viser runs smoothly, e.g. keep every second pixel initially.
+        vibe code Viser so that it:
+        i) reads in the new point cloud every frame.
+        ii) clears/replaces the previous point cloud instead of accumulating them.
+        iii) renders the RGB point cloud interactively.
+        iv) optionally updates the cloud at ~10 Hz even if capture runs faster.
+        v) maybe show the left image and disparity map alongside the 3d point cloud if easy.
+vibe code Viser so that it:
+        i) reads in the new point cloud every frame.
+        ii) clears/replaces the previous point cloud instead of accumulating them.
+        iii) renders the RGB point cloud interactively.
+        iv) optionally updates the cloud at ~10 Hz even if capture runs faster.
+        v) maybe show the left image and disparity map alongside the 3d point cloud if easy.
+
