@@ -221,7 +221,8 @@ class NaoAppWindow(object):
         self.root.after(500, self._start_ip_scan)
 
     # Titles of the cards hidden until the View menu asks for them.
-    OPTIONAL_CARDS = ("Volume", "Language", "LEDs", "PS5 Controller", "Camera")
+    OPTIONAL_CARDS = ("Volume", "Language", "LEDs", "Speech & Voice",
+                      "PS5 Controller", "Camera")
 
     @staticmethod
     def _collect_cards(parent):

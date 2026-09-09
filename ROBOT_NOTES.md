@@ -291,9 +291,12 @@ one. Don't be tempted to raise the TTL much without checking drift first.
 
 ## UI
 
-- **View menu** — Volume, Language, LEDs, PS5 Controller and Camera are hidden
-  by default and toggled from `View`. They are rarely needed and crowded the
-  window. Toggling repacks the whole column so cards keep their original order.
+- **View menu** — Volume, Language, LEDs, Speech & Voice, PS5 Controller and
+  Camera are hidden by default and toggled from `View`. They are rarely needed
+  and crowded the window. Toggling repacks the whole column so cards keep their
+  original order. To hide another card, add its exact title to
+  `OPTIONAL_CARDS`; the title is read back off the `LabelFrame`, so a typo
+  fails silently by simply leaving the card visible.
 - **Map window** (`View → Map window`) — live top-down view at ~2.5 fps: green
   arrow for the robot and its heading, blue trail, red circles for remembered
   blocked points drawn at the real 0.45 m avoidance radius, 1 m grid. Drawn in
