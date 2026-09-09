@@ -1,7 +1,15 @@
 {
-    "ip":  "192.168.0.105",
+    "ip":  "192.168.1.200",
     "port":  9559,
     "_comment_burst_gait": "Short walk bursts with settle pauses. Needed only by the robot with BodyId ALDR1312N090344, whose roll diverges until it topples. Leave false on a healthy robot.",
-    "burst_gait":  false,
+    "burst_gait":  true,
+    "_comment_step_m": "Distance in metres of each discrete moveTo step in burst gait. Too small and the walk engine spends the whole move in its weight-shift preamble without stepping.",
+    "step_m":  0.08,
+    "_comment_torso_wy": "Torso pitch trim in radians, limit +-0.122. This robot stands ~9 deg forward-leaning (measured tiltY +0.164), which eats its forward margin. Negative pitches the torso back. Less negative if it starts falling backward instead.",
+    "torso_wy":  -0.08,
+    "burst_settle_s":  1.2,
+    "burst_resume_roll":  0.06,
+    "_comment_walk_arms": "Arm swing while walking. Normally true - swinging arms help NAO balance. Set false only as an experiment, to remove arm motion as a variable.",
+    "walk_arms":  true,
     "filepath":  "C:\\Users\\aleks\\FIA\\NAO\\pynaoqi-python2.7-2.8.6.23-win64-vs2015-20191127_152649\\lib"
 }

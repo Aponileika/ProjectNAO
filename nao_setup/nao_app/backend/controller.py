@@ -211,6 +211,27 @@ class GamepadController(object):
         if not motion or not posture:
             return False
 
+        # NAO's get-up routine pushes off its hands.  On this robot the fingers
+        # are damaged/missing, and in practice the manoeuvre does not complete —
+        # it just thrashes on the floor, which risks further damage.  Detect a
+        # lying posture and ask for help rather than flailing.  (Empirical: if a
+        # robot's get-up works, remove this early exit.)
+        LYING = ("Belly", "LyingBack", "LyingBelly", "LyingLeft",
+                 "LyingRight", "Left", "Right")
+        try:
+            fam = posture.getPostureFamily()
+        except Exception:
+            fam = "Unknown"
+        if fam in LYING:
+            print("[Stand] robot is lying (%s). The get-up routine needs hands "
+                  "to push off, so it is skipped. Sit it up by hand, then "
+                  "stand." % fam)
+            if "set_status" in self.ui:
+                self.ui["set_status"](
+                    "Lying down (%s) - please sit the robot up by hand" % fam,
+                    False)
+            return False
+
         for attempt, pose in enumerate(("StandInit", "Stand", "StandInit"), 1):
             if self._is_robot_standing():
                 return True

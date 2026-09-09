@@ -41,6 +41,20 @@ class NaoAppWindow(object):
 
         self.config_ip = ""
         self.config_port = ""
+        # Hard motion lock.  Set by Relax / emergency stop; every autonomous
+        # loop must check it and issue no further motion commands until an
+        # explicit user action clears it.
+        self._motion_locked = False
+        # Burst-gait timings (config.json can override).  Measured on the bad
+        # robot, roll is already ~0.16 by t=2s, so a burst has to stay well
+        # under that or it ends at the warning threshold every single time.
+        self.config_burst_walk_s   = 1.0
+        self.config_burst_settle_s = 1.2
+        self.config_resume_roll    = 0.06
+        # Arm swing during walking.  Normally on — swinging arms genuinely help
+        # NAO balance.  Exposed only so arm motion can be removed as a variable
+        # when chasing a gait problem.
+        self.config_walk_arms      = True
         # Burst gait walks in short bursts with a settle pause between them.
         # It exists to compensate for one specific robot whose roll diverges
         # until it topples (see BodyId ALDR1312N090344); a healthy robot does
@@ -73,6 +87,23 @@ class NaoAppWindow(object):
                         except Exception:
                             self.config_port = str(port)
                     self.config_burst_gait = bool(cdata.get("burst_gait", False))
+                    # Burst timings, tunable without editing code.
+                    try:
+                        self.config_burst_walk_s = float(
+                            cdata.get("burst_walk_s", 1.0))
+                        self.config_burst_settle_s = float(
+                            cdata.get("burst_settle_s", 1.2))
+                        self.config_resume_roll = float(
+                            cdata.get("burst_resume_roll", 0.06))
+                    except Exception:
+                        pass
+                    self.config_walk_arms = bool(cdata.get("walk_arms", True))
+                    try:
+                        self.config_step_m = float(cdata.get("step_m", 0.12))
+                        self.config_torso_wy = max(-0.122, min(0.122, float(
+                            cdata.get("torso_wy", -0.08))))
+                    except Exception:
+                        pass
 
             if os.path.isfile(secrets_path):
                 with open(secrets_path, "r") as f:
@@ -610,6 +641,64 @@ class NaoAppWindow(object):
         except Exception as e:
             self._set_status("LED error: %s" % e, False)
 
+    def _emergency_relax(self):
+        """Hard stop. Halt every autonomous loop, kill in-flight motion tasks,
+        then release the motors.
+
+        Relax has to win outright.  It used to just call rest(), while the
+        wander thread carried on issuing moveToward/setAngles — so the robot
+        went limp for an instant and was immediately driven again, which is
+        precisely when someone is trying to make it safe.  Order matters here:
+        set the lock first so no loop can queue new commands, and only then
+        release the joints."""
+        import time                     # module-scope 'time' is not imported here
+        self._motion_locked = True      # loops must stop issuing commands
+        self._seeking = False           # ends the wander/seek thread
+        self._auto_task_done = True
+
+        try:
+            self.auto_status.set("EMERGENCY RELAX")
+        except Exception:
+            pass
+        print("[Relax] emergency stop: locking motion and releasing joints")
+
+        motion = self.conn.motion
+        if motion:
+            # stopMove ends the walk; killAll cancels every queued/running
+            # motion task (posture transitions, animations, setAngles ramps)
+            # that would otherwise keep executing after rest().
+            for step in ("stopMove", "killAll", "rest"):
+                try:
+                    getattr(motion, step)()
+                except Exception as e:
+                    print("[Relax] %s failed: %s" % (step, e))
+            try:
+                motion.setStiffnesses("Body", 0.0)
+            except Exception:
+                pass
+            # Re-assert once more. A command that was already in flight when we
+            # locked can land just after rest() and re-stiffen a joint, which is
+            # what made Relax look unreliable.
+            time.sleep(0.35)
+            for step in ("stopMove", "killAll", "rest"):
+                try:
+                    getattr(motion, step)()
+                except Exception:
+                    pass
+            try:
+                motion.setStiffnesses("Body", 0.0)
+            except Exception:
+                pass
+
+        # Silence anything mid-sentence too — it is confusing to hear the robot
+        # narrate a task it has just been stopped from doing.
+        if self.conn.tts:
+            try:
+                self.conn.tts.stopAll()
+            except Exception:
+                pass
+        self._set_status("Relaxed. Motion locked until the next command.")
+
     def _on_posture(self):
         if not self._require_connection() or not self.conn.posture: return
         name = self.posture_var.get()
@@ -618,8 +707,10 @@ class NaoAppWindow(object):
         def _go():
             try:
                 if name == "Relax":
-                    self.conn.motion.rest()
+                    self._emergency_relax()
                 else:
+                    # Any deliberate posture command clears the lock.
+                    self._motion_locked = False
                     # Wake first.  A resting robot has zero stiffness, so
                     # goToPosture() has no motors to work with and the button
                     # appears to do nothing at all — which is exactly what it
@@ -654,6 +745,9 @@ class NaoAppWindow(object):
     def _run_dance(self):
         """Execute the full dance sequence (blocking). Safe to call from any thread."""
         import time
+        if not self._motion_allowed():
+            print("[Dance] skipped: motion locked (relax).")
+            return
         try:
             if self.conn.motion:
                 self.conn.motion.wakeUp()
@@ -1126,20 +1220,25 @@ class NaoAppWindow(object):
 
         target       = getattr(self, 'wander_target_var',   None)
         target       = target.get().strip() if target else ""
-        target_label = target or "human"
+        # Blank target means "just go for a walk" — no search, no win condition.
+        target_label = target
         use_boundary = getattr(self, 'wander_boundary_var', None)
         use_boundary = bool(use_boundary.get()) if use_boundary else False
         api_keys     = self._all_api_keys()
 
+        # Starting a wander is a deliberate user action, so it clears any
+        # standing emergency-relax lock.
+        self._motion_locked = False
         self._seeking = True
         if target:
             self.auto_status.set("Searching for: %s" % target)
         else:
-            self.auto_status.set("Wandering & Scanning...")
+            self.auto_status.set("Going for a walk...")
         self._set_status("Autonomous wander started. Use 'Stop Auto' to abort.")
         if self.conn.tts:
             try:
-                self.conn.tts.say("Starting search for %s." % target_label)
+                self.conn.tts.post.say("Starting search for %s." % target_label
+                                       if target else "Going for a walk.")
             except Exception:
                 pass
         threading.Thread(target=self._wander_seek_thread,
@@ -1159,12 +1258,16 @@ class NaoAppWindow(object):
         if api_keys is None:
             api_keys = []
 
-        # Friendly display name used in speech and status messages.
-        # Falls back to "human" when no target was typed (pure-wander / human-seek mode).
-        target_label = target.strip() or "human"
+        # Friendly display name used in speech and status messages.  Empty when
+        # no target was typed, which is the "just go for a walk" mode.
+        target_label = target.strip()
 
         sonar          = None
         floor_cam_name = None
+        # Must be bound before any early return: the finally block unsubscribes
+        # it, and an abort (e.g. "failed to stand") used to raise
+        # UnboundLocalError there, masking the real reason for the abort.
+        novelty_cam_name = None
         wander_video   = self.conn.video
 
         # One persistent Gemini client for the whole wander session so that
@@ -1181,7 +1284,10 @@ class NaoAppWindow(object):
             "human", "person", "people", "man", "woman",
             "boy", "girl", "face", "someone", "anybody",
         )
-        target_is_human = (not target) or any(
+        # Only a target that actually names a person counts as a human search.
+        # A blank target used to mean "hunt for a face", which made a plain walk
+        # impossible; now blank means walk, with no win condition at all.
+        target_is_human = bool(target) and any(
             k in target.lower() for k in _HUMAN_KEYWORDS)
         _sdk_found  = [False]
         _task_done  = [False]   # set True the moment target found; aborts in-flight Gemini checks
@@ -1210,7 +1316,10 @@ class NaoAppWindow(object):
             if self.conn.motion:
                 try:
                     self.conn.motion.setFallManagerEnabled(True)
-                    self.conn.motion.setMoveArmsEnabled(True, True)
+                    _arms = bool(getattr(self, "config_walk_arms", True))
+                    self.conn.motion.setMoveArmsEnabled(_arms, _arms)
+                    print("[Gait] arm swing during walk: %s"
+                          % ("on" if _arms else "OFF (experiment)"))
                     self.conn.motion.setMotionConfig([
                         ["ENABLE_FOOT_CONTACT_PROTECTION", True],
                     ])
@@ -1515,22 +1624,37 @@ class NaoAppWindow(object):
             # All values must stay inside the robot's getMoveConfig Min/Max
             # limits (MaxStepY min is 0.101!) or the gait is left undefined.
             # See GamepadController._WALK_CONFIG for the full reasoning.
+            # Final consolidated gait for this robot, from the measured runs.
+            # The failure is always the same shape: roll alternates sign and
+            # roughly DOUBLES every half second during a step, and once it
+            # passes ~0.2 the robot goes over whichever way it happens to lean.
+            # So everything here aims at one thing — minimise the time the robot
+            # spends on a single foot, which is the only window in which roll can
+            # grow.
             walk_config = _tuned_walk_config(walk_config, {
-                "MaxStepX":         0.030,  # short, deliberate forward steps
-                # Widest legal stance (max is 0.160).  Measured roll oscillated
-                # at ~1 Hz, and this robot's natural lateral rocking frequency
-                # is sqrt(g/h) = sqrt(9.81/0.271) ~= 0.96 Hz — i.e. the gait was
-                # pumping a resonance.  A wider stance raises that natural
-                # frequency and adds lateral margin.
+                # Small steps: less disturbance injected per stride.
+                "MaxStepX":         0.020,
+                # Widest legal stance (max 0.160) for maximum lateral margin.
                 "MaxStepY":         0.160,
-                "MaxStepTheta":     0.120,  # gentle turns
-                # Backed off from 1.0: max frequency put the step rate close to
-                # the resonance above.  Detuning the forcing frequency is the
-                # other half of breaking it.
-                "MaxStepFrequency": 0.700,
-                "StepHeight":       0.025,  # clearance so it doesn't catch the floor
+                "MaxStepTheta":     0.100,
+                # Back to the robot's own default of 1.0.  Higher frequency means
+                # a SHORTER single-support phase, so there is less time per step
+                # for roll to diverge.  (It was 0.7 on a resonance theory that
+                # turned out to be built on an undersampled 2 Hz trace — with
+                # 20 Hz sampling that reading did not hold up.)
+                "MaxStepFrequency": 1.000,
+                # Lower than default: the foot stays nearer the floor, cutting
+                # airborne time.  Safe here — the office floor is flat with
+                # nothing to trip on.
+                "StepHeight":       0.015,
                 "TorsoWx":          0.000,
-                "TorsoWy":          0.000,
+                # Trim the measured forward lean.  Standing in StandInit this
+                # robot sits at tiltY = +0.164 rad (~9 deg forward, confirmed
+                # against raw gravity), which eats most of its forward margin —
+                # and it has now face-planted from exactly that stance.  A
+                # negative TorsoWy pitches the torso back and hands some of that
+                # margin back.  Limit is +-0.122; this is deliberately not maxed.
+                "TorsoWy":          float(getattr(self, "config_torso_wy", -0.08)),
             })
 
             # moveToward() takes velocities NORMALISED to [-1, 1] — a fraction of
@@ -1554,7 +1678,12 @@ class NaoAppWindow(object):
             # while the balancer can still plant a corrective step.  Normal
             # walking oscillates well under _TILT_WARN, so this does not nag.
             _TILT_WARN   = 0.15   # rad — start scaling speed down
-            _TILT_DANGER = 0.28   # rad — stop dead and let it settle
+            # 0.38, not 0.28.  With discrete moveTo steps the combined tilt
+            # magnitude routinely peaks around 0.22-0.29 during a perfectly
+            # normal stride, and the old threshold was firing mid-step — which
+            # calls stopMove() while the robot is on one foot, making a fall
+            # more likely rather than less.
+            _TILT_DANGER = 0.38   # rad — stop dead and let it settle
             _braking     = [False]
 
             # Command smoothing: feed the walk engine a continuous velocity
@@ -1647,15 +1776,101 @@ class NaoAppWindow(object):
             # oscillation back down.  So: walk in bursts shorter than the
             # build-up, and stand still between them until it has settled.
             # Slower over the ground, but it stays upright.
-            _BURST_S      = 1.6    # s of walking before a mandatory pause
-            _SETTLE_MIN_S = 0.7    # s — always pause at least this long
-            _SETTLE_MAX_S = 3.0    # s — resume anyway rather than freezing
-            _RESUME_ROLL  = 0.07   # rad — settled enough to walk again
+            _BURST_S      = float(getattr(self, "config_burst_walk_s", 1.0))
+            _SETTLE_MIN_S = float(getattr(self, "config_burst_settle_s", 1.2))
+            _SETTLE_MAX_S = 4.0    # s — resume anyway rather than freezing
+            _RESUME_ROLL  = float(getattr(self, "config_resume_roll", 0.06))
+            # One discrete moveTo per burst.  Distance is deliberately short:
+            # far enough that the engine actually plans real steps rather than
+            # spending the whole time in its weight-shift preamble, but short
+            # enough to finish before roll can build.
+            _STEP_M       = float(getattr(self, "config_step_m", 0.12))
+            _STEP_TURN    = 0.30   # rad of yaw at full wander bias
+            _STEP_TIMEOUT = 8.0    # s — moveTo should be long done by now
+            _step_issued  = [False]
             _phase        = ["settle"]   # start by settling after standing up
             _phase_t      = [time.time()]
+            # Stuck detection.  The sonar is chest-mounted and forward-facing, so
+            # a wall met at an angle — or contact at the shoulder — reads as
+            # clear space.  The robot then marches on the spot indefinitely.
+            # Odometry is the ground truth: if a commanded step produced almost
+            # no displacement, it is jammed regardless of what sonar thinks.
+            _step_pos0    = [None]
+            _no_progress  = [0]
+            _escape_dir   = [1.0]        # alternate, so a failed escape is not repeated
+            _NO_PROGRESS_FRAC = 0.35     # of the commanded step distance
+            _NO_PROGRESS_HITS = 2        # consecutive stalled steps before escaping
+
+            def _robot_xy():
+                try:
+                    p = self.conn.motion.getRobotPosition(True)
+                    return (p[0], p[1])
+                except Exception:
+                    return None
+
+            def _planned_move(x, y, th, label, timeout=12.0):
+                """Run one planned move, watching balance throughout.
+
+                Polling only moveIsActive() would park the wander loop here for
+                seconds with the stability governor not running — the robot was
+                unmonitored during exactly the manoeuvre that most often put it
+                over."""
+                try:
+                    self.conn.motion.post.moveTo(x, y, th, walk_config)
+                except Exception as e:
+                    print("[Move] %s failed: %s" % (label, e))
+                    return
+                deadline = time.time() + timeout
+                while time.time() < deadline:
+                    if not getattr(self, "_seeking", False): break
+                    if getattr(self, "_motion_locked", False): break
+                    try:
+                        if not self.conn.motion.moveIsActive(): break
+                    except Exception:
+                        break
+                    try:
+                        vals = self.conn.memory.getListData(_BALANCE_KEYS)
+                        tx, ty = float(vals[0]), float(vals[1])
+                        mag = math.sqrt(tx * tx + ty * ty)
+                        if mag >= _TILT_DANGER:
+                            print("[Move] %s aborted: tilt %.3f (tiltY=%+.3f)"
+                                  % (label, mag, ty))
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(0.05)
+                try: self.conn.motion.stopMove()
+                except Exception: pass
+
+            def _escape_stuck():
+                """Jammed against something the sonar cannot see.
+
+                Reversing is this robot's least stable direction, so it is not
+                done casually — but when it is physically wedged there is no
+                alternative: turning on the spot just grinds against whatever it
+                is touching.  Back off a real distance, then turn hard, and
+                alternate the turn direction so a failed escape is not repeated."""
+                print("[Stuck] no progress - backing off and trying another way")
+                self.auto_status.set("Stuck - backing out...")
+                if self.conn.tts:
+                    try: self.conn.tts.post.say("I am stuck. Backing out.")
+                    except Exception: pass
+                _planned_move(-0.15, 0.0, 0.0, "escape reverse")
+                time.sleep(0.4)          # let it settle before turning
+                turn = _escape_dir[0] * random.uniform(1.2, 1.8)   # ~70-100 deg
+                _escape_dir[0] *= -1.0
+                print("[Stuck] turning %+.2f rad to find another route" % turn)
+                _planned_move(0.0, 0.0, turn, "escape turn")
+                _no_progress[0] = 0
+                _phase[0]   = "settle"
+                _phase_t[0] = time.time()
             _burst_gait   = bool(getattr(self, "config_burst_gait", False))
-            print("[Gait] burst gait %s" % ("ENABLED (config.json burst_gait)"
-                                            if _burst_gait else "disabled"))
+            if _burst_gait:
+                print("[Gait] burst gait ENABLED: discrete moveTo steps of "
+                      "%.2fm / settle >=%.1fs / resume below roll %.2f"
+                      % (_STEP_M, _SETTLE_MIN_S, _RESUME_ROLL))
+            else:
+                print("[Gait] burst gait disabled (continuous walk)")
 
             # --- Active head-scanning state machine ---
             # The head cycles through 7 positions so the camera covers the whole
@@ -1698,9 +1913,21 @@ class NaoAppWindow(object):
                 "Keep your eyes open, boss.",
                 "Scanning the area.",
             ]
+            walk_phrases = [
+                "Just stretching my legs.",
+                "Nice day for a walk.",
+                "Out for a stroll.",
+                "Taking a look around.",
+                "One step at a time.",
+            ]
 
             # ================================================================
             while getattr(self, "_seeking", False):
+
+                # An emergency relax must win immediately, even mid-burst.
+                if getattr(self, "_motion_locked", False):
+                    print("[Wander] motion locked - aborting loop.")
+                    break
 
                 # 1. SDK FACE DETECTION — runs every loop tick for any human-like
                 #    target (including empty target / pure wander mode).  Much
@@ -1949,19 +2176,20 @@ class NaoAppWindow(object):
                         self.conn.motion.stopMove()
                     except Exception:
                         pass
-                    self.auto_status.set("Fallen - recovering...")
-                    self._set_status("Fall detected. Sitting and awaiting instructions.", False)
-                    if self.conn.posture:
-                        try:
-                            self.conn.posture.goToPosture("Sit", 0.5)
-                        except Exception:
-                            try:
-                                self.conn.posture.goToPosture("SitRelax", 0.5)
-                            except Exception:
-                                pass
+                    self.auto_status.set("Fallen - motors released.")
+                    self._set_status(
+                        "Fall detected. Motors released - please help it up.", False)
+                    # Do NOT try to sit or recover.  This used to run
+                    # goToPosture("Sit") straight after a fall, which is a fresh
+                    # full-body motion on a robot that has just hit the floor —
+                    # it looked exactly like the robot ignoring Relax.  A robot
+                    # that cannot get up unaided should go limp and wait for a
+                    # human, not thrash.
+                    self._emergency_relax()
                     if self.conn.tts:
                         try:
-                            self.conn.tts.say("I fell. I am sitting now. What should I do next?")
+                            self.conn.tts.post.say(
+                                "I fell. I have relaxed my motors. Please help me up.")
                         except Exception:
                             pass
                     self._seeking = False
@@ -1988,10 +2216,18 @@ class NaoAppWindow(object):
                 # tiltX is roll (topple sideways), tiltY is pitch (nose-over).
                 if now - _last_trace[0] >= 0.5:
                     _last_trace[0] = now
-                    print("[Trace] tiltX=%+.3f tiltY=%+.3f rollpk=%.3f near=%.2f "
-                          "fwd=%.3f turn=%+.3f" % (
-                              tilt_x, tilt_y, roll_peak, near,
-                              _cur_fwd[0], _cur_turn[0]))
+                    # tiltmag is what the stability governor actually acts on,
+                    # and phase/stepping matters more than the old fwd/turn
+                    # columns, which are always zero under discrete stepping.
+                    print("[Trace] tiltX=%+.3f tiltY=%+.3f tiltmag=%.3f "
+                          "rollpk=%.3f near=%.2f %s" % (
+                              tilt_x, tilt_y,
+                              math.sqrt(tilt_x * tilt_x + tilt_y * tilt_y),
+                              roll_peak, near,
+                              ("stepping" if (_burst_gait and _phase[0] == "walk"
+                                              and _step_issued[0])
+                               else ("settling" if _burst_gait
+                                     and _phase[0] == "settle" else "walking"))))
 
                 # 6a. STABILITY GOVERNOR — scale the walk down as the torso tilts,
                 # and stop outright before the tilt becomes unrecoverable.
@@ -2019,40 +2255,127 @@ class NaoAppWindow(object):
                     _braking[0] = False
                     self.auto_status.set("Recovered — resuming.")
 
-                # 6b. BURST GAIT — walk in bursts, stand still between them, so
-                # the lateral build-up never gets near the point of no return.
-                # Only for a robot that needs it; see config_burst_gait.
-                if not _burst_gait:
-                    pass
-                elif _phase[0] == "settle":
-                    settled_for = now - _phase_t[0]
-                    ready = (settled_for >= _SETTLE_MIN_S
-                             and roll_peak <= _RESUME_ROLL)
-                    if ready or settled_for >= _SETTLE_MAX_S:
-                        _phase[0]    = "walk"
-                        _phase_t[0]  = now
-                        walk_start_t = now          # re-ramp from standstill
-                        _cur_fwd[0]  = _cur_turn[0] = 0.0
+                # 6b. BURST GAIT — discrete planned steps instead of chopping up
+                # a continuous walk.
+                #
+                # moveToward() has a startup phase: the engine shifts weight and
+                # sets up the ZMP for roughly a second before a foot ever leaves
+                # the ground.  Cutting a burst at ~1s therefore stopped it mid
+                # preparation every cycle — the robot rocked its hips, got reset,
+                # and prepared again, managing about two actual steps in thirty
+                # seconds.  Lengthening the burst is not an option either, since
+                # roll is already ~0.16 by t=2s on this robot.
+                #
+                # moveTo() avoids the whole problem: the engine plans a complete
+                # footstep sequence for a fixed distance and ends it in stable
+                # double support.  One call is one self-contained little walk.
+                if _burst_gait:
+                    if _phase[0] == "settle":
+                        settled_for = now - _phase_t[0]
+                        ready = (settled_for >= _SETTLE_MIN_S
+                                 and roll_peak <= _RESUME_ROLL)
+                        if ready or settled_for >= _SETTLE_MAX_S:
+                            _phase[0]      = "walk"
+                            _phase_t[0]    = now
+                            _step_issued[0] = False
+                        else:
+                            # Hold still and let it damp.  Also the safest moment
+                            # to look around, so the head scan runs here rather
+                            # than mid-stride.
+                            try: self.conn.motion.stopMove()
+                            except Exception: pass
+                            _head_scan_paused[0] = False
+                            self.auto_status.set(
+                                "Steadying (roll %.2f)..." % roll_peak)
+                            time.sleep(0.05)
+                            continue
+
+                    # --- walk phase: one discrete moveTo per burst ---
+                    _head_scan_paused[0] = True
+                    if not _step_issued[0]:
+                        if bumped or near <= _STOP_DIST or not boundary_ok:
+                            # Blocked. Settle, and deliberately do NOT continue —
+                            # fall through to the obstacle handling below so the
+                            # back-up-and-pivot manoeuvre still runs.
+                            _phase[0]   = "settle"
+                            _phase_t[0] = now
+                        else:
+                            theta = wander_turn_bias * _STEP_TURN
+                            try:
+                                # post.* so the loop keeps polling sensors while
+                                # the step executes.
+                                _step_pos0[0] = _robot_xy()
+                                self.conn.motion.post.moveTo(
+                                    _STEP_M, 0.0, theta, walk_config)
+                                _step_issued[0] = True
+                                _phase_t[0]     = now
+                                # Log the attitude each step launches from.
+                                # Measured runs start anywhere from tiltY=-0.03
+                                # to +0.19 for the same posture command, and
+                                # that starting posture appears to matter more
+                                # than anything tunable in here.
+                                print("[Step] moveTo(%.2fm, theta=%+.2f) from "
+                                      "tiltX=%+.3f tiltY=%+.3f rollpk=%.3f"
+                                      % (_STEP_M, theta, tilt_x, tilt_y,
+                                         roll_peak))
+                            except Exception as e:
+                                print("[Step] moveTo failed: %s" % e)
+                                _phase[0]   = "settle"
+                                _phase_t[0] = now
+                            time.sleep(0.05)
+                            continue
                     else:
-                        # Hold still and let it damp.  This is also the safest
-                        # moment to look around, so the head scan runs here
-                        # instead of mid-stride.
-                        try: self.conn.motion.stopMove()
-                        except Exception: pass
-                        _cur_fwd[0] = _cur_turn[0] = 0.0
-                        _head_scan_paused[0] = False
-                        self.auto_status.set(
-                            "Steadying (roll %.2f)..." % roll_peak)
+                        elapsed = now - _phase_t[0]
+                        try:
+                            still_moving = self.conn.motion.moveIsActive()
+                        except Exception:
+                            still_moving = False
+                        # Do NOT interrupt a planned step just because roll rose.
+                        # moveTo ends in stable double support; stopMove() in the
+                        # middle of a stride leaves the robot on one foot, which
+                        # is the worst moment to freeze it.  The measured runs
+                        # show roll peaking ~0.12-0.16 during a normal step and
+                        # settling straight back afterwards, so let the step
+                        # finish and take it out in the settle phase.  Only a
+                        # genuine divergence (_ROLL_MAX) or a physical obstacle
+                        # is worth the risk of stopping mid-stride.
+                        abort = (roll_peak >= _ROLL_MAX or bumped
+                                 or near <= _STOP_DIST)
+                        if abort:
+                            print("[Step] aborting step (rollpk=%.3f near=%.2f "
+                                  "bumped=%s)" % (roll_peak, near, bumped))
+                            try: self.conn.motion.stopMove()
+                            except Exception: pass
+                            _phase[0]   = "settle"
+                            _phase_t[0] = now
+                        elif (not still_moving) or elapsed > _STEP_TIMEOUT:
+                            if elapsed > _STEP_TIMEOUT:
+                                print("[Step] timed out after %.1fs" % elapsed)
+                                try: self.conn.motion.stopMove()
+                                except Exception: pass
+                            # Did it actually go anywhere?  Odometry is the only
+                            # honest answer: wedged against a wall the engine
+                            # happily marches on the spot and sonar sees nothing.
+                            p1 = _robot_xy()
+                            if p1 and _step_pos0[0]:
+                                dx = p1[0] - _step_pos0[0][0]
+                                dy = p1[1] - _step_pos0[0][1]
+                                moved = math.sqrt(dx * dx + dy * dy)
+                                if moved < _STEP_M * _NO_PROGRESS_FRAC:
+                                    _no_progress[0] += 1
+                                    print("[Step] moved only %.3fm of %.2fm "
+                                          "- stalled (%d/%d)"
+                                          % (moved, _STEP_M, _no_progress[0],
+                                             _NO_PROGRESS_HITS))
+                                else:
+                                    _no_progress[0] = 0
+                            _phase[0]   = "settle"
+                            _phase_t[0] = now
+                            if _no_progress[0] >= _NO_PROGRESS_HITS:
+                                _escape_stuck()
+                        self.auto_status.set("Stepping (roll %.2f)..." % roll_peak)
                         time.sleep(0.05)
                         continue
-                elif (now - _phase_t[0] >= _BURST_S) or roll_peak >= _ROLL_WARN:
-                    _phase[0]   = "settle"
-                    _phase_t[0] = now
-                    try: self.conn.motion.stopMove()
-                    except Exception: pass
-                    _cur_fwd[0] = _cur_turn[0] = 0.0
-                    time.sleep(0.05)
-                    continue
 
                 # With burst gait on, the head only sweeps during the settle
                 # phase, so it never moves mid-stride — it is ~0.5 kg at the top
@@ -2092,36 +2415,42 @@ class NaoAppWindow(object):
                         try: self.conn.tts.post.say(msg)
                         except Exception: pass
 
-                    # Back up.  These are fractions of MaxStepX/MaxStepTheta, not
-                    # m/s — the old 0.10 was ~0.3mm per step, i.e. the robot
-                    # rocked in place instead of actually retreating.  Backwards
-                    # is the least stable direction, so keep it moderate.
-                    self.conn.motion.moveToward(-0.35, 0.0, 0.0, walk_config)
-                    for _ in range(15):
-                        if not getattr(self, "_seeking", False): break
-                        time.sleep(0.1)
-                    try: self.conn.motion.stopMove()
-                    except Exception: pass
-
-                    # Pivot away from the obstacle.  MaxStepTheta is already a
-                    # gentle 0.12 rad/step, so a high fraction here is still a
-                    # slow turn in absolute terms — but it actually turns.
-                    turn_dir = -(random.uniform(0.55, 0.85))
-                    if not boundary_ok:
-                        turn_dir = random.choice([-1, 1]) * random.uniform(0.55, 0.85)
-                    elif l_dist < r_dist:
-                        turn_dir = -abs(turn_dir)
+                    # Avoidance uses discrete planned moves for the same reason
+                    # the stepping does: moveToward spends ~1s shifting weight
+                    # before it steps, so driving it in short timed bursts just
+                    # rocks the hips and never completes a stride.  That is what
+                    # made the avoidance look panicky and jerky.  moveTo plans
+                    # the whole manoeuvre and finishes in stable double support.
+                    # Only reverse when something was physically touched.
+                    #
+                    # Backwards is NAO's least stable direction, and this robot
+                    # already stands with a ~9 degree forward lean, so reversing
+                    # is the worst thing to ask of it — a measured run pitched it
+                    # backward (tiltY -0.37 -> -0.94) and over, while roll stayed
+                    # at a healthy 0.03.  Sonar detections have metres of room, so
+                    # just turn away instead: turning on the spot keeps both feet
+                    # under the body and needs no backward weight transfer.
+                    if bumped:
+                        print("[Avoid] bumper contact - reversing 6cm")
+                        _planned_move(-0.06, 0.0, 0.0, "back up")
                     else:
-                        turn_dir = abs(turn_dir)
-                    if random.random() < 0.20:
-                        turn_dir *= -1.0
+                        print("[Avoid] turning away without reversing "
+                              "(sonar %.2fm)" % near)
 
-                    self.conn.motion.moveToward(0.0, 0.0, turn_dir, walk_config)
-                    for _ in range(int(random.uniform(15, 35))):
-                        if not getattr(self, "_seeking", False): break
-                        time.sleep(0.1)
-                    try: self.conn.motion.stopMove()
-                    except Exception: pass
+                    # Then turn away by a real angle (radians for moveTo, not a
+                    # normalised fraction) so it actually clears the obstacle
+                    # instead of nudging a few degrees.
+                    turn_rad = random.uniform(0.6, 1.0)      # ~35-57 degrees
+                    if not boundary_ok:
+                        turn_rad *= random.choice([-1, 1])
+                    elif l_dist < r_dist:
+                        turn_rad = -abs(turn_rad)            # obstacle left -> turn right
+                    else:
+                        turn_rad = abs(turn_rad)
+                    if random.random() < 0.20:
+                        turn_rad *= -1.0                     # occasional other way
+                    print("[Avoid] turning %+.2f rad" % turn_rad)
+                    _planned_move(0.0, 0.0, turn_rad, "pivot")
 
                     # Resume from a standstill so the ramp/smoothing start clean,
                     # and settle before walking again — the back-up and pivot are
@@ -2139,7 +2468,11 @@ class NaoAppWindow(object):
                     # Normal wander movement
                     # Occasional speech
                     if time.time() > next_speech_t:
-                        phrases = search_phrases if target else face_phrases
+                        if target:
+                            phrases = (search_phrases if not target_is_human
+                                       else face_phrases)
+                        else:
+                            phrases = walk_phrases
                         if self.conn.tts:
                             try: self.conn.tts.post.say(random.choice(phrases))
                             except Exception: pass
@@ -2193,14 +2526,18 @@ class NaoAppWindow(object):
 
         finally:
             self._seeking = False
-            self.auto_status.set("Idle.")
-            try: self.conn.motion.stopMove()
-            except Exception: pass
-            # Reset head pitch
-            try:
-                if self.conn.motion:
-                    self.conn.motion.setAngles("HeadPitch", 0.0, 0.1)
-            except Exception: pass
+            locked = getattr(self, "_motion_locked", False)
+            self.auto_status.set("Relaxed." if locked else "Idle.")
+            # If the user hit Relax, do NOT touch the motors on the way out —
+            # a parting stopMove/setAngles would re-stiffen the neck on a robot
+            # that was just deliberately released.
+            if not locked:
+                try: self.conn.motion.stopMove()
+                except Exception: pass
+                try:
+                    if self.conn.motion:
+                        self.conn.motion.setAngles("HeadPitch", 0.0, 0.1)
+                except Exception: pass
             if sonar:
                 try: sonar.unsubscribe("WanderSeeker")
                 except Exception: pass
@@ -2215,8 +2552,10 @@ class NaoAppWindow(object):
                 except Exception: pass
 
     def _celebrate_found_human(self):
-        """High-five gesture, then full dance sequence."""
+        """High-five gesture, then sit."""
         import time
+        if not self._motion_allowed():
+            return
         motion = self.conn.motion
         leds   = self.conn.leds
         if leds:
@@ -2246,8 +2585,10 @@ class NaoAppWindow(object):
         self._sit_after_task()
 
     def _celebrate_found_object(self, target_name):
-        """Victory arm-wave, then full dance sequence."""
+        """Victory arm-wave, then sit."""
         import time
+        if not self._motion_allowed():
+            return
         motion = self.conn.motion
         leds   = self.conn.leds
         if leds:
@@ -2282,10 +2623,20 @@ class NaoAppWindow(object):
                 print("[Celebrate] object-dance error: %s" % e)
         self._sit_after_task()
 
+    def _motion_allowed(self):
+        """False once an emergency relax has locked motion.
+
+        Anything that starts a new motion must check this, or it will fight a
+        deliberate Relax — which is exactly what a fallen robot must not do."""
+        return not getattr(self, "_motion_locked", False)
+
     def _sit_after_task(self):
         """Sit down once a wander/seek task is complete. The full dance
         sequence is riskier (fall-prone) and is now opt-in only via the
         'Dance' button in the Posture card, rather than running automatically."""
+        if not self._motion_allowed():
+            print("[Sit] skipped: motion locked (relax).")
+            return
         if self.conn.posture:
             try:
                 self.conn.posture.goToPosture("Sit", 0.5)
