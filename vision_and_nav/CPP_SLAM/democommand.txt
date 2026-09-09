@@ -1,0 +1,7 @@
+./PantoReceiver \
+  --camera-count 2 \
+  --server-camera 0 \
+  --client-camera 1 \
+  --left-role server \
+  --mode demo \
+  --mac-ip 192.168.0.104 --frames 60000 --SGBMDoublePass false
