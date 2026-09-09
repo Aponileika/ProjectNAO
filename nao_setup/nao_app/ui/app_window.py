@@ -123,6 +123,12 @@ class NaoAppWindow(object):
             print("[NaoAppWindow] Could not load config/secrets: %s" % e)
 
         self._controller_expanded = False
+        # Live map state, shared with the wander thread so the map window can
+        # draw it. Odometry frame, so it is only meaningful within one walk.
+        self._map_blocked = []      # [(x, y, t)]
+        self._map_trail   = []      # [(x, y)]
+        self._map_pose    = None    # (x, y, theta)
+        self._map_win     = None
         self._build_ui()
         
     def _build_ui(self):
@@ -185,7 +191,190 @@ class NaoAppWindow(object):
         self._card_controller(right)
         self._card_camera(right)
 
+        # Cards that are useful occasionally but mostly just take up room. They
+        # stay collapsed until asked for, via the View menu.
+        self._build_view_menu(left, right)
+
         self.root.after(500, self._start_ip_scan)
+
+    # Titles of the cards hidden until the View menu asks for them.
+    OPTIONAL_CARDS = ("Volume", "Language", "LEDs", "PS5 Controller", "Camera")
+
+    @staticmethod
+    def _collect_cards(parent):
+        """(title, widget) for each card in a column, in packing order.
+
+        Read back off the parent rather than threading return values through
+        thirteen _card_* methods; the LabelFrame title is already the name."""
+        out = []
+        for w in parent.winfo_children():
+            try:
+                title = w.cget("text").strip()
+            except Exception:
+                title = ""
+            out.append((title, w))
+        return out
+
+    def _build_view_menu(self, left, right):
+        self._card_columns = [self._collect_cards(left), self._collect_cards(right)]
+        self._card_vis = {}
+        for cards in self._card_columns:
+            for title, _w in cards:
+                if title in self.OPTIONAL_CARDS:
+                    self._card_vis[title] = tk.BooleanVar(value=False)
+
+        menubar = tk.Menu(self.root)
+        view = tk.Menu(menubar, tearoff=0)
+        for title in self.OPTIONAL_CARDS:
+            if title in self._card_vis:
+                view.add_checkbutton(
+                    label=title, variable=self._card_vis[title],
+                    command=self._apply_card_visibility)
+        view.add_separator()
+        view.add_command(label="Show all", command=lambda: self._set_all_cards(True))
+        view.add_command(label="Hide all", command=lambda: self._set_all_cards(False))
+        view.add_separator()
+        view.add_command(label="Map window", command=self._toggle_map_window)
+        menubar.add_cascade(label="View", menu=view)
+        self.root.config(menu=menubar)
+
+        self._apply_card_visibility()
+
+    # ---------------------------------------------------------------- map ---
+    def _toggle_map_window(self):
+        if getattr(self, "_map_win", None) is not None:
+            self._close_map_window()
+            return
+        win = tk.Toplevel(self.root)
+        win.title("NAO map")
+        win.configure(bg=BG)
+        win.geometry("440x480")
+        self._map_canvas = tk.Canvas(win, bg="#11111b", highlightthickness=0)
+        self._map_canvas.pack(fill="both", expand=True, padx=8, pady=(8, 4))
+        self._map_info = tk.StringVar(value="No odometry yet - start a walk.")
+        tk.Label(win, textvariable=self._map_info, font=self.font_small,
+                 bg=BG, fg=FG).pack(anchor="w", padx=10, pady=(0, 6))
+        win.protocol("WM_DELETE_WINDOW", self._close_map_window)
+        self._map_win = win
+        self._draw_map()
+
+    def _close_map_window(self):
+        win = getattr(self, "_map_win", None)
+        self._map_win = None
+        if win is not None:
+            try: win.destroy()
+            except Exception: pass
+
+    def _draw_map(self):
+        """Redraw the live map: trail, blocked points, and the robot.
+
+        Everything is in the odometry frame, which only means anything within a
+        single walk — it drifts over minutes and is reset by a fall."""
+        win = getattr(self, "_map_win", None)
+        if win is None:
+            return
+        c = self._map_canvas
+        try:
+            c.delete("all")
+            w = max(c.winfo_width(), 50)
+            h = max(c.winfo_height(), 50)
+        except Exception:
+            self._map_win = None
+            return
+
+        trail   = list(self._map_trail)
+        blocked = list(self._map_blocked)
+        pose    = self._map_pose
+
+        pts = list(trail) + [(b[0], b[1]) for b in blocked]
+        if pose:
+            pts.append((pose[0], pose[1]))
+        if not pts:
+            c.create_text(w / 2, h / 2, text="No odometry yet.\nStart a walk.",
+                          fill="#585b70", font=self.font_norm, justify="center")
+            win.after(400, self._draw_map)
+            return
+
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        # Always show at least a 2m window so a stationary robot is not zoomed
+        # to absurdity, and keep the aspect ratio square so the map is not skewed.
+        span = max(max(xs) - min(xs), max(ys) - min(ys), 2.0) * 1.15
+        cx = (max(xs) + min(xs)) / 2.0
+        cy = (max(ys) + min(ys)) / 2.0
+        scale = min(w, h) / span
+
+        def to_px(x, y):
+            # NAO odometry: +x forward, +y left. Draw +x up and +y left so the
+            # map reads the way the robot was facing when the walk started.
+            return (w / 2.0 - (y - cy) * scale,
+                    h / 2.0 - (x - cx) * scale)
+
+        # 1m grid
+        step_px = scale
+        if step_px > 12:
+            n = int(span / 2.0) + 1
+            for i in range(-n, n + 1):
+                gx, gy = to_px(cx + i, cy)
+                c.create_line(0, gy, w, gy, fill="#1e1e2e")
+                gx, gy = to_px(cx, cy + i)
+                c.create_line(gx, 0, gx, h, fill="#1e1e2e")
+
+        # Blocked places, with the radius actually used for avoidance
+        for bx, by, _bt in blocked:
+            px, py = to_px(bx, by)
+            r = 0.45 * scale
+            c.create_oval(px - r, py - r, px + r, py + r,
+                          outline="#f38ba8", fill="#3a1f2b")
+            c.create_oval(px - 2, py - 2, px + 2, py + 2,
+                          outline="", fill="#f38ba8")
+
+        # Trail
+        if len(trail) > 1:
+            flat = []
+            for x, y in trail:
+                px, py = to_px(x, y)
+                flat.extend([px, py])
+            c.create_line(*flat, fill="#89b4fa", width=2, smooth=True)
+
+        # Robot, as an arrow pointing where it is facing
+        if pose:
+            x, y, th = pose
+            px, py = to_px(x, y)
+            nose  = to_px(x + 0.18 * math.cos(th), y + 0.18 * math.sin(th))
+            left  = to_px(x + 0.07 * math.cos(th + 2.5),
+                          y + 0.07 * math.sin(th + 2.5))
+            right = to_px(x + 0.07 * math.cos(th - 2.5),
+                          y + 0.07 * math.sin(th - 2.5))
+            c.create_polygon(nose[0], nose[1], left[0], left[1],
+                             right[0], right[1],
+                             fill="#a6e3a1", outline="#1e1e2e")
+
+        self._map_info.set(
+            "%d blocked  |  %.1fm trail  |  %.1fm across  |  odometry frame"
+            % (len(blocked),
+               sum(math.hypot(trail[i][0] - trail[i - 1][0],
+                              trail[i][1] - trail[i - 1][1])
+                   for i in range(1, len(trail))) if len(trail) > 1 else 0.0,
+               span))
+        win.after(400, self._draw_map)
+
+    def _set_all_cards(self, shown):
+        for var in self._card_vis.values():
+            var.set(bool(shown))
+        self._apply_card_visibility()
+
+    def _apply_card_visibility(self):
+        """Repack each column so hidden cards leave no gap and the surviving
+        cards keep their original order (pack() alone would send a re-shown card
+        to the bottom)."""
+        for cards in getattr(self, "_card_columns", []):
+            for _title, w in cards:
+                w.pack_forget()
+            for title, w in cards:
+                var = self._card_vis.get(title)
+                if var is None or var.get():
+                    w.pack(fill="x", pady=4)
 
     def _card_connection(self, parent):
         card = make_card(parent, "Connection", self.font_head)
@@ -587,8 +776,19 @@ class NaoAppWindow(object):
         if ok:
             try:
                 if self.conn.audio: self.vol_var.set(self.conn.audio.getOutputVolume())
-                if self.conn.tts: self.lang_var.set(self.conn.tts.getLanguage())
-                if self.conn.tts: self.conn.tts.say("Connected")
+                if self.conn.tts:
+                    # Default the robot to English on connect rather than just
+                    # reporting whatever it was left in.  The Language card is
+                    # hidden by default now, so nobody would notice it had come
+                    # up in another language until it started talking.
+                    try:
+                        self.conn.tts.setLanguage("English")
+                        self.lang_var.set("English")
+                    except Exception as e:
+                        print("[Connect] could not set English: %s" % e)
+                        try: self.lang_var.set(self.conn.tts.getLanguage())
+                        except Exception: pass
+                    self.conn.tts.post.say("Connected")
             except Exception:
                 pass
             self._set_status(msg, True)
@@ -1801,12 +2001,101 @@ class NaoAppWindow(object):
             _NO_PROGRESS_FRAC = 0.35     # of the commanded step distance
             _NO_PROGRESS_HITS = 2        # consecutive stalled steps before escaping
 
-            def _robot_xy():
+            # --- Spatial memory of blocked places -----------------------------
+            # Odometry (getRobotPosition) gives x/y/theta in a frame that lasts
+            # as long as the session, which is enough for a lightweight local
+            # map.  Storage is not the constraint — this runs on the PC, so
+            # thousands of points would be fine.  DRIFT is the constraint: leg
+            # odometry accumulates error over minutes, and a fall destroys the
+            # reference completely.  So points expire, and the map is cleared on
+            # a fall rather than trusted afterwards.
+            # Alias the shared list so the map window sees the same object.
+            self._map_blocked = []
+            self._map_trail   = []
+            _blocked      = self._map_blocked   # [(x, y, t)] places that stopped us
+            _BLOCK_TTL    = 180.0   # s — forget before drift makes it a lie
+            _BLOCK_MAX    = 200     # cap, purely defensive
+            _BLOCK_RADIUS = 0.45    # m — how wide a blocked point counts as
+            _PROBE_AHEAD  = 0.60    # m — how far ahead a candidate heading looks
+
+            def _robot_pose():
                 try:
                     p = self.conn.motion.getRobotPosition(True)
-                    return (p[0], p[1])
+                    pose = (p[0], p[1], p[2])
                 except Exception:
                     return None
+                self._map_pose = pose
+                # Breadcrumb trail, thinned so it does not grow without bound.
+                tr = self._map_trail
+                if not tr or math.hypot(tr[-1][0] - pose[0],
+                                        tr[-1][1] - pose[1]) > 0.04:
+                    tr.append((pose[0], pose[1]))
+                    if len(tr) > 1500:
+                        del tr[0]
+                return pose
+
+            def _robot_xy():
+                p = _robot_pose()
+                return (p[0], p[1]) if p else None
+
+            def _note_blocked(reason):
+                """Remember here as a place that stopped us."""
+                p = _robot_xy()
+                if not p:
+                    return
+                now_t = time.time()
+                # Merge into a nearby existing point instead of piling up
+                # duplicates every time we bump the same wall.
+                for i, (bx, by, _bt) in enumerate(_blocked):
+                    if math.hypot(bx - p[0], by - p[1]) < _BLOCK_RADIUS * 0.5:
+                        _blocked[i] = (bx, by, now_t)
+                        return
+                _blocked.append((p[0], p[1], now_t))
+                if len(_blocked) > _BLOCK_MAX:
+                    del _blocked[0]
+                print("[Map] blocked point #%d at (%.2f, %.2f) - %s"
+                      % (len(_blocked), p[0], p[1], reason))
+
+            def _prune_blocked():
+                cutoff = time.time() - _BLOCK_TTL
+                _blocked[:] = [b for b in _blocked if b[2] >= cutoff]
+
+            def _heading_cost(x, y, th):
+                """How blocked does it look this way? Lower is better."""
+                px = x + _PROBE_AHEAD * math.cos(th)
+                py = y + _PROBE_AHEAD * math.sin(th)
+                cost = 0.0
+                for bx, by, _bt in _blocked:
+                    d = math.hypot(bx - px, by - py)
+                    if d < _BLOCK_RADIUS:
+                        # Closer to a known blockage = worse.
+                        cost += (_BLOCK_RADIUS - d) / _BLOCK_RADIUS
+                return cost
+
+            def _pick_escape_turn():
+                """Choose a turn that heads somewhere we have not already been
+                stopped, instead of turning a random amount and wandering back
+                into the same corner."""
+                _prune_blocked()
+                pose = _robot_pose()
+                if not pose or not _blocked:
+                    # Nothing remembered: fall back to alternating turns.
+                    t = _escape_dir[0] * random.uniform(1.2, 1.8)
+                    _escape_dir[0] *= -1.0
+                    return t
+                x, y, th = pose
+                best, best_cost = None, None
+                # Sample turns both ways, never straight ahead (that is where we
+                # just got stuck).
+                for delta in (-2.6, -2.0, -1.5, -1.0, 1.0, 1.5, 2.0, 2.6):
+                    c = _heading_cost(x, y, th + delta)
+                    # Mild preference for a smaller turn among equally clear ones.
+                    c += abs(delta) * 0.05
+                    if best_cost is None or c < best_cost:
+                        best, best_cost = delta, c
+                print("[Map] %d blocked points known; choosing turn %+.2f rad "
+                      "(cost %.2f)" % (len(_blocked), best, best_cost))
+                return best
 
             def _planned_move(x, y, th, label, timeout=12.0):
                 """Run one planned move, watching balance throughout.
@@ -1852,13 +2141,13 @@ class NaoAppWindow(object):
                 alternate the turn direction so a failed escape is not repeated."""
                 print("[Stuck] no progress - backing off and trying another way")
                 self.auto_status.set("Stuck - backing out...")
+                _note_blocked("stuck")
                 if self.conn.tts:
                     try: self.conn.tts.post.say("I am stuck. Backing out.")
                     except Exception: pass
                 _planned_move(-0.15, 0.0, 0.0, "escape reverse")
                 time.sleep(0.4)          # let it settle before turning
-                turn = _escape_dir[0] * random.uniform(1.2, 1.8)   # ~70-100 deg
-                _escape_dir[0] *= -1.0
+                turn = _pick_escape_turn()
                 print("[Stuck] turning %+.2f rad to find another route" % turn)
                 _planned_move(0.0, 0.0, turn, "escape turn")
                 _no_progress[0] = 0
@@ -2179,6 +2468,13 @@ class NaoAppWindow(object):
                     self.auto_status.set("Fallen - motors released.")
                     self._set_status(
                         "Fall detected. Motors released - please help it up.", False)
+                    # Odometry does not survive a fall (and the robot gets picked
+                    # up and put down somewhere else), so every remembered
+                    # coordinate is now meaningless. Better no map than a wrong one.
+                    if _blocked:
+                        print("[Map] discarding %d blocked points - odometry "
+                              "reference lost in the fall" % len(_blocked))
+                        _blocked[:] = []
                     # Do NOT try to sit or recover.  This used to run
                     # goToPosture("Sit") straight after a fall, which is a fresh
                     # full-body motion on a robot that has just hit the floor —
@@ -2216,6 +2512,7 @@ class NaoAppWindow(object):
                 # tiltX is roll (topple sideways), tiltY is pitch (nose-over).
                 if now - _last_trace[0] >= 0.5:
                     _last_trace[0] = now
+                    _robot_pose()      # keeps the map trail and marker current
                     # tiltmag is what the stability governor actually acts on,
                     # and phase/stepping matters more than the old fwd/turn
                     # columns, which are always zero under discrete stepping.
@@ -2437,18 +2734,37 @@ class NaoAppWindow(object):
                         print("[Avoid] turning away without reversing "
                               "(sonar %.2fm)" % near)
 
-                    # Then turn away by a real angle (radians for moveTo, not a
-                    # normalised fraction) so it actually clears the obstacle
-                    # instead of nudging a few degrees.
-                    turn_rad = random.uniform(0.6, 1.0)      # ~35-57 degrees
-                    if not boundary_ok:
-                        turn_rad *= random.choice([-1, 1])
-                    elif l_dist < r_dist:
-                        turn_rad = -abs(turn_rad)            # obstacle left -> turn right
+                    # Remember this spot, then turn away by a real angle (radians
+                    # for moveTo, not a normalised fraction) so it actually
+                    # clears instead of nudging a few degrees.
+                    _note_blocked(reason_txt)
+                    _prune_blocked()
+                    pose = _robot_pose()
+                    if pose and len(_blocked) > 1:
+                        # Prefer a heading with no remembered blockage in it,
+                        # while still respecting which side the sonar saw.
+                        x, y, th = pose
+                        prefer = -1.0 if l_dist < r_dist else 1.0
+                        best, best_cost = None, None
+                        for mag in (0.7, 1.0, 1.4, 2.0):
+                            for sign in (prefer, -prefer):
+                                d = sign * mag
+                                c = _heading_cost(x, y, th + d) + abs(d) * 0.05
+                                if sign != prefer:
+                                    c += 0.15      # mild tiebreak toward the open side
+                                if best_cost is None or c < best_cost:
+                                    best, best_cost = d, c
+                        turn_rad = best
                     else:
-                        turn_rad = abs(turn_rad)
-                    if random.random() < 0.20:
-                        turn_rad *= -1.0                     # occasional other way
+                        turn_rad = random.uniform(0.6, 1.0)      # ~35-57 degrees
+                        if not boundary_ok:
+                            turn_rad *= random.choice([-1, 1])
+                        elif l_dist < r_dist:
+                            turn_rad = -abs(turn_rad)        # obstacle left -> turn right
+                        else:
+                            turn_rad = abs(turn_rad)
+                        if random.random() < 0.20:
+                            turn_rad *= -1.0                 # occasional other way
                     print("[Avoid] turning %+.2f rad" % turn_rad)
                     _planned_move(0.0, 0.0, turn_rad, "pivot")
 

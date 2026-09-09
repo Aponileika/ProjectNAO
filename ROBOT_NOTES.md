@@ -238,12 +238,71 @@ In the session scratchpad. Worth moving into the repo if they are still useful.
 
 ---
 
+## Run log
+
+Newest first. Record what changed and what actually happened.
+
+### 2026-09-09 — first genuinely good walk
+
+Config: `burst_gait` on, `step_m` 0.08, `torso_wy` -0.08, `MaxStepFrequency`
+1.0, `StepHeight` 0.015, `MaxStepX` 0.020, `MaxStepY` 0.160.
+
+Walked well and at length — the first run not dominated by falling. The
+`TorsoWy` trim plus the shorter single-support phase is the combination that
+made the difference.
+
+Remaining problem: **wall-stuck escape kept returning to the same spot.** It
+escaped, wandered, and walked back into the same corner repeatedly, because the
+escape turn was random and nothing remembered where it had been stopped. Led to
+the spatial memory below.
+
+### Earlier
+
+Roll divergence dominated everything. See the fault section above.
+
+---
+
+## Spatial memory (added 2026-09-09, untested)
+
+The robot now remembers where it was blocked and steers away from those places.
+
+- Odometry (`getRobotPosition(True)`) supplies x/y/theta in a session-long frame.
+- Every stuck event or sonar/bumper avoidance records a point; nearby hits merge
+  rather than accumulating duplicates.
+- Escapes and avoidance turns score candidate headings by how much remembered
+  blockage lies ahead, and pick the clearest.
+- Points expire after **180 s**, and the whole map is **discarded on a fall**.
+
+**Storage is not the limit** — this runs on the PC, so thousands of points would
+be fine. **Odometry drift is the limit.** Leg odometry accumulates error over
+minutes, and a fall (plus being picked up and put down) destroys the reference
+completely. Hence the TTL and the discard-on-fall: better no map than a wrong
+one. Don't be tempted to raise the TTL much without checking drift first.
+
+---
+
+## UI
+
+- **View menu** — Volume, Language, LEDs, PS5 Controller and Camera are hidden
+  by default and toggled from `View`. They are rarely needed and crowded the
+  window. Toggling repacks the whole column so cards keep their original order.
+- **Map window** (`View → Map window`) — live top-down view at ~2.5 fps: green
+  arrow for the robot and its heading, blue trail, red circles for remembered
+  blocked points drawn at the real 0.45 m avoidance radius, 1 m grid. Drawn in
+  the odometry frame, so it only means anything within a single walk.
+- **Language is forced to English on connect** rather than read from the robot.
+  With the card hidden you would not notice it had come up in another language
+  until it started talking.
+
+---
+
 ## Open / untested
 
-- **Wall-stuck escape** — just added, needs testing. Odometry detects a stalled
-  step, then reverses 15 cm and turns 1.2–1.8 rad, alternating direction.
-- **Corner trapping** — avoidance has no memory of directions already tried.
+- **Spatial memory and map window** — just added; watch the `[Map]` log lines to
+  see whether chosen headings actually avoid known-blocked places.
 - **Deeper voice** — `\vct=70\` markup works today in the Speech Test box; not
   yet wired in as a persistent setting.
 - **`torso_wy` value** — `-0.08` worked well. If it starts falling *backward*,
   reduce toward `-0.04`.
+- **Longer-horizon mapping** would need drift correction (landmarks, or resetting
+  the frame against a known feature). Not worth it unless walks get much longer.
