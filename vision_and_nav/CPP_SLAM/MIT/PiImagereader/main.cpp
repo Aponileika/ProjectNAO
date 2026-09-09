@@ -22,6 +22,9 @@
  *   --mode display|calib|data|yuv|demo
  *                             Display video, capture images, or request full
  *                             YUV420 for the left stereo camera.
+ *   --SGBMDoublePass true|false
+ *                             Enable slower right-to-left confidence matching
+ *                             in demo mode (default: false).
  *   --calib-dir PATH          Calibration output directory
  *                             (default: calibration_images).
  *   --mac-ip ADDRESS          Mac address advertised to the Pi
@@ -33,13 +36,17 @@
  */
 
 #include <arpa/inet.h>
+#include <signal.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/ximgproc/disparity_filter.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -77,6 +84,7 @@ static constexpr uint64_t STREAM_HELLO_MAGIC = 0x50414E544F43414DULL;
 static constexpr uint64_t STEREO_STREAM_HELLO_MAGIC = 0x50414E544F535452ULL;
 static constexpr uint64_t CLOCK_SYNC_MAGIC = 0x50414E544F434C4BULL;
 static constexpr uint32_t CLOCK_SYNC_SAMPLES = 8;
+static constexpr uint64_t DEMO_POINT_CLOUD_MAGIC = 0x50414E544F50434CULL;
 
 enum class typeSyncRole : uint32_t
 {
@@ -116,8 +124,18 @@ struct typeProgramOptions
     size_t NumFrames = DEFAULT_NUM_FRAMES;
     std::string MacIPAddress = DEFAULT_MAC_IP;
     typeReceiverMode Mode = typeReceiverMode::Display;
+    bool SGBMDoublePass = false;
     std::filesystem::path CalibrationDirectory = "calibration_images";
     std::filesystem::path DataDirectory;
+};
+
+struct typeDemoVisualizationRuntime
+{
+    std::filesystem::path OutputDirectory;
+    std::filesystem::path FramePath;
+    std::filesystem::path TemporaryFramePath;
+    pid_t ViewerPID = -1;
+    uint64_t FrameSequence = 0;
 };
 
 struct typeStreamHello
@@ -285,7 +303,8 @@ static void PrintUsage(const char* Executable)
         << " --camera-count 2 [--server-camera INDEX]"
            " [--client-camera INDEX] [--left-role server|client]\n"
         << "Optional: --frames COUNT --mac-ip ADDRESS"
-           " --mode display|calib|data|yuv|demo --calib-dir PATH\n\n"
+           " --mode display|calib|data|yuv|demo --calib-dir PATH"
+           " --SGBMDoublePass true|false\n\n"
         << "Defaults: one camera (index 0); in stereo, server camera 0 is left"
            " and client camera 1 is right.\n";
 }
@@ -373,6 +392,23 @@ static bool ParseProgramOptions(const int argc, char* argv[],
                 Options.Mode = typeReceiverMode::YUVPreview;
             else if(Mode == "demo")
                 Options.Mode = typeReceiverMode::Demo;
+            else
+                return false;
+
+            continue;
+        }
+
+        if(Argument == "--SGBMDoublePass" ||
+           Argument == "--sgbm-double-pass")
+        {
+            if(++ArgumentIndex >= argc)
+                return false;
+
+            const std::string_view Value(argv[ArgumentIndex]);
+            if(Value == "true" || Value == "1")
+                Options.SGBMDoublePass = true;
+            else if(Value == "false" || Value == "0")
+                Options.SGBMDoublePass = false;
             else
                 return false;
 
@@ -1441,29 +1477,313 @@ static bool UpdateDisplayImage(typeStreamRuntime& Stream,
     return true;
 }
 
-static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
-        const cv::Mat& RightLuminance, const cv::Mat& LeftBGR)
+static std::filesystem::path FindDemoPythonInterpreter(
+        std::filesystem::path SearchDirectory)
 {
-    /*
-     * Add the live disparity/point-cloud pipeline here. These three images
-     * belong to the same synchronized pair:
-     *
-     *   LeftLuminance  CV_8UC1  -> rectify, then pass to StereoSGBM
-     *   RightLuminance CV_8UC1  -> rectify, then pass to StereoSGBM
-     *   LeftBGR        CV_8UC3  -> rectify and use to colour the 3D points
-     *
-     * Suggested order:
-     *   cv::remap both Y images and LeftBGR
-     *   cv::StereoSGBM::compute(leftY, rightY, disparity)
-     *   cv::reprojectImageTo3D(disparity, points3D, Q)
-     *   associate each valid point with the matching LeftBGR pixel
-     *
-     * This runs on the UI thread rather than the TCP receiver thread, so slow
-     * demo processing may skip display updates without blocking reception.
-     */
-    (void)LeftLuminance;
-    (void)RightLuminance;
-    (void)LeftBGR;
+    while(!SearchDirectory.empty())
+    {
+        const std::filesystem::path Candidate =
+            SearchDirectory / ".venv/bin/python";
+        if(std::filesystem::exists(Candidate))
+            return Candidate;
+
+        const std::filesystem::path Parent = SearchDirectory.parent_path();
+        if(Parent == SearchDirectory)
+            break;
+        SearchDirectory = Parent;
+    }
+    return {};
+}
+
+static bool StartDemoVisualization(const std::filesystem::path& ExecutablePath,
+        typeDemoVisualizationRuntime& Visualization)
+{
+    const std::filesystem::path ExecutableDirectory =
+        std::filesystem::absolute(ExecutablePath).lexically_normal().parent_path();
+    const std::filesystem::path ViewerScript =
+        ExecutableDirectory / "demo_pointcloud_viewer.py";
+    const std::filesystem::path Python =
+        FindDemoPythonInterpreter(ExecutableDirectory);
+
+    if(Python.empty() || !std::filesystem::exists(ViewerScript))
+    {
+        std::cerr << "Demo viewer dependencies not found\n"
+                  << "  Python: " << Python << '\n'
+                  << "  Script: " << ViewerScript << '\n';
+        return false;
+    }
+
+    Visualization.OutputDirectory = ExecutableDirectory / "demo_pointcloud";
+    Visualization.FramePath = Visualization.OutputDirectory / "points.bin";
+    Visualization.TemporaryFramePath =
+        Visualization.OutputDirectory / "points.bin.tmp";
+
+    std::error_code Error;
+    std::filesystem::create_directories(Visualization.OutputDirectory, Error);
+    if(Error)
+    {
+        std::cerr << "Failed to create demo point-cloud directory: "
+                  << Error.message() << '\n';
+        return false;
+    }
+    std::filesystem::remove(Visualization.FramePath, Error);
+    Error.clear();
+    std::filesystem::remove(Visualization.TemporaryFramePath, Error);
+
+    const std::string PythonString = Python.string();
+    const std::string ScriptString = ViewerScript.string();
+    const std::string OutputString = Visualization.OutputDirectory.string();
+    const std::string ParentPID = std::to_string(getpid());
+    const pid_t PID = fork();
+    if(PID < 0)
+    {
+        perror("fork demo viewer");
+        return false;
+    }
+    if(PID == 0)
+    {
+        execl(PythonString.c_str(), PythonString.c_str(),
+            ScriptString.c_str(), OutputString.c_str(), ParentPID.c_str(),
+            static_cast<char*>(nullptr));
+        perror("execl demo viewer");
+        _exit(127);
+    }
+
+    Visualization.ViewerPID = PID;
+    std::cout << "Started demo Viser point-cloud viewer (PID "
+              << PID << ")\n";
+    return true;
+}
+
+static void StopDemoVisualization(typeDemoVisualizationRuntime& Visualization)
+{
+    if(Visualization.ViewerPID <= 0)
+        return;
+
+    kill(Visualization.ViewerPID, SIGTERM);
+    while(waitpid(Visualization.ViewerPID, nullptr, 0) < 0 && errno == EINTR)
+    {
+    }
+    Visualization.ViewerPID = -1;
+}
+
+static bool PublishDemoPointCloud(
+        typeDemoVisualizationRuntime& Visualization,
+        const std::vector<float>& Positions,
+        const std::vector<uint8_t>& Colors)
+{
+    const uint64_t NumPoints = Positions.size() / 3;
+    if(Positions.size() != NumPoints * 3 || Colors.size() != NumPoints * 3)
+        return false;
+
+    std::ofstream File(Visualization.TemporaryFramePath,
+        std::ios::binary | std::ios::trunc);
+    if(!File)
+        return false;
+
+    const uint64_t FrameSequence = Visualization.FrameSequence++;
+    File.write(reinterpret_cast<const char*>(&DEMO_POINT_CLOUD_MAGIC),
+        sizeof(DEMO_POINT_CLOUD_MAGIC));
+    File.write(reinterpret_cast<const char*>(&FrameSequence),
+        sizeof(FrameSequence));
+    File.write(reinterpret_cast<const char*>(&NumPoints), sizeof(NumPoints));
+    File.write(reinterpret_cast<const char*>(Positions.data()),
+        static_cast<std::streamsize>(Positions.size() * sizeof(float)));
+    File.write(reinterpret_cast<const char*>(Colors.data()),
+        static_cast<std::streamsize>(Colors.size()));
+    File.close();
+    if(!File)
+        return false;
+
+    std::error_code Error;
+    std::filesystem::rename(Visualization.TemporaryFramePath,
+        Visualization.FramePath, Error);
+    return !Error;
+}
+
+static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
+        const cv::Mat& RightLuminance, const cv::Mat& LeftBGR,
+        typeDemoVisualizationRuntime& Visualization,
+        const bool SGBMDoublePass)
+{
+    static constexpr int BlockSize = 7;
+    static constexpr int MinDisparity = -128;
+    static constexpr int NumDisparities = 128;
+    static constexpr int PointSampleStride = 3;
+    static constexpr float MinimumDepthMetres = 0.15F;
+    static constexpr float MaximumDepthMetres = 15.0F;
+
+    static const cv::Matx33d KLeft(
+        583.656905612597, 0.0, 318.246701709208,
+        0.0, 584.913010873283, 219.459363187465,
+        0.0, 0.0, 1.0);
+    static const cv::Matx33d KRight(
+        585.964174869895, 0.0, 316.930217707653,
+        0.0, 586.841937275282, 217.008369998399,
+        0.0, 0.0, 1.0);
+    static const cv::Vec<double, 5> DLeft(
+        -0.070231934465, 0.581467630762, -0.011830893759,
+        -0.001925557061, -1.100253544397);
+    static const cv::Vec<double, 5> DRight(
+        -0.06616119276960, 0.4795788187738, -0.01156431233099,
+        -0.0007034267423764, -0.8721983929016);
+    static const cv::Matx33d RLeftRectification(
+        0.999512054949, -0.003047586781, -0.031086399372,
+        0.002905116148, 0.999985074594, -0.004627190226,
+        0.031100037159, 0.004534622810, 0.999505990420);
+    static const cv::Matx33d RRightRectification(
+        0.9988392751028, 0.0009248128518370, -0.04815856344735,
+        -0.0007041022937771, 0.9999891731673, 0.004599759581089,
+        0.04816229595941, -0.004560511970603, 0.9988291119999);
+    static const cv::Matx34d PLeft(
+        614.558600234117, 0.0, 346.102619171143, 0.0,
+        0.0, 614.558600234117, 206.618324279785, 0.0,
+        0.0, 0.0, 1.0, 0.0);
+    static const cv::Matx34d PRight(
+        614.558600234117, 0.0, 346.102619171143, 42.563475269922,
+        0.0, 614.558600234117, 206.618324279785, 0.0,
+        0.0, 0.0, 1.0, 0.0);
+    static const cv::Matx44d Q(
+        1.0, 0.0, 0.0, -346.102619171143,
+        0.0, 1.0, 0.0, -206.618324279785,
+        0.0, 0.0, 0.0, 614.558600234117,
+        0.0, 0.0, -14.438637736623, 0.0);
+
+    struct typeDemoPipeline
+    {
+        cv::Mat LeftMap1;
+        cv::Mat LeftMap2;
+        cv::Mat RightMap1;
+        cv::Mat RightMap2;
+        cv::Ptr<cv::StereoSGBM> Stereo;
+        cv::Ptr<cv::StereoMatcher> RightMatcher;
+        cv::Ptr<cv::ximgproc::DisparityWLSFilter> WLS;
+        bool DoublePass;
+
+        explicit typeDemoPipeline(const bool UseDoublePass)
+            : DoublePass(UseDoublePass)
+        {
+            const cv::Size ImageSize(FRAME_WIDTH, FRAME_HEIGHT);
+            cv::initUndistortRectifyMap(KLeft, DLeft,
+                RLeftRectification, PLeft, ImageSize, CV_16SC2,
+                LeftMap1, LeftMap2);
+            cv::initUndistortRectifyMap(KRight, DRight,
+                RRightRectification, PRight, ImageSize, CV_16SC2,
+                RightMap1, RightMap2);
+
+            Stereo = cv::StereoSGBM::create(
+                MinDisparity, NumDisparities, BlockSize);
+            Stereo->setP1(8 * BlockSize * BlockSize);
+            Stereo->setP2(32 * BlockSize * BlockSize);
+            Stereo->setUniquenessRatio(5);
+            Stereo->setSpeckleWindowSize(50);
+            Stereo->setSpeckleRange(2);
+            Stereo->setDisp12MaxDiff(1);
+            Stereo->setMode(cv::StereoSGBM::MODE_SGBM_3WAY);
+
+            WLS = cv::ximgproc::createDisparityWLSFilterGeneric(DoublePass);
+            if(DoublePass)
+                RightMatcher = cv::ximgproc::createRightMatcher(Stereo);
+            WLS->setLambda(500.0);
+            WLS->setSigmaColor(0.0001);
+        }
+    };
+    static typeDemoPipeline Pipeline(SGBMDoublePass);
+
+    if(LeftLuminance.empty() || RightLuminance.empty() || LeftBGR.empty())
+        return;
+
+    cv::Mat LeftRectified;
+    cv::Mat RightRectified;
+    cv::Mat LeftColorRectified;
+    cv::remap(LeftLuminance, LeftRectified,
+        Pipeline.LeftMap1, Pipeline.LeftMap2, cv::INTER_LINEAR,
+        cv::BORDER_CONSTANT);
+    cv::remap(RightLuminance, RightRectified,
+        Pipeline.RightMap1, Pipeline.RightMap2, cv::INTER_LINEAR,
+        cv::BORDER_CONSTANT);
+    cv::remap(LeftBGR, LeftColorRectified,
+        Pipeline.LeftMap1, Pipeline.LeftMap2, cv::INTER_LINEAR,
+        cv::BORDER_CONSTANT);
+    cv::Mat Disparity16;
+    Pipeline.Stereo->compute(LeftRectified, RightRectified, Disparity16);
+
+    cv::Mat FilteredDisparity16;
+    if(Pipeline.DoublePass)
+    {
+        cv::Mat RightDisparity16;
+        Pipeline.RightMatcher->compute(
+            RightRectified, LeftRectified, RightDisparity16);
+        Pipeline.WLS->filter(Disparity16, LeftRectified,
+            FilteredDisparity16, RightDisparity16,
+            cv::Rect(0, 0, FRAME_WIDTH, FRAME_HEIGHT));
+    }
+    else
+    {
+        const int InvalidDisparity = (MinDisparity - 1) * 16;
+        cv::Mat WLSInput = Disparity16.clone();
+        WLSInput.setTo(0, Disparity16 <= InvalidDisparity);
+        Pipeline.WLS->filter(
+            WLSInput, LeftRectified, FilteredDisparity16);
+    }
+    const cv::Mat ValidDisparityMask =
+        (FilteredDisparity16 >= MinDisparity * 16) &
+        (FilteredDisparity16 < 0);
+
+    cv::Mat DisparityDisplay;
+    FilteredDisparity16.convertTo(DisparityDisplay, CV_8U,
+        -255.0 / (NumDisparities * 16.0), 0.0);
+    DisparityDisplay.setTo(0, ~ValidDisparityMask);
+
+    cv::Mat ColorDisparity;
+    cv::applyColorMap(DisparityDisplay, ColorDisparity, cv::COLORMAP_TURBO);
+    ColorDisparity.setTo(cv::Scalar(0, 0, 0), ~ValidDisparityMask);
+    cv::imshow("Demo Disparity", ColorDisparity);
+
+    cv::Mat Disparity32;
+    cv::Mat Points3D;
+    FilteredDisparity16.convertTo(Disparity32, CV_32F, 1.0 / 16.0);
+    cv::reprojectImageTo3D(Disparity32, Points3D, Q, false, CV_32F);
+
+    const size_t MaximumPointCount =
+        ((FRAME_WIDTH + PointSampleStride - 1) / PointSampleStride) *
+        ((FRAME_HEIGHT + PointSampleStride - 1) / PointSampleStride);
+    std::vector<float> Positions;
+    std::vector<uint8_t> Colors;
+    Positions.reserve(MaximumPointCount * 3);
+    Colors.reserve(MaximumPointCount * 3);
+
+    for(int Y = 0; Y < Points3D.rows; Y += PointSampleStride)
+    {
+        for(int X = 0; X < Points3D.cols; X += PointSampleStride)
+        {
+            if(ValidDisparityMask.at<uint8_t>(Y, X) == 0)
+                continue;
+
+            const cv::Vec3f Point = Points3D.at<cv::Vec3f>(Y, X);
+            if(!std::isfinite(Point[0]) || !std::isfinite(Point[1]) ||
+               !std::isfinite(Point[2]) ||
+               Point[2] < MinimumDepthMetres ||
+               Point[2] > MaximumDepthMetres)
+            {
+                continue;
+            }
+
+            // OpenCV has Y down and Z forward. Viser has Y up and the
+            // initial camera below looks along negative Z.
+            Positions.push_back(Point[0]);
+            Positions.push_back(-Point[1]);
+            Positions.push_back(-Point[2]);
+
+            const cv::Vec3b BGR = LeftColorRectified.at<cv::Vec3b>(Y, X);
+            Colors.push_back(BGR[2]);
+            Colors.push_back(BGR[1]);
+            Colors.push_back(BGR[0]);
+        }
+    }
+
+    if(!PublishDemoPointCloud(Visualization, Positions, Colors))
+        std::cerr << "Failed to publish demo point cloud\n";
 }
 
 static void DrawCalibrationCaptureIndicator(cv::Mat& Image,
@@ -1587,6 +1907,25 @@ int main(int argc, char* argv[])
 
     close(ServerFD);
 
+    typeDemoVisualizationRuntime DemoVisualization{};
+    if(Options.Mode == typeReceiverMode::Demo &&
+       !StartDemoVisualization(argv[0], DemoVisualization))
+    {
+        if(Options.CameraCount == 1)
+            close(ServerOrMonoStream.SocketFD);
+        else
+            close(Stereo.SocketFD);
+        return 1;
+    }
+    if(Options.Mode == typeReceiverMode::Demo)
+    {
+        std::cout << "Demo WLS mode: "
+                  << (Options.SGBMDoublePass ?
+                      "double pass with left-right confidence" :
+                      "single pass, high FPS")
+                  << '\n';
+    }
+
     typeStreamRuntime* LeftStream = &ServerOrMonoStream;
     typeStreamRuntime* RightStream = nullptr;
 
@@ -1669,7 +2008,8 @@ int main(int argc, char* argv[])
                 if(Options.Mode == typeReceiverMode::Demo)
                 {
                     ProcessDemoStereoPair(LeftLuminanceImage,
-                        RightLuminanceImage, LeftDisplayImage);
+                        RightLuminanceImage, LeftDisplayImage,
+                        DemoVisualization, Options.SGBMDoublePass);
                 }
 
                 const cv::Mat* RightImageForDisplay = &RightDisplayImage;
@@ -1713,6 +2053,7 @@ int main(int argc, char* argv[])
         close(Stereo.SocketFD);
 
     cv::destroyAllWindows();
+    StopDemoVisualization(DemoVisualization);
 
     if(DataCollection.Enabled &&
        !WriteDataCollection(DataCollection, Stereo.FailureReason))
