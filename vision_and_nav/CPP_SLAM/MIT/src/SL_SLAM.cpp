@@ -106,7 +106,8 @@ class typeTrackingScopedTimer
 
 void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         typePreIntegration& PreIntegrationBetweenKF,
-        bool& TrackingLost, i32& NumProcessedLoops);
+        bool& TrackingLost, i32& NumProcessedLoops,
+        u64& NumLateFramesSkipped);
 void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap);
 static std::vector<typeGroundTruth> GroundTruth;
 
@@ -898,6 +899,7 @@ void SL_PantoSLAM(i32 num_loops)
 #endif
 
     i32 RemainingLoops = num_loops;
+    u64 NumLateFramesSkipped = 0;
     while(RemainingLoops > 0)
     {
         typePreIntegration PreIntegrationBetweenKF{};
@@ -929,7 +931,8 @@ void SL_PantoSLAM(i32 num_loops)
                 RemainingLoops,
                 std::ref(PreIntegrationBetweenKF),
                 std::ref(TrackingLost),
-                std::ref(NumProcessedLoops));
+                std::ref(NumProcessedLoops),
+                std::ref(NumLateFramesSkipped));
 
         typeLocalMapData LocalMappingData
         {
@@ -982,6 +985,9 @@ void SL_PantoSLAM(i32 num_loops)
     }
 
     LG_EnableDataSummaryLoggingForCurrentThread(true);
+    LG_Log(LogSeverity::DATA,
+            "[SLAMFramePacingSummary] Frames skipped because tracking was late = %llu\n",
+            static_cast<unsigned long long>(NumLateFramesSkipped));
     MAP_LogMappingData();
     LG_EnableDataSummaryLoggingForCurrentThread(false);
 
@@ -1006,7 +1012,9 @@ void SL_PantoSLAM(i32 num_loops)
 }
 
 void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
-        typePreIntegration& PreIntegrationBetweenKF, bool& TrackingLost, i32& NumProcessedLoops)
+        typePreIntegration& PreIntegrationBetweenKF,
+        bool& TrackingLost, i32& NumProcessedLoops,
+        u64& NumLateFramesSkipped)
 {
     std::array<typeTimingStatistics,
         static_cast<std::size_t>(typeTrackingTimingStage::Count)>
@@ -1097,6 +1105,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                     }
 
                     NumProcessedLoops++;
+                    NumLateFramesSkipped++;
                     LG_Log(LogSeverity::DATA,
                             "[SLAMFramePacing] Skipped frame at %.9f s; late by %.6f s\n",
                             SkippedTimeStamp, Lateness);

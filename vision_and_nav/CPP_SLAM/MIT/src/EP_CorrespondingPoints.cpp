@@ -3,6 +3,7 @@
 #include "CM_Camera.hpp"
 #include "LG_Logging.hpp"
 #include "PT_Points.hpp"
+#include <cstring>
 #include <mutex>
 
 struct AKAZEExtract AkazeExtract;
@@ -84,8 +85,7 @@ void EP_InitCPointExtractor(void)
 DescRet EP_GetDescriptors(const cv::Mat& Img)
 {
     LG_Log(LogSeverity::DBG, "[EP_GetDescriptors] Getting Descriptors\n");
-    DescRet Ret = __EP_GetDesc(Img);
-    return Ret;
+    return __EP_GetDesc(Img);
 }
 
 void EP_LogGetDescriptorTimingStatistics(void)
@@ -288,23 +288,26 @@ DescRet __EP_GetDesc(const cv::Mat& img)
         return {};
     }
 
-    std::vector<cv::Point2d> out;
+    std::vector<cv::Point2d> DistortedPoints;
+    DistortedPoints.reserve(KeyPoints.size());
+    for(const cv::KeyPoint& KeyPoint : KeyPoints)
+        DistortedPoints.emplace_back(KeyPoint.pt.x, KeyPoint.pt.y);
 
-    for (const auto& m : KeyPoints) {
-        out.push_back(m.pt);
-    }
-
-    LG_Log(LogSeverity::DBG, "[__EP_GetDesc] num descriptors AkazeExtract = %d\n", out.size());
-    std::vector<cv::Point2d> pd;
-    cv::undistortPoints(out, pd, K, DistCoeffs, cv::noArray(), K);
+    LG_Log(LogSeverity::DBG, "[__EP_GetDesc] num descriptors AkazeExtract = %zu\n",
+            DistortedPoints.size());
+    std::vector<cv::Point2d> UndistortedPoints;
+    cv::undistortPoints(DistortedPoints, UndistortedPoints,
+            K, DistCoeffs, cv::noArray(), K);
 
     std::vector<cv::Point2d> FilteredPoints;
-    FilteredPoints.reserve(pd.size());
-    cv::Mat FilteredDescriptors;
+    FilteredPoints.reserve(UndistortedPoints.size());
+    i32 DestinationDescriptorRow = 0;
+    const size_t DescriptorRowBytes =
+        static_cast<size_t>(Descriptors.cols) * Descriptors.elemSize();
 
-    for(std::size_t i = 0; i < pd.size(); i++)
+    for(std::size_t i = 0; i < UndistortedPoints.size(); i++)
     {
-        const cv::Point2d& Point = pd[i];
+        const cv::Point2d& Point = UndistortedPoints[i];
         if(!std::isfinite(Point.x) ||
            !std::isfinite(Point.y) ||
            Point.x < 0.0 ||
@@ -316,15 +319,18 @@ DescRet __EP_GetDesc(const cv::Mat& img)
         }
 
         FilteredPoints.push_back(Point);
-        FilteredDescriptors.push_back(
-                Descriptors.row(static_cast<i32>(i)));
+        const i32 SourceDescriptorRow = static_cast<i32>(i);
+        if(DestinationDescriptorRow != SourceDescriptorRow)
+        {
+            std::memcpy(
+                    Descriptors.ptr(DestinationDescriptorRow),
+                    Descriptors.ptr(SourceDescriptorRow),
+                    DescriptorRowBytes);
+        }
+        ++DestinationDescriptorRow;
     }
 
-    out = std::move(FilteredPoints);
-    Descriptors = std::move(FilteredDescriptors);
-    struct DescRet ret;
-    ret.Points = out;
-    ret.Descriptors = Descriptors;
+    Descriptors = Descriptors.rowRange(0, DestinationDescriptorRow);
 
     const fp64 GetDescriptorTotalTime =
         std::chrono::duration<fp64>(PantoClock::now() - GetDescriptorStartTime).count();
@@ -335,7 +341,10 @@ DescRet __EP_GetDesc(const cv::Mat& img)
             AnmsTime,
             ComputeDescriptorsTime);
 
-    return ret;
+    return {
+        .Points = std::move(FilteredPoints),
+        .Descriptors = std::move(Descriptors)
+    };
 }
 
 

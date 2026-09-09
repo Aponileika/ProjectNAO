@@ -30,6 +30,95 @@ def read_viser_image(path: Path):
     return np.ascontiguousarray(image)
 
 
+def distort_image_points(points, camera, distortion):
+    """Map undistorted pixels back into the original OpenCV image domain."""
+    fx, fy, cx, cy = camera.params[:4]
+    skew, k1, k2, p1, p2, k3 = distortion
+
+    normalized_y = (points[:, 1] - cy) / fy
+    normalized_x = (points[:, 0] - cx - skew * normalized_y) / fx
+    radius_squared = normalized_x ** 2 + normalized_y ** 2
+    radial_scale = (
+        1.0
+        + k1 * radius_squared
+        + k2 * radius_squared ** 2
+        + k3 * radius_squared ** 3
+    )
+    distorted_x = (
+        normalized_x * radial_scale
+        + 2.0 * p1 * normalized_x * normalized_y
+        + p2 * (radius_squared + 2.0 * normalized_x ** 2)
+    )
+    distorted_y = (
+        normalized_y * radial_scale
+        + p1 * (radius_squared + 2.0 * normalized_y ** 2)
+        + 2.0 * p2 * normalized_x * normalized_y
+    )
+
+    return np.column_stack(
+        (
+            fx * distorted_x + skew * distorted_y + cx,
+            fy * distorted_y + cy,
+        )
+    )
+
+
+def draw_image_points(image, colmap_image, camera, distortion=None):
+    """Draw triangulated and 2D-only observations on a camera image."""
+    image_with_points = image.copy()
+    points = np.asarray(colmap_image.xys)
+    point3d_ids = np.asarray(colmap_image.point3D_ids)
+
+    if len(points) == 0:
+        return image_with_points
+
+    if distortion is not None:
+        points = distort_image_points(points, camera, distortion)
+
+    image_height, image_width = image_with_points.shape[:2]
+    point_radius = max(2, round(min(image_height, image_width) / 300))
+    border_radius = point_radius + 1
+
+    for point, point3d_id in zip(points, point3d_ids):
+        if not np.all(np.isfinite(point)):
+            continue
+
+        x = int(round(point[0]))
+        y = int(round(point[1]))
+
+        if not (0 <= x < image_width and 0 <= y < image_height):
+            continue
+
+        # Red denotes a feature that exists only in 2D; green denotes an
+        # observation associated with a triangulated map point.
+        color = (
+            np.array([0, 255, 0], dtype=np.uint8)
+            if point3d_id >= 0
+            else np.array([255, 40, 40], dtype=np.uint8)
+        )
+
+        y_min = max(0, y - border_radius)
+        y_max = min(image_height, y + border_radius + 1)
+        x_min = max(0, x - border_radius)
+        x_max = min(image_width, x + border_radius + 1)
+        yy, xx = np.ogrid[y_min:y_max, x_min:x_max]
+        distance_squared = (xx - x) ** 2 + (yy - y) ** 2
+        patch = image_with_points[y_min:y_max, x_min:x_max]
+        patch[distance_squared <= border_radius ** 2, :3] = 0
+        patch[distance_squared <= point_radius ** 2, :3] = color
+
+    return np.ascontiguousarray(image_with_points)
+
+
+def read_frame_preview(path: Path, colmap_image, camera, distortion=None):
+    return draw_image_points(
+        read_viser_image(path),
+        colmap_image,
+        camera,
+        distortion,
+    )
+
+
 def read_tracking_binary(path: Path):
     if not path.exists():
         print(f"[VISER] tracking file does not exist: {path}")
@@ -98,6 +187,32 @@ def read_timestamp_binary(path: Path):
     return np.frombuffer(timestamp_data, dtype="<f8").copy()
 
 
+def read_distortion_binary(path: Path):
+    if not path.exists():
+        return {}
+
+    distortions = {}
+
+    with path.open("rb") as f:
+        count_data = f.read(8)
+        if len(count_data) != 8:
+            raise RuntimeError(f"{path} is too short")
+
+        count = struct.unpack("<Q", count_data)[0]
+
+        for _ in range(count):
+            record = f.read(4 + 6 * 8)
+            if len(record) != 4 + 6 * 8:
+                raise RuntimeError(
+                    f"{path} ended before all distortion records were read"
+                )
+
+            values = struct.unpack("<i6d", record)
+            distortions[values[0]] = np.asarray(values[1:], dtype=np.float64)
+
+    return distortions
+
+
 def read_latest_snapshot(root: Path):
     latest_path = root / "sparse" / "latest.txt"
 
@@ -147,6 +262,8 @@ def load_snapshot(root: Path, snapshot_id: int):
         points3d = {}
         print("[VISER] points3D.bin omitted")
 
+    distortions = read_distortion_binary(sparse_path / "distortion.bin")
+
     ground_truth_path = root / "sparse" / "ground_truth.bin"
 
     if ground_truth_path.exists():
@@ -173,6 +290,7 @@ def load_snapshot(root: Path, snapshot_id: int):
         cameras,
         images,
         points3d,
+        distortions,
     )
 
 
@@ -424,6 +542,7 @@ def update_visualization(
     cameras,
     images,
     points3d,
+    distortions,
     gui_point_size,
     gui_frustum_scale,
     gui_tracking_thickness,
@@ -444,6 +563,8 @@ def update_visualization(
 
     handles["latest_tracks"] = tracks
     handles["latest_images"] = images
+    handles["latest_cameras"] = cameras
+    handles["latest_distortions"] = distortions
     handles["latest_ground_truth"] = ground_truth
     handles["latest_ground_truth_timestamps"] = ground_truth_timestamps
     handles["camera_image_preview"].visible = len(images) > 0
@@ -454,8 +575,11 @@ def update_visualization(
 
         if latest_image_file.is_file():
             try:
-                handles["camera_image_preview"].image = read_viser_image(
-                    latest_image_file
+                handles["camera_image_preview"].image = read_frame_preview(
+                    latest_image_file,
+                    images[latest_img_id],
+                    cameras[images[latest_img_id].camera_id],
+                    distortions.get(images[latest_img_id].camera_id),
                 )
             except Exception as error:
                 print(
@@ -681,8 +805,15 @@ def update_visualization(
                     return
 
                 try:
-                    handles["camera_image_preview"].image = read_viser_image(
-                        selected_image_file
+                    handles["camera_image_preview"].image = read_frame_preview(
+                        selected_image_file,
+                        handles["latest_images"][selected_id],
+                        handles["latest_cameras"][
+                            handles["latest_images"][selected_id].camera_id
+                        ],
+                        handles["latest_distortions"].get(
+                            handles["latest_images"][selected_id].camera_id
+                        ),
                     )
                 except Exception as error:
                     print(
@@ -780,6 +911,11 @@ def main(root: str):
     )
 
     server.gui.add_markdown(
+        "**Image points:** <span style='color:#00d000'>green</span> = "
+        "triangulated, <span style='color:#ff2828'>red</span> = 2D only."
+    )
+
+    server.gui.add_markdown(
         "**Free camera:** W/A/S/D move, Q/E move down/up, "
         "arrow keys rotate, and the mouse orbits/pans/zooms."
     )
@@ -828,6 +964,8 @@ def main(root: str):
         "camera_initialized": False,
         "latest_tracks": np.empty((0, 3), dtype=np.float64),
         "latest_images": {},
+        "latest_cameras": {},
+        "latest_distortions": {},
         "latest_ground_truth": np.empty((0, 3), dtype=np.float64),
         "latest_ground_truth_timestamps": np.empty(
             (0,), dtype=np.float64
@@ -934,6 +1072,7 @@ def main(root: str):
                     cameras,
                     images,
                     points3d,
+                    distortions,
                 ) = load_snapshot(root, snapshot_id)
 
                 update_visualization(
@@ -945,6 +1084,7 @@ def main(root: str):
                     cameras,
                     images,
                     points3d,
+                    distortions,
                     gui_point_size,
                     gui_frustum_scale,
                     gui_tracking_thickness,

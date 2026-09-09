@@ -2,6 +2,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <sstream>
@@ -22,7 +23,6 @@ namespace
 {
     struct typeDecodedDataSetFrame
     {
-        cv::Mat Color;
         cv::Mat Gray;
         fp64 TimeStamp = PANTO_TIMESTAMP_NOT_SET;
         std::string SourcePath;
@@ -372,18 +372,14 @@ static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(
     typeDecodedDataSetFrame Result{};
     Result.TimeStamp = TimeStamp;
     Result.SourcePath = FramePath;
-    Result.Color = cv::imread(FramePath, cv::IMREAD_COLOR);
-    if(!Result.Color.empty())
-    {
-        cv::cvtColor(Result.Color, Result.Gray, cv::COLOR_BGR2GRAY);
-    }
+    Result.Gray = cv::imread(FramePath, cv::IMREAD_GRAYSCALE);
     return Result;
 }
 
 static typePantoFrame FRPriv_FinalizeDataSetFrame(
         typeDecodedDataSetFrame Frame)
 {
-    if(Frame.Color.empty() || Frame.Gray.empty())
+    if(Frame.Gray.empty())
     {
         return
         {
@@ -393,12 +389,31 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
         };
     }
 
-    const std::string WritePath =
-        "./colmap/images/frame" +
-        std::to_string(reader.OutputFrameIndex++) +
-        ".png";
-    if(!cv::imwrite(WritePath, Frame.Color))
+    const std::filesystem::path SourcePath(Frame.SourcePath);
+    const std::filesystem::path WritePath =
+        std::filesystem::path("./colmap/images") /
+        ("frame" + std::to_string(reader.OutputFrameIndex++) +
+         SourcePath.extension().string());
+
+    std::error_code FileError;
+    std::filesystem::create_hard_link(SourcePath, WritePath, FileError);
+
+    if(FileError)
     {
+        FileError.clear();
+        std::filesystem::copy_file(
+                SourcePath,
+                WritePath,
+                std::filesystem::copy_options::overwrite_existing,
+                FileError);
+    }
+
+    if(FileError)
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[FRPriv_FinalizeDataSetFrame] Failed to link or copy %s to %s: %s\n",
+                SourcePath.c_str(), WritePath.c_str(),
+                FileError.message().c_str());
         return
         {
             .Frame = cv::Mat{},
@@ -411,7 +426,7 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
     {
         .Frame = std::move(Frame.Gray),
         .TimeStamp = Frame.TimeStamp,
-        .Path = WritePath
+        .Path = WritePath.string()
     };
 }
 

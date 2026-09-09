@@ -145,11 +145,11 @@ typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typeP
             .CellID = CellIndex
         };
 
-        ImagePoints.ImagePoints.push_back(CandidateImagePoint);
+        ImagePoints.ImagePoints.push_back(std::move(CandidateImagePoint));
         ImagePoints.CellIndexingArray[CellIndex].push_back(i);
     }
 
-    KeyFrame.Points = ImagePoints;
+    KeyFrame.Points = std::move(ImagePoints);
 
     return KeyFrame;
 }
@@ -183,12 +183,12 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
     typeKeyFrame KeyFrame = 
     {
-        .Points = ImagePoints,
-        .BowVector = NewBowVector,
-        .FeatureVector = NewFeatureVector,
+        .Points = std::move(ImagePoints),
+        .BowVector = std::move(NewBowVector),
+        .FeatureVector = std::move(NewFeatureVector),
         .Camera = PredictedPose,
         .ID = 2,
-        .ImagePath = Frame.Path
+        .ImagePath = std::move(Frame.Path)
     };
 
     const DBoW3::FeatureVector& FeatureVector1 = KeyFrame.FeatureVector;
@@ -392,7 +392,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
 
     typeKeyFrame KeyFrame = 
     {
-        .Points = ImagePoints,
+        .Points = std::move(ImagePoints),
         .BowVector = {},
         .FeatureVector = {},
         .Camera = PredictedPose,
@@ -400,7 +400,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
         .NavigationState = PredictedNavigationState,
 #endif
         .ID = PANTO_ID_NOT_SET,
-        .ImagePath = Frame.Path
+        .ImagePath = std::move(Frame.Path)
     };
 
     const fp64 GetKeyFrameTotalTime =

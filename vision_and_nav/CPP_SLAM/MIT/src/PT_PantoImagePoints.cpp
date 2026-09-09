@@ -48,7 +48,7 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>&
             .CellID = CellIndex
         };
 
-        ImagePoints.ImagePoints.push_back(CandidateImagePoint);
+        ImagePoints.ImagePoints.push_back(std::move(CandidateImagePoint));
         ImagePoints.CellIndexingArray[CellIndex].push_back(i);
     }
 
@@ -67,6 +67,7 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
     assert((static_cast<std::size_t>(Descriptors.rows) == NumImagePoints));
 
     typePantoKeypointFrame ImagePoints;
+    ImagePoints.ImagePoints.reserve(NumImagePoints);
 
     for(std::size_t i{}; i < NumImagePoints; i++)
     {
@@ -89,7 +90,7 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
             .CellID = CellIndex
         };
 
-        ImagePoints.ImagePoints.push_back(CandidateImagePoint);
+        ImagePoints.ImagePoints.push_back(std::move(CandidateImagePoint));
         ImagePoints.CellIndexingArray[CellIndex].push_back(i);
     }
 

@@ -51,15 +51,16 @@
 
 static constexpr uint16_t DEFAULT_PORT = 50555;
 static constexpr size_t DEFAULT_NUM_FRAMES = 600;
-static constexpr uint32_t FRAME_WIDTH = 1280;
-static constexpr uint32_t FRAME_HEIGHT = 720;
+static constexpr uint32_t FRAME_WIDTH = 640;
+static constexpr uint32_t FRAME_HEIGHT = 480;
 static constexpr uint32_t FRAME_SIZE = FRAME_WIDTH * FRAME_HEIGHT;
-static constexpr double TARGET_FPS = 20.0;
-static constexpr const char* DEFAULT_MAC_IP = "192.168.0.95";
+static constexpr double TARGET_FPS = 15.0;
+static constexpr const char* DEFAULT_MAC_IP = "10.241.223.208";
 static constexpr const char* PI_SSH_HOST =
     "pantopilot@pantopilotstereoraspberry.local";
 static constexpr const char* PI_PROGRAM = "~/PantoPI/ImageIO";
 static constexpr uint64_t STREAM_HELLO_MAGIC = 0x50414E544F43414DULL;
+static constexpr uint64_t STEREO_STREAM_HELLO_MAGIC = 0x50414E544F535452ULL;
 static constexpr uint64_t CLOCK_SYNC_MAGIC = 0x50414E544F434C4BULL;
 static constexpr uint32_t CLOCK_SYNC_SAMPLES = 8;
 
@@ -105,6 +106,30 @@ struct typeFrameHeader
     uint32_t PayloadSize;
 };
 
+struct typeStereoStreamHello
+{
+    uint64_t Magic;
+    uint32_t ServerCameraIndex;
+    uint32_t ClientCameraIndex;
+    uint32_t Width;
+    uint32_t Height;
+};
+
+struct typeStereoFrameHeader
+{
+    uint64_t PairSequence;
+    uint64_t ServerTimestampNs;
+    uint64_t ClientTimestampNs;
+    uint32_t ServerSequence;
+    uint32_t ClientSequence;
+    uint32_t Width;
+    uint32_t Height;
+    uint32_t PayloadSizePerImage;
+};
+
+static_assert(sizeof(typeStereoStreamHello) == 24);
+static_assert(sizeof(typeStereoFrameHeader) == 48);
+
 struct typeClockSyncRequest
 {
     uint64_t Magic;
@@ -149,6 +174,18 @@ struct typeStreamRuntime
     std::vector<double> ArrivalIntervalsMs;
     std::vector<double> CameraIntervalsMs;
     std::vector<double> CaptureToMatLatencyMs;
+};
+
+struct typeStereoRuntime
+{
+    int SocketFD = -1;
+    std::mutex ImageMutex;
+    uint64_t LatestImageVersion = 0;
+    std::atomic<bool> Finished{false};
+    bool Failed = false;
+    std::string FailureReason;
+    uint64_t MissingPairSequences = 0;
+    std::vector<double> TimestampDeltaMs;
 };
 
 static void PrintUsage(const char* Executable)
@@ -587,6 +624,68 @@ static bool AcceptStreams(const int ServerFD, const typeProgramOptions& Options,
            (Options.CameraCount == 1 || Second.SocketFD >= 0);
 }
 
+static bool AcceptStereoStream(const int ServerFD,
+        const typeProgramOptions& Options, typeStereoRuntime& Stereo,
+        typeStreamRuntime& ServerStream, typeStreamRuntime& ClientStream)
+{
+    const int PiFD = accept(ServerFD, nullptr, nullptr);
+    if(PiFD < 0)
+    {
+        perror("accept");
+        return false;
+    }
+
+    typeStereoStreamHello Hello{};
+    if(!RecvAll(PiFD, &Hello, sizeof(Hello)) ||
+       Hello.Magic != STEREO_STREAM_HELLO_MAGIC ||
+       Hello.ServerCameraIndex != Options.ServerCameraIndex ||
+       Hello.ClientCameraIndex != Options.ClientCameraIndex ||
+       Hello.Width != FRAME_WIDTH || Hello.Height != FRAME_HEIGHT)
+    {
+        std::cerr << "Invalid stereo stream-identification message from Pi\n";
+        close(PiFD);
+        return false;
+    }
+
+    double PiMinusMacOffsetNs = 0.0;
+    double ClockSyncRoundTripTimeMs = 0.0;
+    if(!SynchronizeClocks(PiFD, PiMinusMacOffsetNs,
+            ClockSyncRoundTripTimeMs))
+    {
+        std::cerr << "Clock synchronization failed for stereo stream\n";
+        close(PiFD);
+        return false;
+    }
+
+    Stereo.SocketFD = PiFD;
+    ServerStream.Hello = {
+        .Magic = STREAM_HELLO_MAGIC,
+        .CameraIndex = Hello.ServerCameraIndex,
+        .SyncRole = static_cast<uint32_t>(typeSyncRole::Server),
+        .Width = Hello.Width,
+        .Height = Hello.Height
+    };
+    ClientStream.Hello = {
+        .Magic = STREAM_HELLO_MAGIC,
+        .CameraIndex = Hello.ClientCameraIndex,
+        .SyncRole = static_cast<uint32_t>(typeSyncRole::Client),
+        .Width = Hello.Width,
+        .Height = Hello.Height
+    };
+    ServerStream.PiMinusMacOffsetNs = PiMinusMacOffsetNs;
+    ClientStream.PiMinusMacOffsetNs = PiMinusMacOffsetNs;
+    ServerStream.ClockSyncRoundTripTimeMs = ClockSyncRoundTripTimeMs;
+    ClientStream.ClockSyncRoundTripTimeMs = ClockSyncRoundTripTimeMs;
+    ServerStream.LatestImage = cv::Mat(FRAME_HEIGHT, FRAME_WIDTH, CV_8UC1);
+    ClientStream.LatestImage = cv::Mat(FRAME_HEIGHT, FRAME_WIDTH, CV_8UC1);
+
+    std::cout << "Stereo pair stream connected; server camera "
+              << Hello.ServerCameraIndex << ", client camera "
+              << Hello.ClientCameraIndex << "; best clock-sync RTT = "
+              << ClockSyncRoundTripTimeMs << " ms\n";
+    return true;
+}
+
 static void FailStream(typeStreamRuntime& Stream, const std::string& Reason)
 {
     Stream.Failed = true;
@@ -672,7 +771,142 @@ static void ReceiveStream(typeStreamRuntime& Stream, const size_t NumFrames)
     Stream.Finished.store(true, std::memory_order_release);
 }
 
-static void UpdateDisplay(typeStreamRuntime& Stream, const char* WindowName,
+static void ReceiveStereoStream(typeStereoRuntime& Stereo,
+        typeStreamRuntime& ServerStream, typeStreamRuntime& ClientStream,
+        const size_t NumPairs)
+{
+    ServerStream.ArrivalIntervalsMs.reserve(NumPairs > 0 ? NumPairs - 1 : 0);
+    ClientStream.ArrivalIntervalsMs.reserve(NumPairs > 0 ? NumPairs - 1 : 0);
+    ServerStream.CameraIntervalsMs.reserve(NumPairs > 0 ? NumPairs - 1 : 0);
+    ClientStream.CameraIntervalsMs.reserve(NumPairs > 0 ? NumPairs - 1 : 0);
+    ServerStream.CaptureToMatLatencyMs.reserve(NumPairs);
+    ClientStream.CaptureToMatLatencyMs.reserve(NumPairs);
+    Stereo.TimestampDeltaMs.reserve(NumPairs);
+
+    cv::Mat ServerImage(FRAME_HEIGHT, FRAME_WIDTH, CV_8UC1);
+    cv::Mat ClientImage(FRAME_HEIGHT, FRAME_WIDTH, CV_8UC1);
+    std::chrono::steady_clock::time_point PreviousArrivalTime{};
+    uint64_t PreviousServerTimestampNs = 0;
+    uint64_t PreviousClientTimestampNs = 0;
+    uint64_t PreviousPairSequence = 0;
+    uint32_t PreviousServerSequence = 0;
+    uint32_t PreviousClientSequence = 0;
+
+    while(ServerStream.FramesReceived < NumPairs)
+    {
+        typeStereoFrameHeader Header{};
+        if(!RecvAll(Stereo.SocketFD, &Header, sizeof(Header)))
+        {
+            Stereo.Failed = true;
+            Stereo.FailureReason = "connection closed while reading pair header";
+            break;
+        }
+
+        const uint64_t TimestampDeltaNs =
+            Header.ServerTimestampNs >= Header.ClientTimestampNs ?
+            Header.ServerTimestampNs - Header.ClientTimestampNs :
+            Header.ClientTimestampNs - Header.ServerTimestampNs;
+
+        if(Header.Width != FRAME_WIDTH || Header.Height != FRAME_HEIGHT ||
+           Header.PayloadSizePerImage != FRAME_SIZE ||
+           TimestampDeltaNs > 5'000'000ULL)
+        {
+            Stereo.Failed = true;
+            Stereo.FailureReason = "invalid or unsynchronized stereo pair";
+            break;
+        }
+
+        if(!RecvAll(Stereo.SocketFD, ServerImage.data, FRAME_SIZE) ||
+           !RecvAll(Stereo.SocketFD, ClientImage.data, FRAME_SIZE))
+        {
+            Stereo.Failed = true;
+            Stereo.FailureReason = "connection closed while reading pair payload";
+            break;
+        }
+
+        const auto ArrivalTime = std::chrono::steady_clock::now();
+        const uint64_t ArrivalTimeNs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                ArrivalTime.time_since_epoch()).count());
+
+        const auto RecordFrame = [&](typeStreamRuntime& Stream,
+                const uint64_t TimestampNs, const uint32_t Sequence,
+                uint64_t& PreviousTimestampNs, uint32_t& PreviousSequence)
+        {
+            const double LatencyMs =
+                (static_cast<double>(ArrivalTimeNs) -
+                 static_cast<double>(TimestampNs) +
+                 Stream.PiMinusMacOffsetNs) / 1e6;
+            if(std::isfinite(LatencyMs))
+                Stream.CaptureToMatLatencyMs.push_back(LatencyMs);
+
+            if(Stream.FramesReceived > 0)
+            {
+                Stream.ArrivalIntervalsMs.push_back(
+                    std::chrono::duration<double, std::milli>(
+                        ArrivalTime - PreviousArrivalTime).count());
+                Stream.CameraIntervalsMs.push_back(
+                    static_cast<double>(TimestampNs - PreviousTimestampNs) /
+                    1e6);
+                if(Sequence > PreviousSequence + 1)
+                    Stream.DroppedSequenceFrames +=
+                        static_cast<uint64_t>(Sequence - PreviousSequence - 1);
+            }
+
+            PreviousTimestampNs = TimestampNs;
+            PreviousSequence = Sequence;
+            ++Stream.FramesReceived;
+        };
+
+        RecordFrame(ServerStream, Header.ServerTimestampNs,
+            Header.ServerSequence, PreviousServerTimestampNs,
+            PreviousServerSequence);
+        RecordFrame(ClientStream, Header.ClientTimestampNs,
+            Header.ClientSequence, PreviousClientTimestampNs,
+            PreviousClientSequence);
+
+        if(ServerStream.FramesReceived > 1 &&
+           Header.PairSequence > PreviousPairSequence + 1)
+        {
+            Stereo.MissingPairSequences +=
+                Header.PairSequence - PreviousPairSequence - 1;
+        }
+        PreviousPairSequence = Header.PairSequence;
+        PreviousArrivalTime = ArrivalTime;
+        Stereo.TimestampDeltaMs.push_back(
+            static_cast<double>(TimestampDeltaNs) / 1e6);
+
+        {
+            std::lock_guard<std::mutex> Lock(Stereo.ImageMutex);
+            ServerImage.copyTo(ServerStream.LatestImage);
+            ClientImage.copyTo(ClientStream.LatestImage);
+            ++Stereo.LatestImageVersion;
+        }
+    }
+
+    ServerStream.Finished.store(true, std::memory_order_release);
+    ClientStream.Finished.store(true, std::memory_order_release);
+    Stereo.Finished.store(true, std::memory_order_release);
+}
+
+static bool UpdateStereoDisplayImages(typeStereoRuntime& Stereo,
+        typeStreamRuntime& LeftStream, typeStreamRuntime& RightStream,
+        uint64_t& DisplayedVersion, cv::Mat& LeftImage, cv::Mat& RightImage)
+{
+    std::lock_guard<std::mutex> Lock(Stereo.ImageMutex);
+    if(Stereo.LatestImageVersion == 0 ||
+       Stereo.LatestImageVersion == DisplayedVersion)
+    {
+        return false;
+    }
+
+    LeftStream.LatestImage.copyTo(LeftImage);
+    RightStream.LatestImage.copyTo(RightImage);
+    DisplayedVersion = Stereo.LatestImageVersion;
+    return true;
+}
+
+static bool UpdateDisplayImage(typeStreamRuntime& Stream,
         uint64_t& DisplayedVersion, cv::Mat& DisplayImage)
 {
     std::lock_guard<std::mutex> Lock(Stream.ImageMutex);
@@ -680,12 +914,12 @@ static void UpdateDisplay(typeStreamRuntime& Stream, const char* WindowName,
     if(Stream.LatestImageVersion == 0 ||
        Stream.LatestImageVersion == DisplayedVersion)
     {
-        return;
+        return false;
     }
 
     Stream.LatestImage.copyTo(DisplayImage);
     DisplayedVersion = Stream.LatestImageVersion;
-    cv::imshow(WindowName, DisplayImage);
+    return true;
 }
 
 static void PrintStreamStats(const typeStreamRuntime& Stream)
@@ -746,7 +980,8 @@ int main(int argc, char* argv[])
 
     std::cout
         << "Listening on port " << DEFAULT_PORT << " for "
-        << Options.CameraCount << " camera stream(s)\n";
+        << (Options.CameraCount == 1 ? "one camera stream" :
+            "one paired stereo stream") << '\n';
 
     if(!StartPiProgram(Options))
     {
@@ -757,13 +992,21 @@ int main(int argc, char* argv[])
 
     typeStreamRuntime ServerOrMonoStream{};
     typeStreamRuntime ClientStream{};
+    typeStereoRuntime Stereo{};
 
-    if(!AcceptStreams(ServerFD, Options, ServerOrMonoStream, ClientStream))
+    const bool Accepted = Options.CameraCount == 1 ?
+        AcceptStreams(ServerFD, Options, ServerOrMonoStream, ClientStream) :
+        AcceptStereoStream(ServerFD, Options, Stereo,
+            ServerOrMonoStream, ClientStream);
+
+    if(!Accepted)
     {
         if(ServerOrMonoStream.SocketFD >= 0)
             close(ServerOrMonoStream.SocketFD);
         if(ClientStream.SocketFD >= 0)
             close(ClientStream.SocketFD);
+        if(Stereo.SocketFD >= 0)
+            close(Stereo.SocketFD);
         close(ServerFD);
         return 1;
     }
@@ -803,45 +1046,55 @@ int main(int argc, char* argv[])
     }
     std::cout << '\n';
 
-    std::thread FirstReceiver(
-        ReceiveStream, std::ref(ServerOrMonoStream), Options.NumFrames);
-    std::thread SecondReceiver;
-    if(Options.CameraCount == 2)
-    {
-        SecondReceiver = std::thread(
-            ReceiveStream, std::ref(ClientStream), Options.NumFrames);
-    }
+    std::thread Receiver;
+    if(Options.CameraCount == 1)
+        Receiver = std::thread(ReceiveStream,
+            std::ref(ServerOrMonoStream), Options.NumFrames);
+    else
+        Receiver = std::thread(ReceiveStereoStream, std::ref(Stereo),
+            std::ref(ServerOrMonoStream), std::ref(ClientStream),
+            Options.NumFrames);
 
     uint64_t LeftDisplayedVersion = 0;
-    uint64_t RightDisplayedVersion = 0;
     cv::Mat LeftDisplayImage;
     cv::Mat RightDisplayImage;
+    cv::Mat StereoDisplayImage;
 
-    while(!ServerOrMonoStream.Finished.load(std::memory_order_acquire) ||
-          (Options.CameraCount == 2 &&
-           !ClientStream.Finished.load(std::memory_order_acquire)))
+    while(Options.CameraCount == 1 ?
+          !ServerOrMonoStream.Finished.load(std::memory_order_acquire) :
+          !Stereo.Finished.load(std::memory_order_acquire))
     {
-        UpdateDisplay(*LeftStream,
-            Options.CameraCount == 1 ? "Pi Camera" : "Left Camera",
-            LeftDisplayedVersion, LeftDisplayImage);
-
         if(RightStream != nullptr)
         {
-            UpdateDisplay(*RightStream, "Right Camera",
-                RightDisplayedVersion, RightDisplayImage);
+            const bool Updated = UpdateStereoDisplayImages(Stereo,
+                *LeftStream, *RightStream, LeftDisplayedVersion,
+                LeftDisplayImage, RightDisplayImage);
+
+            if(Updated)
+            {
+                cv::hconcat(
+                    LeftDisplayImage,
+                    RightDisplayImage,
+                    StereoDisplayImage);
+                cv::imshow("Stereo Cameras", StereoDisplayImage);
+            }
+        }
+        else if(UpdateDisplayImage(*LeftStream,
+                    LeftDisplayedVersion, LeftDisplayImage))
+        {
+            cv::imshow("Pi Camera", LeftDisplayImage);
         }
 
         cv::waitKey(1);
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    FirstReceiver.join();
-    if(SecondReceiver.joinable())
-        SecondReceiver.join();
+    Receiver.join();
 
-    close(ServerOrMonoStream.SocketFD);
-    if(ClientStream.SocketFD >= 0)
-        close(ClientStream.SocketFD);
+    if(Options.CameraCount == 1)
+        close(ServerOrMonoStream.SocketFD);
+    else
+        close(Stereo.SocketFD);
 
     cv::destroyAllWindows();
 
@@ -853,7 +1106,20 @@ int main(int argc, char* argv[])
     {
         PrintStreamStats(*LeftStream);
         PrintStreamStats(*RightStream);
+
+        const typeStats DeltaStats = CalculateStats(Stereo.TimestampDeltaMs);
+        std::cout << "\nSTEREO PAIRING\n"
+                  << " Pairs missing after Pi queue: "
+                  << Stereo.MissingPairSequences << '\n'
+                  << " Mean timestamp delta:        "
+                  << DeltaStats.Mean << " ms\n"
+                  << " Timestamp delta std. dev.:   "
+                  << DeltaStats.StdDev << " ms\n";
+        if(Stereo.Failed)
+            std::cout << " Stereo error:                "
+                      << Stereo.FailureReason << '\n';
     }
 
-    return ServerOrMonoStream.Failed || ClientStream.Failed ? 1 : 0;
+    return ServerOrMonoStream.Failed || ClientStream.Failed || Stereo.Failed ?
+        1 : 0;
 }

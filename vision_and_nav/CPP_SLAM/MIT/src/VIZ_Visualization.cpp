@@ -116,6 +116,7 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Ve
     VIZPriv_LoadKeyFrameImages(GlobalMap.KeyFrames);
 
     VIZPriv_WriteCameras(GlobalMap.KeyFrames, SnapshotPath);
+    VIZPriv_WriteDistortion(GlobalMap.KeyFrames, SnapshotPath);
     VIZPriv_WriteImages(GlobalMap.KeyFrames, SnapshotPath);
     VIZPriv_WritePoints(GlobalMap, SnapshotPath);
     VIZPriv_WriteTrackingTrajectory(TrackingTrajectory, SnapshotPath);
@@ -348,6 +349,48 @@ void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const 
             "[VIZPriv_WriteCameras] Header = %llu, Written = %llu\n",
             static_cast<unsigned long long>(NumCameras),
             static_cast<unsigned long long>(NumWritten));
+}
+
+void VIZPriv_WriteDistortion(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
+{
+    const std::string DistortionPath = SnapshotPath + "/distortion.bin";
+    FILE* fp = fopen(DistortionPath.c_str(), "wb");
+
+    if(fp == nullptr)
+    {
+        LG_Log(LogSeverity::DBG,
+                "[VIZPriv_WriteDistortion] Failed to open %s\n",
+                DistortionPath.c_str());
+        return;
+    }
+
+    const u64 NumCameras = static_cast<u64>(KeyFrames.active_size());
+    fwrite(&NumCameras, sizeof(u64), 1, fp);
+
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        const i32 CameraID = static_cast<i32>(KeyFrame.ID + 1);
+        const typeCameraIntrinsics* Intrinsics = KeyFrame.Camera.Intrinsics;
+        assert(Intrinsics != nullptr);
+
+        // The COLMAP files intentionally retain their undistorted PINHOLE
+        // model. These values are consumed only by the image preview, whose
+        // source image is still in the original distorted pixel domain.
+        const fp64 Parameters[6] =
+        {
+            Intrinsics->K(0, 1),
+            Intrinsics->k1,
+            Intrinsics->k2,
+            Intrinsics->p1,
+            Intrinsics->p2,
+            Intrinsics->k3
+        };
+
+        fwrite(&CameraID, sizeof(i32), 1, fp);
+        fwrite(Parameters, sizeof(fp64), 6, fp);
+    }
+
+    fclose(fp);
 }
 
 void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)

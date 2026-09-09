@@ -1705,24 +1705,31 @@ u64 MAP_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame,
     u64 NumCandidateImagePoints = 0;
     u64 NumWithTwoCandidates = 0;
 
+    // These map points are tracking snapshots. Only collect observation IDs
+    // when the caller will commit them to the global map; otherwise updating
+    // visibility/found bookkeeping here would be discarded with the snapshot.
+    const bool CollectVisibleMapPoints = VisibleMapPointIDsOutput != nullptr;
+    const bool CollectFoundMapPoints = FoundMapPointIDsOutput != nullptr;
     std::vector<u64> VisibleMapPoints;
-    VisibleMapPoints.reserve(NumMapPoints);
-
     std::vector<u64> FoundMapPoints;
-    FoundMapPoints.reserve(NumMapPoints);
+    if(CollectVisibleMapPoints)
+        VisibleMapPoints.reserve(NumMapPoints);
+    if(CollectFoundMapPoints)
+        FoundMapPoints.reserve(NumMapPoints);
 
     for(std::size_t i{}; i < NumMapPoints; i++)
     {
-        Eigen::Vector4d MapPoint = MapPoints[i].Point;
+        const typePantoMapPoint& MapPoint = MapPoints[i];
         Eigen::Vector2d CandidateImagePoint = {};
-        const u64 MapPointID = MapPoints[i].ID;
+        const u64 MapPointID = MapPoint.ID;
 
         const bool AlreadyAssociated = AssociatedMapPointIDs.contains(MapPointID);
 
-        if(PROJ_Project(MapPoint, CandidateImagePoint, Pose))
+        if(PROJ_Project(MapPoint.Point, CandidateImagePoint, Pose))
         {
             NumProjectedMapPoints++;
-            VisibleMapPoints.push_back(MapPoints[i].ID);
+            if(CollectVisibleMapPoints)
+                VisibleMapPoints.push_back(MapPointID);
 
             if(AlreadyAssociated)
             {
@@ -1745,7 +1752,7 @@ u64 MAP_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame,
             const i64 MinCellY = std::max<i64>( 0, static_cast<i64>((v - PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
             const i64 MaxCellY = std::min<i64>( PANTO_GRID_ROWS - 1, static_cast<i64>((v + PANTO_MAPPOINT_MATCH_SEARCH_RADIUS) / PANTO_CELL_SIZE));
 
-            const typeDescriptor& MapPointDescriptor = MapPoints[i].Descriptor;
+            const typeDescriptor& MapPointDescriptor = MapPoint.Descriptor;
             u32 BestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1;
 
             u32 SecondBestDistance = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1;
@@ -1816,25 +1823,9 @@ u64 MAP_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame,
                 NumNewMatchedMapPoints++;
 
                 AssociatedMapPointIDs.insert(MapPointID);
-                FoundMapPoints.push_back(MapPointID);
+                if(CollectFoundMapPoints)
+                    FoundMapPoints.push_back(MapPointID);
             }
-        }
-    }
-
-    const std::unordered_set<u64> VisibleMapPointIDs(
-            VisibleMapPoints.begin(), VisibleMapPoints.end());
-    const std::unordered_set<u64> FoundMapPointIDs(
-            FoundMapPoints.begin(), FoundMapPoints.end());
-
-    for(typePantoMapPoint& MapPoint : MapPoints)
-    {
-        if(VisibleMapPointIDs.contains(MapPoint.ID))
-        {
-            MapPoint.NumVisible++;
-        }
-        if(FoundMapPointIDs.contains(MapPoint.ID))
-        {
-            MapPoint.NumFound++;
         }
     }
 
@@ -1844,11 +1835,11 @@ u64 MAP_MatchMapPointsToKeyFrame(typePantoKeypointFrame& KeyFrame,
     }
     if(VisibleMapPointIDsOutput != nullptr)
     {
-        *VisibleMapPointIDsOutput = VisibleMapPoints;
+        *VisibleMapPointIDsOutput = std::move(VisibleMapPoints);
     }
     if(FoundMapPointIDsOutput != nullptr)
     {
-        *FoundMapPointIDsOutput = FoundMapPoints;
+        *FoundMapPointIDsOutput = std::move(FoundMapPoints);
     }
 
     LG_Log(LogSeverity::DBG, "[PT_MatchMapPointsToKeyFrame] Projected %llu/%zu map points, checked %llu image points, %llu had two candidates, %llu tracked (%llu newly matched)\n",
