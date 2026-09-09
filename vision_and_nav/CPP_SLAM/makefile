@@ -8,7 +8,8 @@ EXT_LIB_DIR = /usr/local/lib
 
 OPENCVLIBS = -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_imgcodecs -lopencv_calib3d -lopencv_videoio -lopencv_features2d
 
-OPENCV = $(shell brew --prefix opencv)
+# OPENCV = $(shell brew --prefix opencv)
+OPENCV = /Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/vendor/opencv/build
 CERES := $(shell brew --prefix ceres-solver)
 EIGEN := $(shell brew --prefix eigen)
 GLOG := $(shell brew --prefix glog)
@@ -54,6 +55,7 @@ LDFLAGS := \
   -L$(TBB)/lib \
   -L$(EXT_LIB_DIR) \
   -L$(OPENCV)/lib \
+  -Wl,-rpath,$(OPENCV)/lib \
   -Wl,-rpath,$(EXT_LIB_DIR) \
   $(SANITIZER_LDFLAGS)
 

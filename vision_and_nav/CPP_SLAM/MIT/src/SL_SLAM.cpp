@@ -973,7 +973,7 @@ void SL_PantoSLAM(i32 num_loops)
             NumTestedKeyFrames+=1.0;
         }
 
-        if(KEY_IsKeyFrame(KeyFrameInfo) || (i % 20 == 0))
+        if(KEY_IsKeyFrame(KeyFrameInfo) || (i % 5 == 0))
         {
             if(i >= PANTO_NUM_BOOTSTRAP_FRAMES)
             {
