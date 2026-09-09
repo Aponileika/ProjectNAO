@@ -12,9 +12,12 @@ struct typeKeyFrameTimingStatistics
 };
 
 static typeKeyFrameTimingStatistics GetKeyFrameTotalTiming{};
+static typeKeyFrameTimingStatistics PosePreparationTiming{};
 static typeKeyFrameTimingStatistics GetFrameTiming{};
 static typeKeyFrameTimingStatistics GetDescriptorsTiming{};
 static typeKeyFrameTimingStatistics CreateImagePointsTiming{};
+static typeKeyFrameTimingStatistics AssembleKeyFrameTiming{};
+static typeKeyFrameTimingStatistics GetKeyFrameOverheadTiming{};
 
 struct typeIsKeyFrameStatistics
 {
@@ -319,6 +322,9 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
         std::vector<typePantoMapPoint>& LastFrameMapPoints)
 #endif
 {
+    const PantoClock::time_point GetKeyFrameStartTime = PantoClock::now();
+    const PantoClock::time_point PosePreparationStartTime = PantoClock::now();
+
 #if defined(CONFIG_IMU)
     const typePose BodyToCamera = CM_GetBodyToSensor(CM_GetIntrinsics());
     const Eigen::Matrix3d Rbw = PredictedNavigationState.Rwb.transpose();
@@ -330,7 +336,10 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
             CameraR, Camerat, PANTO_TIMESTAMP_NOT_SET);
 #endif
 
-    const PantoClock::time_point GetKeyFrameStartTime = PantoClock::now();
+    const fp64 PosePreparationTime =
+        std::chrono::duration<fp64>(PantoClock::now() - PosePreparationStartTime).count();
+
+    KEYPriv_AddTimingSample(PosePreparationTiming, PosePreparationTime);
 
     LG_Log(LogSeverity::DBG, "[KEY_GetKeyFrame] Predicted q = (%f, %f, %f, %f), t = (%f, %f, %f)\n",
         PredictedPose.Pose.Quaternion.w(),
@@ -351,15 +360,8 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
     {
         PredictedPose.TimeStamp = -1.0f;
 
-        const fp64 GetKeyFrameTotalTime = std::chrono::duration<fp64>(PantoClock::now() - GetKeyFrameStartTime).count();
-
-        KEYPriv_AddTimingSample(GetKeyFrameTotalTiming, GetKeyFrameTotalTime);
-
-        LG_Log(LogSeverity::DBG,
-                "[KEY_GetKeyFrameTiming] total = %.6f s, FR_GetFrame = %.6f s, frame invalid\n",
-                GetKeyFrameTotalTime, GetFrameTime);
-
-        return
+        const PantoClock::time_point AssembleKeyFrameStartTime = PantoClock::now();
+        typeKeyFrame KeyFrame =
         {
             .Points = typePantoKeypointFrame{},
             .BowVector = {},
@@ -369,8 +371,30 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
             .NavigationState = PredictedNavigationState,
 #endif
             .ID = PANTO_ID_NOT_SET,
-            .ImagePath = "" 
+            .ImagePath = ""
         };
+        const fp64 AssembleKeyFrameTime =
+            std::chrono::duration<fp64>(PantoClock::now() - AssembleKeyFrameStartTime).count();
+
+        KEYPriv_AddTimingSample(AssembleKeyFrameTiming, AssembleKeyFrameTime);
+
+        const fp64 GetKeyFrameTotalTime = std::chrono::duration<fp64>(PantoClock::now() - GetKeyFrameStartTime).count();
+        const fp64 GetKeyFrameOverheadTime = std::max<fp64>(
+                0.0,
+                GetKeyFrameTotalTime - PosePreparationTime - GetFrameTime - AssembleKeyFrameTime);
+
+        KEYPriv_AddTimingSample(GetKeyFrameTotalTiming, GetKeyFrameTotalTime);
+        KEYPriv_AddTimingSample(GetKeyFrameOverheadTiming, GetKeyFrameOverheadTime);
+
+        LG_Log(LogSeverity::DBG,
+                "[KEY_GetKeyFrameTiming] total = %.6f s, pose preparation = %.6f s, FR_GetFrame = %.6f s, keyframe assembly = %.6f s, residual overhead = %.6f s, frame invalid\n",
+                GetKeyFrameTotalTime,
+                PosePreparationTime,
+                GetFrameTime,
+                AssembleKeyFrameTime,
+                GetKeyFrameOverheadTime);
+
+        return KeyFrame;
     }
     PredictedPose.TimeStamp = Frame.TimeStamp;
 
@@ -390,7 +414,8 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
 
     KEYPriv_AddTimingSample(CreateImagePointsTiming, CreateImagePointsTime);
 
-    typeKeyFrame KeyFrame = 
+    const PantoClock::time_point AssembleKeyFrameStartTime = PantoClock::now();
+    typeKeyFrame KeyFrame =
     {
         .Points = std::move(ImagePoints),
         .BowVector = {},
@@ -402,18 +427,30 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
         .ID = PANTO_ID_NOT_SET,
         .ImagePath = std::move(Frame.Path)
     };
+    const fp64 AssembleKeyFrameTime =
+        std::chrono::duration<fp64>(PantoClock::now() - AssembleKeyFrameStartTime).count();
+
+    KEYPriv_AddTimingSample(AssembleKeyFrameTiming, AssembleKeyFrameTime);
 
     const fp64 GetKeyFrameTotalTime =
         std::chrono::duration<fp64>(PantoClock::now() - GetKeyFrameStartTime).count();
+    const fp64 GetKeyFrameOverheadTime = std::max<fp64>(
+            0.0,
+            GetKeyFrameTotalTime - PosePreparationTime - GetFrameTime -
+                GetDescriptorsTime - CreateImagePointsTime - AssembleKeyFrameTime);
 
     KEYPriv_AddTimingSample(GetKeyFrameTotalTiming, GetKeyFrameTotalTime);
+    KEYPriv_AddTimingSample(GetKeyFrameOverheadTiming, GetKeyFrameOverheadTime);
 
     LG_Log(LogSeverity::DBG,
-            "[KEY_GetKeyFrameTiming] total = %.6f s, FR_GetFrame = %.6f s, EP_GetDescriptors = %.6f s, PT_CreatePantoImagePoints = %.6f s\n",
+            "[KEY_GetKeyFrameTiming] total = %.6f s, pose preparation = %.6f s, FR_GetFrame = %.6f s, EP_GetDescriptors = %.6f s, PT_CreatePantoImagePoints = %.6f s, keyframe assembly = %.6f s, residual overhead = %.6f s\n",
             GetKeyFrameTotalTime,
+            PosePreparationTime,
             GetFrameTime,
             GetDescriptorsTime,
-            CreateImagePointsTime);
+            CreateImagePointsTime,
+            AssembleKeyFrameTime,
+            GetKeyFrameOverheadTime);
 
     return KeyFrame;
 }
@@ -421,9 +458,12 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
 void KEY_LogGetKeyFrameTimingStatistics(void)
 {
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/internal total", GetKeyFrameTotalTiming);
+    KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/pose preparation", PosePreparationTiming);
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/FR_GetFrame", GetFrameTiming);
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/EP_GetDescriptors", GetDescriptorsTiming);
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/PT_CreatePantoImagePoints", CreateImagePointsTiming);
+    KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/keyframe assembly", AssembleKeyFrameTiming);
+    KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/residual overhead", GetKeyFrameOverheadTiming);
 }
 
 void KEY_LogIsKeyFrameStatistics(void)

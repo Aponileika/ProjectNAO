@@ -988,6 +988,8 @@ void SL_PantoSLAM(i32 num_loops)
     LG_Log(LogSeverity::DATA,
             "[SLAMFramePacingSummary] Frames skipped because tracking was late = %llu\n",
             static_cast<unsigned long long>(NumLateFramesSkipped));
+    KEY_LogGetKeyFrameTimingStatistics();
+    EP_LogGetDescriptorTimingStatistics();
     MAP_LogMappingData();
     LG_EnableDataSummaryLoggingForCurrentThread(false);
 

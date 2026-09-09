@@ -19,8 +19,13 @@
  *   --client-camera INDEX     Sync-client camera in stereo mode (default: 1).
  *   --left-role server|client Select which sync role is displayed as left.
  *   --frames COUNT            Frames received per camera (default: 600).
+ *   --mode display|calib|data|yuv|demo
+ *                             Display video, capture images, or request full
+ *                             YUV420 for the left stereo camera.
+ *   --calib-dir PATH          Calibration output directory
+ *                             (default: calibration_images).
  *   --mac-ip ADDRESS          Mac address advertised to the Pi
- *                             (default: 192.168.0.95).
+ *                             (default: 10.241.223.208).
  *   --help, -h                Print runtime usage information.
  *
  * The receiver starts ~/PantoPI/ImageIO on
@@ -33,6 +38,8 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -40,10 +47,16 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <mutex>
+#include <new>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -54,7 +67,8 @@ static constexpr size_t DEFAULT_NUM_FRAMES = 600;
 static constexpr uint32_t FRAME_WIDTH = 640;
 static constexpr uint32_t FRAME_HEIGHT = 480;
 static constexpr uint32_t FRAME_SIZE = FRAME_WIDTH * FRAME_HEIGHT;
-static constexpr double TARGET_FPS = 15.0;
+static constexpr uint32_t YUV420_FRAME_SIZE = FRAME_SIZE * 3 / 2;
+static constexpr double TARGET_FPS = 20.0;
 static constexpr const char* DEFAULT_MAC_IP = "10.241.223.208";
 static constexpr const char* PI_SSH_HOST =
     "pantopilot@pantopilotstereoraspberry.local";
@@ -77,6 +91,21 @@ enum class typeLeftRole
     Client
 };
 
+enum class typeReceiverMode
+{
+    Display,
+    Calibration,
+    DataCollection,
+    YUVPreview,
+    Demo
+};
+
+static bool UsesLeftYUV(const typeReceiverMode Mode)
+{
+    return Mode == typeReceiverMode::YUVPreview ||
+           Mode == typeReceiverMode::Demo;
+}
+
 struct typeProgramOptions
 {
     size_t CameraCount = 1;
@@ -86,6 +115,9 @@ struct typeProgramOptions
     typeLeftRole LeftRole = typeLeftRole::Server;
     size_t NumFrames = DEFAULT_NUM_FRAMES;
     std::string MacIPAddress = DEFAULT_MAC_IP;
+    typeReceiverMode Mode = typeReceiverMode::Display;
+    std::filesystem::path CalibrationDirectory = "calibration_images";
+    std::filesystem::path DataDirectory;
 };
 
 struct typeStreamHello
@@ -113,6 +145,17 @@ struct typeStereoStreamHello
     uint32_t ClientCameraIndex;
     uint32_t Width;
     uint32_t Height;
+    uint32_t ServerPayloadSize;
+    uint32_t ClientPayloadSize;
+};
+
+struct typeGrayscaleStereoStreamHello
+{
+    uint64_t Magic;
+    uint32_t ServerCameraIndex;
+    uint32_t ClientCameraIndex;
+    uint32_t Width;
+    uint32_t Height;
 };
 
 struct typeStereoFrameHeader
@@ -124,11 +167,26 @@ struct typeStereoFrameHeader
     uint32_t ClientSequence;
     uint32_t Width;
     uint32_t Height;
+    uint32_t ServerPayloadSize;
+    uint32_t ClientPayloadSize;
+};
+
+struct typeGrayscaleStereoFrameHeader
+{
+    uint64_t PairSequence;
+    uint64_t ServerTimestampNs;
+    uint64_t ClientTimestampNs;
+    uint32_t ServerSequence;
+    uint32_t ClientSequence;
+    uint32_t Width;
+    uint32_t Height;
     uint32_t PayloadSizePerImage;
 };
 
-static_assert(sizeof(typeStereoStreamHello) == 24);
+static_assert(sizeof(typeStereoStreamHello) == 32);
+static_assert(sizeof(typeGrayscaleStereoStreamHello) == 24);
 static_assert(sizeof(typeStereoFrameHeader) == 48);
+static_assert(sizeof(typeGrayscaleStereoFrameHeader) == 48);
 
 struct typeClockSyncRequest
 {
@@ -163,6 +221,7 @@ struct typeStreamRuntime
 
     std::mutex ImageMutex;
     cv::Mat LatestImage;
+    cv::Mat LatestLuminanceImage;
     uint64_t LatestImageVersion = 0;
 
     std::atomic<bool> Finished{false};
@@ -184,8 +243,36 @@ struct typeStereoRuntime
     std::atomic<bool> Finished{false};
     bool Failed = false;
     std::string FailureReason;
+    uint32_t ServerPayloadSize = FRAME_SIZE;
+    uint32_t ClientPayloadSize = FRAME_SIZE;
     uint64_t MissingPairSequences = 0;
     std::vector<double> TimestampDeltaMs;
+};
+
+struct typeCalibrationRuntime
+{
+    bool Enabled = false;
+    bool ServerIsLeft = true;
+    std::filesystem::path Directory;
+    uint64_t NextCaptureTimestampNs = 0;
+    std::atomic<size_t> CapturesSaved{0};
+};
+
+struct typeDataCollectionRuntime
+{
+    struct typePairMetadata
+    {
+        uint64_t PairSequence;
+        uint64_t LeftTimestampNs;
+        uint64_t RightTimestampNs;
+    };
+
+    bool Enabled = false;
+    bool ServerIsLeft = true;
+    std::filesystem::path Directory;
+    std::vector<typePairMetadata> Pairs;
+    std::vector<uint8_t> ImageData;
+    size_t PairsSaved = 0;
 };
 
 static void PrintUsage(const char* Executable)
@@ -197,7 +284,8 @@ static void PrintUsage(const char* Executable)
         << "  " << Executable
         << " --camera-count 2 [--server-camera INDEX]"
            " [--client-camera INDEX] [--left-role server|client]\n"
-        << "Optional: --frames COUNT --mac-ip ADDRESS\n\n"
+        << "Optional: --frames COUNT --mac-ip ADDRESS"
+           " --mode display|calib|data|yuv|demo --calib-dir PATH\n\n"
         << "Defaults: one camera (index 0); in stereo, server camera 0 is left"
            " and client camera 1 is right.\n";
 }
@@ -269,6 +357,36 @@ static bool ParseProgramOptions(const int argc, char* argv[],
             continue;
         }
 
+        if(Argument == "--mode")
+        {
+            if(++ArgumentIndex >= argc)
+                return false;
+
+            const std::string_view Mode(argv[ArgumentIndex]);
+            if(Mode == "display")
+                Options.Mode = typeReceiverMode::Display;
+            else if(Mode == "calib")
+                Options.Mode = typeReceiverMode::Calibration;
+            else if(Mode == "data")
+                Options.Mode = typeReceiverMode::DataCollection;
+            else if(Mode == "yuv")
+                Options.Mode = typeReceiverMode::YUVPreview;
+            else if(Mode == "demo")
+                Options.Mode = typeReceiverMode::Demo;
+            else
+                return false;
+
+            continue;
+        }
+
+        if(Argument == "--calib-dir")
+        {
+            if(++ArgumentIndex >= argc)
+                return false;
+            Options.CalibrationDirectory = argv[ArgumentIndex];
+            continue;
+        }
+
         if(Argument == "--mac-ip")
         {
             if(++ArgumentIndex >= argc)
@@ -287,7 +405,8 @@ static bool ParseProgramOptions(const int argc, char* argv[],
     }
 
     if((Options.CameraCount != 1 && Options.CameraCount != 2) ||
-       Options.NumFrames == 0 || Options.MacIPAddress.empty())
+       Options.NumFrames == 0 || Options.MacIPAddress.empty() ||
+       Options.CalibrationDirectory.empty())
     {
         return false;
     }
@@ -296,6 +415,20 @@ static bool ParseProgramOptions(const int argc, char* argv[],
        Options.ServerCameraIndex == Options.ClientCameraIndex)
     {
         std::cerr << "Server and client camera indices must be different\n";
+        return false;
+    }
+
+    if(Options.Mode == typeReceiverMode::DataCollection &&
+       Options.CameraCount != 2)
+    {
+        std::cerr << "Data mode requires --camera-count 2\n";
+        return false;
+    }
+
+    if(UsesLeftYUV(Options.Mode) &&
+       Options.CameraCount != 2)
+    {
+        std::cerr << "YUV mode requires --camera-count 2\n";
         return false;
     }
 
@@ -508,6 +641,12 @@ static bool StartPiProgram(const typeProgramOptions& Options)
         Command += " --camera-count 2 --server-camera " +
             std::to_string(Options.ServerCameraIndex) +
             " --client-camera " + std::to_string(Options.ClientCameraIndex);
+        if(UsesLeftYUV(Options.Mode))
+        {
+            Command += " --mode left-yuv --left-role ";
+            Command += Options.LeftRole == typeLeftRole::Server ?
+                "server" : "client";
+        }
     }
 
     Command += "' &";
@@ -635,14 +774,47 @@ static bool AcceptStereoStream(const int ServerFD,
         return false;
     }
 
-    typeStereoStreamHello Hello{};
-    if(!RecvAll(PiFD, &Hello, sizeof(Hello)) ||
-       Hello.Magic != STEREO_STREAM_HELLO_MAGIC ||
-       Hello.ServerCameraIndex != Options.ServerCameraIndex ||
-       Hello.ClientCameraIndex != Options.ClientCameraIndex ||
-       Hello.Width != FRAME_WIDTH || Hello.Height != FRAME_HEIGHT)
+    const uint32_t ExpectedServerPayloadSize =
+        UsesLeftYUV(Options.Mode) &&
+        Options.LeftRole == typeLeftRole::Server ?
+            YUV420_FRAME_SIZE : FRAME_SIZE;
+    const uint32_t ExpectedClientPayloadSize =
+        UsesLeftYUV(Options.Mode) &&
+        Options.LeftRole == typeLeftRole::Client ?
+            YUV420_FRAME_SIZE : FRAME_SIZE;
+    uint32_t ServerCameraIndex = 0;
+    uint32_t ClientCameraIndex = 0;
+    uint32_t ServerPayloadSize = FRAME_SIZE;
+    uint32_t ClientPayloadSize = FRAME_SIZE;
+
+    bool ValidHello = false;
+    if(UsesLeftYUV(Options.Mode))
     {
-        std::cerr << "Invalid stereo stream-identification message from Pi\n";
+        typeStereoStreamHello Hello{};
+        ValidHello = RecvAll(PiFD, &Hello, sizeof(Hello)) &&
+            Hello.Magic == STEREO_STREAM_HELLO_MAGIC &&
+            Hello.Width == FRAME_WIDTH && Hello.Height == FRAME_HEIGHT;
+        ServerCameraIndex = Hello.ServerCameraIndex;
+        ClientCameraIndex = Hello.ClientCameraIndex;
+        ServerPayloadSize = Hello.ServerPayloadSize;
+        ClientPayloadSize = Hello.ClientPayloadSize;
+    }
+    else
+    {
+        typeGrayscaleStereoStreamHello Hello{};
+        ValidHello = RecvAll(PiFD, &Hello, sizeof(Hello)) &&
+            Hello.Magic == STEREO_STREAM_HELLO_MAGIC &&
+            Hello.Width == FRAME_WIDTH && Hello.Height == FRAME_HEIGHT;
+        ServerCameraIndex = Hello.ServerCameraIndex;
+        ClientCameraIndex = Hello.ClientCameraIndex;
+    }
+
+    if(!ValidHello || ServerCameraIndex != Options.ServerCameraIndex ||
+       ClientCameraIndex != Options.ClientCameraIndex ||
+       ServerPayloadSize != ExpectedServerPayloadSize ||
+       ClientPayloadSize != ExpectedClientPayloadSize)
+    {
+        std::cerr << "Invalid stereo stream identification or payload format\n";
         close(PiFD);
         return false;
     }
@@ -658,19 +830,21 @@ static bool AcceptStereoStream(const int ServerFD,
     }
 
     Stereo.SocketFD = PiFD;
+    Stereo.ServerPayloadSize = ServerPayloadSize;
+    Stereo.ClientPayloadSize = ClientPayloadSize;
     ServerStream.Hello = {
         .Magic = STREAM_HELLO_MAGIC,
-        .CameraIndex = Hello.ServerCameraIndex,
+        .CameraIndex = ServerCameraIndex,
         .SyncRole = static_cast<uint32_t>(typeSyncRole::Server),
-        .Width = Hello.Width,
-        .Height = Hello.Height
+        .Width = FRAME_WIDTH,
+        .Height = FRAME_HEIGHT
     };
     ClientStream.Hello = {
         .Magic = STREAM_HELLO_MAGIC,
-        .CameraIndex = Hello.ClientCameraIndex,
+        .CameraIndex = ClientCameraIndex,
         .SyncRole = static_cast<uint32_t>(typeSyncRole::Client),
-        .Width = Hello.Width,
-        .Height = Hello.Height
+        .Width = FRAME_WIDTH,
+        .Height = FRAME_HEIGHT
     };
     ServerStream.PiMinusMacOffsetNs = PiMinusMacOffsetNs;
     ClientStream.PiMinusMacOffsetNs = PiMinusMacOffsetNs;
@@ -680,8 +854,8 @@ static bool AcceptStereoStream(const int ServerFD,
     ClientStream.LatestImage = cv::Mat(FRAME_HEIGHT, FRAME_WIDTH, CV_8UC1);
 
     std::cout << "Stereo pair stream connected; server camera "
-              << Hello.ServerCameraIndex << ", client camera "
-              << Hello.ClientCameraIndex << "; best clock-sync RTT = "
+              << ServerCameraIndex << ", client camera "
+              << ClientCameraIndex << "; best clock-sync RTT = "
               << ClockSyncRoundTripTimeMs << " ms\n";
     return true;
 }
@@ -693,7 +867,219 @@ static void FailStream(typeStreamRuntime& Stream, const std::string& Reason)
     Stream.Finished.store(true, std::memory_order_release);
 }
 
-static void ReceiveStream(typeStreamRuntime& Stream, const size_t NumFrames)
+static bool PrepareCalibrationDirectory(const typeProgramOptions& Options,
+        typeCalibrationRuntime& Calibration)
+{
+    Calibration.Enabled = Options.Mode == typeReceiverMode::Calibration;
+    Calibration.ServerIsLeft = Options.LeftRole == typeLeftRole::Server;
+    Calibration.Directory = Options.CalibrationDirectory;
+    if(!Calibration.Enabled)
+        return true;
+
+    std::error_code Error;
+    if(Options.CameraCount == 1)
+    {
+        std::filesystem::create_directories(
+            Calibration.Directory / "mono", Error);
+    }
+    else
+    {
+        std::filesystem::create_directories(
+            Calibration.Directory / "left", Error);
+        if(!Error)
+            std::filesystem::create_directories(
+                Calibration.Directory / "right", Error);
+    }
+
+    if(Error)
+    {
+        std::cerr << "Failed to create calibration directory: "
+                  << Error.message() << '\n';
+        return false;
+    }
+
+    std::cout << "Calibration mode: showing the live feed and saving one "
+                 "capture per second under "
+              << std::filesystem::absolute(Calibration.Directory) << '\n';
+    return true;
+}
+
+static bool PrepareDataDirectory(const typeProgramOptions& Options,
+        typeDataCollectionRuntime& DataCollection)
+{
+    DataCollection.Enabled =
+        Options.Mode == typeReceiverMode::DataCollection;
+    DataCollection.ServerIsLeft =
+        Options.LeftRole == typeLeftRole::Server;
+    DataCollection.Directory = Options.DataDirectory;
+    if(!DataCollection.Enabled)
+        return true;
+
+    std::error_code Error;
+    std::filesystem::create_directories(
+        DataCollection.Directory / "left", Error);
+    if(!Error)
+    {
+        std::filesystem::create_directories(
+            DataCollection.Directory / "right", Error);
+    }
+
+    if(Error)
+    {
+        std::cerr << "Failed to create data directory: "
+                  << Error.message() << '\n';
+        return false;
+    }
+
+    std::cout << "Data mode: showing the live feed and saving every "
+                 "stereo pair at the full stream rate. Frames will be "
+                 "buffered in memory, then written under "
+              << DataCollection.Directory << '\n';
+
+    const size_t BytesPerPair = 2 * FRAME_SIZE;
+    if(Options.NumFrames >
+       std::numeric_limits<size_t>::max() / BytesPerPair)
+    {
+        std::cerr << "Requested data capture is too large\n";
+        return false;
+    }
+
+    try
+    {
+        DataCollection.Pairs.reserve(Options.NumFrames);
+        DataCollection.ImageData.reserve(Options.NumFrames * BytesPerPair);
+    }
+    catch(const std::bad_alloc&)
+    {
+        std::cerr << "Unable to reserve memory for data capture\n";
+        return false;
+    }
+
+    std::cout << "Data buffer capacity: "
+              << (Options.NumFrames * BytesPerPair) / (1024 * 1024)
+              << " MiB for " << Options.NumFrames << " stereo pairs\n";
+    return true;
+}
+
+static bool CalibrationCaptureDue(typeCalibrationRuntime& Calibration,
+        const uint64_t TimestampNs)
+{
+    static constexpr uint64_t CAPTURE_INTERVAL_NS = 1'000'000'000ULL;
+
+    if(Calibration.NextCaptureTimestampNs == 0)
+        Calibration.NextCaptureTimestampNs = TimestampNs;
+
+    if(TimestampNs < Calibration.NextCaptureTimestampNs)
+        return false;
+
+    do
+    {
+        Calibration.NextCaptureTimestampNs += CAPTURE_INTERVAL_NS;
+    }
+    while(Calibration.NextCaptureTimestampNs <= TimestampNs);
+
+    return true;
+}
+
+static std::filesystem::path CalibrationImagePath(
+        const typeCalibrationRuntime& Calibration, const char* CameraFolder,
+        const size_t CaptureIndex, const uint64_t TimestampNs)
+{
+    std::ostringstream FileName;
+    FileName << std::setfill('0') << std::setw(6) << CaptureIndex
+             << '_' << TimestampNs << ".png";
+    return Calibration.Directory / CameraFolder / FileName.str();
+}
+
+static bool SaveCalibrationImage(const cv::Mat& Image,
+        const std::filesystem::path& Path, std::string& FailureReason)
+{
+    try
+    {
+        if(cv::imwrite(Path.string(), Image))
+            return true;
+        FailureReason = "OpenCV failed to write " + Path.string();
+    }
+    catch(const cv::Exception& Exception)
+    {
+        FailureReason = "Failed to write " + Path.string() + ": " +
+            Exception.what();
+    }
+    return false;
+}
+
+static std::filesystem::path DataImagePath(
+        const typeDataCollectionRuntime& DataCollection,
+        const char* CameraFolder, const uint64_t PairSequence,
+        const uint64_t TimestampNs)
+{
+    std::ostringstream FileName;
+    FileName << std::setfill('0') << std::setw(8) << PairSequence
+             << '_' << TimestampNs << ".pgm";
+    return DataCollection.Directory / CameraFolder / FileName.str();
+}
+
+static bool SaveUncompressedGrayscaleImage(const uint8_t* ImageData,
+        const std::filesystem::path& Path, std::string& FailureReason)
+{
+    std::ofstream File(Path, std::ios::binary);
+    if(!File)
+    {
+        FailureReason = "Failed to open " + Path.string();
+        return false;
+    }
+
+    File << "P5\n" << FRAME_WIDTH << ' ' << FRAME_HEIGHT << "\n255\n";
+    File.write(reinterpret_cast<const char*>(ImageData), FRAME_SIZE);
+
+    if(!File)
+    {
+        FailureReason = "Failed to write " + Path.string();
+        return false;
+    }
+    return true;
+}
+
+static bool WriteDataCollection(typeDataCollectionRuntime& DataCollection,
+        std::string& FailureReason)
+{
+    std::cout << "Writing " << DataCollection.Pairs.size()
+              << " buffered stereo pairs...\n";
+
+    for(size_t PairIndex = 0;
+        PairIndex < DataCollection.Pairs.size(); ++PairIndex)
+    {
+        const typeDataCollectionRuntime::typePairMetadata& Pair =
+            DataCollection.Pairs[PairIndex];
+        const uint8_t* LeftImage = DataCollection.ImageData.data() +
+            PairIndex * 2 * FRAME_SIZE;
+        const uint8_t* RightImage = LeftImage + FRAME_SIZE;
+        const std::filesystem::path LeftPath = DataImagePath(
+            DataCollection, "left", Pair.PairSequence,
+            Pair.LeftTimestampNs);
+        const std::filesystem::path RightPath = DataImagePath(
+            DataCollection, "right", Pair.PairSequence,
+            Pair.RightTimestampNs);
+
+        if(!SaveUncompressedGrayscaleImage(LeftImage, LeftPath,
+                FailureReason))
+        {
+            return false;
+        }
+        if(!SaveUncompressedGrayscaleImage(RightImage, RightPath,
+                FailureReason))
+        {
+            std::error_code RemoveError;
+            std::filesystem::remove(LeftPath, RemoveError);
+            return false;
+        }
+        ++DataCollection.PairsSaved;
+    }
+    return true;
+}
+
+static void ReceiveStream(typeStreamRuntime& Stream, const size_t NumFrames,
+        typeCalibrationRuntime& Calibration)
 {
     Stream.ArrivalIntervalsMs.reserve(NumFrames > 0 ? NumFrames - 1 : 0);
     Stream.CameraIntervalsMs.reserve(NumFrames > 0 ? NumFrames - 1 : 0);
@@ -761,11 +1147,27 @@ static void ReceiveStream(typeStreamRuntime& Stream, const size_t NumFrames)
         PreviousSequence = Header.Sequence;
         ++Stream.FramesReceived;
 
+        if(Calibration.Enabled &&
+           CalibrationCaptureDue(Calibration, Header.TimestampNs))
         {
-            std::lock_guard<std::mutex> Lock(Stream.ImageMutex);
-            ReceiveImage.copyTo(Stream.LatestImage);
-            ++Stream.LatestImageVersion;
+            const size_t CaptureIndex =
+                Calibration.CapturesSaved.load(std::memory_order_relaxed);
+            const std::filesystem::path Path = CalibrationImagePath(
+                Calibration, "mono", CaptureIndex,
+                Header.TimestampNs);
+            if(!SaveCalibrationImage(ReceiveImage, Path,
+                    Stream.FailureReason))
+            {
+                Stream.Failed = true;
+                break;
+            }
+            Calibration.CapturesSaved.fetch_add(
+                1, std::memory_order_release);
         }
+
+        std::lock_guard<std::mutex> Lock(Stream.ImageMutex);
+        ReceiveImage.copyTo(Stream.LatestImage);
+        ++Stream.LatestImageVersion;
     }
 
     Stream.Finished.store(true, std::memory_order_release);
@@ -773,7 +1175,8 @@ static void ReceiveStream(typeStreamRuntime& Stream, const size_t NumFrames)
 
 static void ReceiveStereoStream(typeStereoRuntime& Stereo,
         typeStreamRuntime& ServerStream, typeStreamRuntime& ClientStream,
-        const size_t NumPairs)
+        const size_t NumPairs, typeCalibrationRuntime& Calibration,
+        typeDataCollectionRuntime& DataCollection)
 {
     ServerStream.ArrivalIntervalsMs.reserve(NumPairs > 0 ? NumPairs - 1 : 0);
     ClientStream.ArrivalIntervalsMs.reserve(NumPairs > 0 ? NumPairs - 1 : 0);
@@ -783,8 +1186,8 @@ static void ReceiveStereoStream(typeStereoRuntime& Stereo,
     ClientStream.CaptureToMatLatencyMs.reserve(NumPairs);
     Stereo.TimestampDeltaMs.reserve(NumPairs);
 
-    cv::Mat ServerImage(FRAME_HEIGHT, FRAME_WIDTH, CV_8UC1);
-    cv::Mat ClientImage(FRAME_HEIGHT, FRAME_WIDTH, CV_8UC1);
+    std::vector<uint8_t> ServerPayload(Stereo.ServerPayloadSize);
+    std::vector<uint8_t> ClientPayload(Stereo.ClientPayloadSize);
     std::chrono::steady_clock::time_point PreviousArrivalTime{};
     uint64_t PreviousServerTimestampNs = 0;
     uint64_t PreviousClientTimestampNs = 0;
@@ -795,7 +1198,32 @@ static void ReceiveStereoStream(typeStereoRuntime& Stereo,
     while(ServerStream.FramesReceived < NumPairs)
     {
         typeStereoFrameHeader Header{};
-        if(!RecvAll(Stereo.SocketFD, &Header, sizeof(Header)))
+        bool HeaderReceived = false;
+        if(Stereo.ServerPayloadSize == FRAME_SIZE &&
+           Stereo.ClientPayloadSize == FRAME_SIZE)
+        {
+            typeGrayscaleStereoFrameHeader GrayscaleHeader{};
+            HeaderReceived = RecvAll(Stereo.SocketFD, &GrayscaleHeader,
+                sizeof(GrayscaleHeader));
+            Header = {
+                .PairSequence = GrayscaleHeader.PairSequence,
+                .ServerTimestampNs = GrayscaleHeader.ServerTimestampNs,
+                .ClientTimestampNs = GrayscaleHeader.ClientTimestampNs,
+                .ServerSequence = GrayscaleHeader.ServerSequence,
+                .ClientSequence = GrayscaleHeader.ClientSequence,
+                .Width = GrayscaleHeader.Width,
+                .Height = GrayscaleHeader.Height,
+                .ServerPayloadSize = GrayscaleHeader.PayloadSizePerImage,
+                .ClientPayloadSize = GrayscaleHeader.PayloadSizePerImage
+            };
+        }
+        else
+        {
+            HeaderReceived = RecvAll(Stereo.SocketFD, &Header,
+                sizeof(Header));
+        }
+
+        if(!HeaderReceived)
         {
             Stereo.Failed = true;
             Stereo.FailureReason = "connection closed while reading pair header";
@@ -808,7 +1236,8 @@ static void ReceiveStereoStream(typeStereoRuntime& Stereo,
             Header.ClientTimestampNs - Header.ServerTimestampNs;
 
         if(Header.Width != FRAME_WIDTH || Header.Height != FRAME_HEIGHT ||
-           Header.PayloadSizePerImage != FRAME_SIZE ||
+           Header.ServerPayloadSize != Stereo.ServerPayloadSize ||
+           Header.ClientPayloadSize != Stereo.ClientPayloadSize ||
            TimestampDeltaNs > 5'000'000ULL)
         {
             Stereo.Failed = true;
@@ -816,12 +1245,39 @@ static void ReceiveStereoStream(typeStereoRuntime& Stereo,
             break;
         }
 
-        if(!RecvAll(Stereo.SocketFD, ServerImage.data, FRAME_SIZE) ||
-           !RecvAll(Stereo.SocketFD, ClientImage.data, FRAME_SIZE))
+        if(!RecvAll(Stereo.SocketFD, ServerPayload.data(),
+                ServerPayload.size()) ||
+           !RecvAll(Stereo.SocketFD, ClientPayload.data(),
+                ClientPayload.size()))
         {
             Stereo.Failed = true;
             Stereo.FailureReason = "connection closed while reading pair payload";
             break;
+        }
+
+        cv::Mat ServerLuminanceImage(FRAME_HEIGHT, FRAME_WIDTH, CV_8UC1,
+            ServerPayload.data());
+        cv::Mat ClientLuminanceImage(FRAME_HEIGHT, FRAME_WIDTH, CV_8UC1,
+            ClientPayload.data());
+        cv::Mat ServerImage = ServerLuminanceImage;
+        cv::Mat ClientImage = ClientLuminanceImage;
+        cv::Mat ServerColorImage;
+        cv::Mat ClientColorImage;
+        if(Stereo.ServerPayloadSize == YUV420_FRAME_SIZE)
+        {
+            const cv::Mat ServerYUV(FRAME_HEIGHT * 3 / 2, FRAME_WIDTH,
+                CV_8UC1, ServerPayload.data());
+            cv::cvtColor(ServerYUV, ServerColorImage,
+                cv::COLOR_YUV2BGR_I420);
+            ServerImage = ServerColorImage;
+        }
+        if(Stereo.ClientPayloadSize == YUV420_FRAME_SIZE)
+        {
+            const cv::Mat ClientYUV(FRAME_HEIGHT * 3 / 2, FRAME_WIDTH,
+                CV_8UC1, ClientPayload.data());
+            cv::cvtColor(ClientYUV, ClientColorImage,
+                cv::COLOR_YUV2BGR_I420);
+            ClientImage = ClientColorImage;
         }
 
         const auto ArrivalTime = std::chrono::steady_clock::now();
@@ -876,12 +1332,72 @@ static void ReceiveStereoStream(typeStereoRuntime& Stereo,
         Stereo.TimestampDeltaMs.push_back(
             static_cast<double>(TimestampDeltaNs) / 1e6);
 
+        const uint64_t PairTimestampNs =
+            Header.ServerTimestampNs / 2 + Header.ClientTimestampNs / 2;
+        if(Calibration.Enabled &&
+           CalibrationCaptureDue(Calibration, PairTimestampNs))
         {
-            std::lock_guard<std::mutex> Lock(Stereo.ImageMutex);
-            ServerImage.copyTo(ServerStream.LatestImage);
-            ClientImage.copyTo(ClientStream.LatestImage);
-            ++Stereo.LatestImageVersion;
+            const size_t CaptureIndex =
+                Calibration.CapturesSaved.load(std::memory_order_relaxed);
+            const cv::Mat& LeftImage = Calibration.ServerIsLeft ?
+                ServerImage : ClientImage;
+            const cv::Mat& RightImage = Calibration.ServerIsLeft ?
+                ClientImage : ServerImage;
+            const std::filesystem::path LeftPath = CalibrationImagePath(
+                Calibration, "left", CaptureIndex,
+                PairTimestampNs);
+            const std::filesystem::path RightPath = CalibrationImagePath(
+                Calibration, "right", CaptureIndex,
+                PairTimestampNs);
+
+            if(!SaveCalibrationImage(LeftImage, LeftPath,
+                    Stereo.FailureReason))
+            {
+                Stereo.Failed = true;
+                break;
+            }
+            if(!SaveCalibrationImage(RightImage, RightPath,
+                    Stereo.FailureReason))
+            {
+                std::error_code RemoveError;
+                std::filesystem::remove(LeftPath, RemoveError);
+                Stereo.Failed = true;
+                break;
+            }
+            Calibration.CapturesSaved.fetch_add(
+                1, std::memory_order_release);
         }
+
+        if(DataCollection.Enabled)
+        {
+            const cv::Mat& LeftImage = DataCollection.ServerIsLeft ?
+                ServerImage : ClientImage;
+            const cv::Mat& RightImage = DataCollection.ServerIsLeft ?
+                ClientImage : ServerImage;
+            const uint64_t LeftTimestampNs = DataCollection.ServerIsLeft ?
+                Header.ServerTimestampNs : Header.ClientTimestampNs;
+            const uint64_t RightTimestampNs = DataCollection.ServerIsLeft ?
+                Header.ClientTimestampNs : Header.ServerTimestampNs;
+
+            DataCollection.Pairs.push_back({
+                .PairSequence = Header.PairSequence,
+                .LeftTimestampNs = LeftTimestampNs,
+                .RightTimestampNs = RightTimestampNs
+            });
+            const size_t DataOffset = DataCollection.ImageData.size();
+            DataCollection.ImageData.resize(DataOffset + 2 * FRAME_SIZE);
+            std::memcpy(DataCollection.ImageData.data() + DataOffset,
+                LeftImage.data, FRAME_SIZE);
+            std::memcpy(DataCollection.ImageData.data() + DataOffset +
+                FRAME_SIZE, RightImage.data, FRAME_SIZE);
+        }
+
+        std::lock_guard<std::mutex> Lock(Stereo.ImageMutex);
+        ServerImage.copyTo(ServerStream.LatestImage);
+        ClientImage.copyTo(ClientStream.LatestImage);
+        ServerLuminanceImage.copyTo(ServerStream.LatestLuminanceImage);
+        ClientLuminanceImage.copyTo(ClientStream.LatestLuminanceImage);
+        ++Stereo.LatestImageVersion;
     }
 
     ServerStream.Finished.store(true, std::memory_order_release);
@@ -891,7 +1407,8 @@ static void ReceiveStereoStream(typeStereoRuntime& Stereo,
 
 static bool UpdateStereoDisplayImages(typeStereoRuntime& Stereo,
         typeStreamRuntime& LeftStream, typeStreamRuntime& RightStream,
-        uint64_t& DisplayedVersion, cv::Mat& LeftImage, cv::Mat& RightImage)
+        uint64_t& DisplayedVersion, cv::Mat& LeftImage, cv::Mat& RightImage,
+        cv::Mat& LeftLuminanceImage, cv::Mat& RightLuminanceImage)
 {
     std::lock_guard<std::mutex> Lock(Stereo.ImageMutex);
     if(Stereo.LatestImageVersion == 0 ||
@@ -902,6 +1419,8 @@ static bool UpdateStereoDisplayImages(typeStereoRuntime& Stereo,
 
     LeftStream.LatestImage.copyTo(LeftImage);
     RightStream.LatestImage.copyTo(RightImage);
+    LeftStream.LatestLuminanceImage.copyTo(LeftLuminanceImage);
+    RightStream.LatestLuminanceImage.copyTo(RightLuminanceImage);
     DisplayedVersion = Stereo.LatestImageVersion;
     return true;
 }
@@ -920,6 +1439,50 @@ static bool UpdateDisplayImage(typeStreamRuntime& Stream,
     Stream.LatestImage.copyTo(DisplayImage);
     DisplayedVersion = Stream.LatestImageVersion;
     return true;
+}
+
+static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
+        const cv::Mat& RightLuminance, const cv::Mat& LeftBGR)
+{
+    /*
+     * Add the live disparity/point-cloud pipeline here. These three images
+     * belong to the same synchronized pair:
+     *
+     *   LeftLuminance  CV_8UC1  -> rectify, then pass to StereoSGBM
+     *   RightLuminance CV_8UC1  -> rectify, then pass to StereoSGBM
+     *   LeftBGR        CV_8UC3  -> rectify and use to colour the 3D points
+     *
+     * Suggested order:
+     *   cv::remap both Y images and LeftBGR
+     *   cv::StereoSGBM::compute(leftY, rightY, disparity)
+     *   cv::reprojectImageTo3D(disparity, points3D, Q)
+     *   associate each valid point with the matching LeftBGR pixel
+     *
+     * This runs on the UI thread rather than the TCP receiver thread, so slow
+     * demo processing may skip display updates without blocking reception.
+     */
+    (void)LeftLuminance;
+    (void)RightLuminance;
+    (void)LeftBGR;
+}
+
+static void DrawCalibrationCaptureIndicator(cv::Mat& Image,
+        const size_t CapturesSaved, const bool CaptureJustSaved)
+{
+    if(Image.channels() == 1)
+        cv::cvtColor(Image, Image, cv::COLOR_GRAY2BGR);
+
+    const cv::Scalar IndicatorColor = CaptureJustSaved ?
+        cv::Scalar(0, 255, 0) : cv::Scalar(210, 210, 210);
+    const std::string Label = CaptureJustSaved ?
+        "CAPTURED #" + std::to_string(CapturesSaved) :
+        "Saved: " + std::to_string(CapturesSaved);
+
+    cv::rectangle(Image, cv::Point(10, 10), cv::Point(245, 58),
+        cv::Scalar(0, 0, 0), cv::FILLED);
+    cv::circle(Image, cv::Point(32, 34), 10, IndicatorColor, cv::FILLED);
+    cv::putText(Image, Label, cv::Point(52, 43), cv::FONT_HERSHEY_SIMPLEX,
+        0.72, IndicatorColor, 2, cv::LINE_AA);
 }
 
 static void PrintStreamStats(const typeStreamRuntime& Stream)
@@ -967,11 +1530,22 @@ static void PrintStreamStats(const typeStreamRuntime& Stream)
 int main(int argc, char* argv[])
 {
     typeProgramOptions Options{};
+    Options.DataDirectory =
+        std::filesystem::absolute(argv[0]).lexically_normal().parent_path() /
+            "data";
     if(!ParseProgramOptions(argc, argv, Options))
     {
         PrintUsage(argv[0]);
         return 1;
     }
+
+    typeCalibrationRuntime Calibration{};
+    if(!PrepareCalibrationDirectory(Options, Calibration))
+        return 1;
+
+    typeDataCollectionRuntime DataCollection{};
+    if(!PrepareDataDirectory(Options, DataCollection))
+        return 1;
 
     const int ServerFD =
         CreateServerSocket(DEFAULT_PORT, static_cast<int>(Options.CameraCount));
@@ -1049,39 +1623,81 @@ int main(int argc, char* argv[])
     std::thread Receiver;
     if(Options.CameraCount == 1)
         Receiver = std::thread(ReceiveStream,
-            std::ref(ServerOrMonoStream), Options.NumFrames);
+            std::ref(ServerOrMonoStream), Options.NumFrames,
+            std::ref(Calibration));
     else
         Receiver = std::thread(ReceiveStereoStream, std::ref(Stereo),
             std::ref(ServerOrMonoStream), std::ref(ClientStream),
-            Options.NumFrames);
+            Options.NumFrames, std::ref(Calibration),
+            std::ref(DataCollection));
 
     uint64_t LeftDisplayedVersion = 0;
     cv::Mat LeftDisplayImage;
     cv::Mat RightDisplayImage;
+    cv::Mat LeftLuminanceImage;
+    cv::Mat RightLuminanceImage;
+    cv::Mat RightColorDisplayImage;
     cv::Mat StereoDisplayImage;
+    size_t DisplayedCaptureCount = 0;
+    std::chrono::steady_clock::time_point CaptureIndicatorUntil{};
 
     while(Options.CameraCount == 1 ?
           !ServerOrMonoStream.Finished.load(std::memory_order_acquire) :
           !Stereo.Finished.load(std::memory_order_acquire))
     {
+        const auto CurrentTime = std::chrono::steady_clock::now();
+        const size_t CapturesSaved =
+            Calibration.CapturesSaved.load(std::memory_order_acquire);
+        if(CapturesSaved != DisplayedCaptureCount)
+        {
+            DisplayedCaptureCount = CapturesSaved;
+            CaptureIndicatorUntil =
+                CurrentTime + std::chrono::milliseconds(500);
+        }
+        const bool CaptureJustSaved =
+            CurrentTime < CaptureIndicatorUntil;
+
         if(RightStream != nullptr)
         {
             const bool Updated = UpdateStereoDisplayImages(Stereo,
                 *LeftStream, *RightStream, LeftDisplayedVersion,
-                LeftDisplayImage, RightDisplayImage);
+                LeftDisplayImage, RightDisplayImage,
+                LeftLuminanceImage, RightLuminanceImage);
 
             if(Updated)
             {
-                cv::hconcat(
-                    LeftDisplayImage,
-                    RightDisplayImage,
+                if(Options.Mode == typeReceiverMode::Demo)
+                {
+                    ProcessDemoStereoPair(LeftLuminanceImage,
+                        RightLuminanceImage, LeftDisplayImage);
+                }
+
+                const cv::Mat* RightImageForDisplay = &RightDisplayImage;
+                if(LeftDisplayImage.channels() == 3 &&
+                   RightDisplayImage.channels() == 1)
+                {
+                    cv::cvtColor(RightDisplayImage, RightColorDisplayImage,
+                        cv::COLOR_GRAY2BGR);
+                    RightImageForDisplay = &RightColorDisplayImage;
+                }
+                cv::hconcat(LeftDisplayImage, *RightImageForDisplay,
                     StereoDisplayImage);
+                if(Calibration.Enabled)
+                {
+                    DrawCalibrationCaptureIndicator(StereoDisplayImage,
+                        DisplayedCaptureCount, CaptureJustSaved);
+                }
                 cv::imshow("Stereo Cameras", StereoDisplayImage);
             }
         }
         else if(UpdateDisplayImage(*LeftStream,
                     LeftDisplayedVersion, LeftDisplayImage))
         {
+            if(Calibration.Enabled)
+            {
+                DrawCalibrationCaptureIndicator(LeftDisplayImage,
+                    DisplayedCaptureCount, CaptureJustSaved);
+            }
             cv::imshow("Pi Camera", LeftDisplayImage);
         }
 
@@ -1097,6 +1713,28 @@ int main(int argc, char* argv[])
         close(Stereo.SocketFD);
 
     cv::destroyAllWindows();
+
+    if(DataCollection.Enabled &&
+       !WriteDataCollection(DataCollection, Stereo.FailureReason))
+    {
+        Stereo.Failed = true;
+        std::cerr << Stereo.FailureReason << '\n';
+    }
+
+    if(Calibration.Enabled)
+    {
+        std::cout << "Calibration captures saved: "
+                  << Calibration.CapturesSaved.load(std::memory_order_acquire)
+                  << '\n';
+    }
+
+    if(DataCollection.Enabled)
+    {
+        std::cout << "Data stereo pairs captured: "
+                  << DataCollection.Pairs.size() << '\n'
+                  << "Data stereo pairs saved: "
+                  << DataCollection.PairsSaved << '\n';
+    }
 
     if(Options.CameraCount == 1)
     {

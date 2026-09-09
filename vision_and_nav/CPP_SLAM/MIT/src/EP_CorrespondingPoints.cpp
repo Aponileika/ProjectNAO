@@ -20,6 +20,7 @@ static typeDescriptorTimingStatistics GetDescriptorTotalTiming{};
 static typeDescriptorTimingStatistics GetKeyPointsTiming{};
 static typeDescriptorTimingStatistics AnmsTiming{};
 static typeDescriptorTimingStatistics ComputeDescriptorsTiming{};
+static typeDescriptorTimingStatistics DescriptorPostProcessingTiming{};
 
 static void EPPriv_AddTimingSample(typeDescriptorTimingStatistics& Statistics, const fp64 Time)
 {
@@ -55,6 +56,11 @@ static void EPPriv_RecordGetDescriptorTiming(const fp64 TotalTime, const fp64 Ge
 {
     EPPriv_AddTimingSample(GetDescriptorTotalTiming, TotalTime);
     EPPriv_AddTimingSample(ComputeDescriptorsTiming, ComputeDescriptorsTime);
+    const fp64 FeatureExtractionTime = PANTO_DESCRIPTOR_ANMS ?
+        GetKeyPointsTime + AnmsTime + ComputeDescriptorsTime :
+        ComputeDescriptorsTime;
+    EPPriv_AddTimingSample(DescriptorPostProcessingTiming,
+            std::max<fp64>(0.0, TotalTime - FeatureExtractionTime));
 
     if(PANTO_DESCRIPTOR_ANMS)
     {
@@ -71,9 +77,10 @@ static void EPPriv_RecordGetDescriptorTiming(const fp64 TotalTime, const fp64 Ge
     else
     {
         LG_Log(LogSeverity::DBG,
-                "[EP_GetDescriptorTiming] total = %.6f s, OpenCV detectAndCompute = %.6f s\n",
+                "[EP_GetDescriptorTiming] total = %.6f s, OpenCV detectAndCompute = %.6f s, post-processing = %.6f s\n",
                 TotalTime,
-                ComputeDescriptorsTime);
+                ComputeDescriptorsTime,
+                std::max<fp64>(0.0, TotalTime - FeatureExtractionTime));
     }
 }
 
@@ -101,6 +108,7 @@ void EP_LogGetDescriptorTimingStatistics(void)
     {
         EPPriv_LogTimingStatistics("EP_GetDescriptors/OpenCV detectAndCompute", ComputeDescriptorsTiming);
     }
+    EPPriv_LogTimingStatistics("EP_GetDescriptors/post-processing", DescriptorPostProcessingTiming);
 }
 
 cv::Mat EP_EFromRigid(cv::Mat R, cv::Mat t)

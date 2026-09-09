@@ -70,116 +70,214 @@ u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame)
     return ID;
 }
 
-typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame)
+typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph,
+    const typeKeyFrame& CurrentFrame)
 {
-    const std::size_t NumberOfKeyFrames = GlobalMap.KeyFrames.size();
-    LG_Log(LogSeverity::DBG, "[MAP_CreateLocalMapTracking] Number of KeyFrames in local map creation %zu\n", NumberOfKeyFrames);
-    std::vector<u64> KeyFrameCount(NumberOfKeyFrames);
-    typeLocalMapTracking LocalMap{};
-    std::vector<u64> LocalKeyFrameIDs;
+    LG_Log( LogSeverity::DBG,
+        "[MAP_CreateLocalMapTracking] Creating tracking-local map\n");
 
-    for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+    typeLocalMapTracking LocalMap{};
+
+    /*
+     * Keyframe IDs may be sparse, so do not allocate a vector using
+     * active_size() and index it with KeyFrameID.
+     */
+    std::unordered_map<u64, u64> KeyFrameVotes;
+    KeyFrameVotes.reserve( CurrentFrame.Points.ImagePoints.size());
+
+
+    for(const typePantoImagePoint& ImagePoint : CurrentFrame.Points.ImagePoints)
     {
         const u64 MapPointID = ImagePoint.MapPointID;
 
-        if(MapPointID != PANTO_ID_NOT_SET)
-        {
-            if(!GlobalMap.MapPoints.contains(MapPointID))
-            {
-                continue;
-            }
-            const typePantoMapPoint& MapPoint = GlobalMap.MapPoints[MapPointID];
-            for(const u64& KeyFrameID : MapPoint.KeyFrameIDs)
-            {
-                KeyFrameCount[KeyFrameID]++;
-            }
-        }
-    }
-
-    std::unordered_set<u64> AddedKeyFrames;
-
-    for(std::size_t i{}; i < NumberOfKeyFrames; i++)
-    {
-        if(!GlobalMap.KeyFrames.contains(i))
+        if(MapPointID == PANTO_ID_NOT_SET)
         {
             continue;
         }
 
-        if(KeyFrameCount[i] > 0)
+        if(!GlobalMap.MapPoints.contains(MapPointID))
         {
-            LocalKeyFrameIDs.push_back(i);
-            AddedKeyFrames.insert(i);
+            continue;
+        }
+
+        const typePantoMapPoint& MapPoint = GlobalMap.MapPoints[MapPointID];
+
+        for(const u64 ObservingKeyFrameID : MapPoint.KeyFrameIDs)
+        {
+            ++KeyFrameVotes[ObservingKeyFrameID];
         }
     }
 
-    std::unordered_set<u64> AddedMapPoints;
 
-    for(const u64& KeyFrameID : LocalKeyFrameIDs)
+    struct typeKeyFrameCandidate
     {
-        LG_Log(LogSeverity::DBG, "[MAP_CreateLocalMapTracking] KeyFrame considered for mappoints %llu\n", KeyFrameID);
-        for(const typePantoImagePoint& ImagePoint : GlobalMap.KeyFrames[KeyFrameID].Points.ImagePoints)
+        u64 KeyFrameID;
+        u64 VoteCount;
+    };
+
+    std::vector<typeKeyFrameCandidate> KeyFrameCandidates;
+
+    KeyFrameCandidates.reserve( KeyFrameVotes.size());
+
+    for(const auto& VoteEntry : KeyFrameVotes)
+    {
+        const u64 KeyFrameID = VoteEntry.first;
+
+        const u64 VoteCount = VoteEntry.second;
+
+        /*
+         * Observation lists can contain references to keyframes that have
+         * since been removed. Filter those references here.
+         */
+        if(!GlobalMap.KeyFrames.contains(KeyFrameID))
         {
-            if(ImagePoint.MapPointID != PANTO_ID_NOT_SET &&
-               GlobalMap.MapPoints.contains(ImagePoint.MapPointID))
+            continue;
+        }
+
+        KeyFrameCandidates.push_back({ .KeyFrameID = KeyFrameID, .VoteCount = VoteCount
+        });
+    }
+
+    std::sort(
+        KeyFrameCandidates.begin(),
+        KeyFrameCandidates.end(),
+        [](
+            const typeKeyFrameCandidate& Left,
+            const typeKeyFrameCandidate& Right)
+        {
+            if(Left.VoteCount != Right.VoteCount)
             {
-                if(AddedMapPoints.insert(ImagePoint.MapPointID).second)
-                {
-                    LocalMap.MapPoints.push_back(
-                            GlobalMap.MapPoints[ImagePoint.MapPointID]);
-                }
+                return Left.VoteCount > Right.VoteCount;
             }
-        }
-    }
-    
-    std::vector<u64> AdditionalKeyFrames;
 
-    for(const u64& KeyFrameID : LocalKeyFrameIDs)
+            return Left.KeyFrameID < Right.KeyFrameID;
+        });
+
+    std::vector<u64> LocalKeyFrameIDs;
+    LocalKeyFrameIDs.reserve( PANTO_MAX_LOCAL_TRACKING_MAP_SIZE);
+
+    std::unordered_set<u64> AddedKeyFrames;
+    AddedKeyFrames.reserve( PANTO_MAX_LOCAL_TRACKING_MAP_SIZE);
+
+    for(const typeKeyFrameCandidate& Candidate : KeyFrameCandidates)
     {
-        if(LocalKeyFrameIDs.size() + AdditionalKeyFrames.size() >= PANTO_MAX_LOCAL_TRACKING_MAP_SIZE)
+        if(LocalKeyFrameIDs.size() >= PANTO_MAX_LOCAL_TRACKING_MAP_SIZE)
         {
             break;
         }
 
-        typeCovisibility MostCovisibleFrame = GRAPH_GetMostCovisibleFrame(CovisibilityGraph, KeyFrameID);
-        const u64 MostCovisibleFrameID = MostCovisibleFrame.KeyFrameID;
-        LG_Log(LogSeverity::DBG, "[MAP_CreateLocalMapTracking] Most covisible KeyFrameID in Local Map creation %llu\n", MostCovisibleFrameID);
-
-        if(MostCovisibleFrameID == PANTO_ID_NOT_SET)
+        if(AddedKeyFrames.insert( Candidate.KeyFrameID).second)
         {
-            continue;
-        }
+            LocalKeyFrameIDs.push_back( Candidate.KeyFrameID);
 
-        if(!GlobalMap.KeyFrames.contains(MostCovisibleFrameID))
-        {
-            continue;
-        }
-
-        if(AddedKeyFrames.insert(MostCovisibleFrameID).second)
-        {
-            AdditionalKeyFrames.push_back(MostCovisibleFrameID);
-            for(const typePantoImagePoint& ImagePoint : GlobalMap.KeyFrames[MostCovisibleFrameID].Points.ImagePoints)
-            {
-                const u64 MapPointID = ImagePoint.MapPointID;
-                if(MapPointID != PANTO_ID_NOT_SET &&
-                   GlobalMap.MapPoints.contains(MapPointID) &&
-                   AddedMapPoints.insert(MapPointID).second)
-                {
-                    LocalMap.MapPoints.push_back(GlobalMap.MapPoints[MapPointID]);
-                }
-            }
+            LG_Log(
+                LogSeverity::DBG,
+                "[MAP_CreateLocalMapTracking] "
+                "Selected voted KeyFrame %llu "
+                "with %llu votes\n",
+                Candidate.KeyFrameID,
+                Candidate.VoteCount);
         }
     }
 
-    LocalKeyFrameIDs.insert(
-            LocalKeyFrameIDs.end(),
-            AdditionalKeyFrames.begin(),
-            AdditionalKeyFrames.end());
+    const std::size_t NumberOfSeedKeyFrames = LocalKeyFrameIDs.size();
 
-    LocalMap.KeyFrames.reserve(LocalKeyFrameIDs.size());
+    for(std::size_t SeedIndex = 0; SeedIndex < NumberOfSeedKeyFrames; ++SeedIndex)
+    {
+        if(LocalKeyFrameIDs.size() >= PANTO_MAX_LOCAL_TRACKING_MAP_SIZE)
+        {
+            break;
+        }
+
+        const u64 SeedKeyFrameID = LocalKeyFrameIDs[SeedIndex];
+
+        const typeCovisibility MostCovisibleFrame =
+            GRAPH_GetMostCovisibleFrame( CovisibilityGraph, SeedKeyFrameID);
+
+        const u64 NeighbourKeyFrameID = MostCovisibleFrame.KeyFrameID;
+
+        LG_Log(
+            LogSeverity::DBG,
+            "[MAP_CreateLocalMapTracking] "
+            "Most covisible neighbour of %llu is %llu\n",
+            SeedKeyFrameID,
+            NeighbourKeyFrameID);
+
+        if(NeighbourKeyFrameID == PANTO_ID_NOT_SET)
+        {
+            continue;
+        }
+
+        if(!GlobalMap.KeyFrames.contains( NeighbourKeyFrameID))
+        {
+            continue;
+        }
+
+        if(AddedKeyFrames.insert( NeighbourKeyFrameID).second)
+        {
+            LocalKeyFrameIDs.push_back( NeighbourKeyFrameID);
+        }
+    }
+
+
+    LocalMap.KeyFrames.reserve( LocalKeyFrameIDs.size());
+
+    std::unordered_set<u64> AddedMapPoints;
+
+    AddedMapPoints.reserve( CurrentFrame.Points.ImagePoints.size() * 2);
+
     for(const u64 KeyFrameID : LocalKeyFrameIDs)
     {
-        LocalMap.KeyFrames.push_back(GlobalMap.KeyFrames[KeyFrameID]);
+        if(!GlobalMap.KeyFrames.contains(KeyFrameID))
+        {
+            continue;
+        }
+
+        const typeKeyFrame& GlobalKeyFrame = GlobalMap.KeyFrames[KeyFrameID];
+
+        LocalMap.KeyFrames.push_back( GlobalKeyFrame);
+
+        LG_Log(
+            LogSeverity::DBG,
+            "[MAP_CreateLocalMapTracking] "
+            "Gathering map points from KeyFrame %llu\n",
+            KeyFrameID);
+
+        for(const typePantoImagePoint& ImagePoint : GlobalKeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+
+            if(MapPointID == PANTO_ID_NOT_SET)
+            {
+                continue;
+            }
+
+            if(!AddedMapPoints.insert( MapPointID).second)
+            {
+                continue;
+            }
+
+            if(!GlobalMap.MapPoints.contains(MapPointID))
+            {
+                AddedMapPoints.erase( MapPointID);
+
+                continue;
+            }
+
+            const typePantoMapPoint& GlobalMapPoint = GlobalMap.MapPoints[MapPointID];
+
+            LocalMap.MapPoints.push_back( GlobalMapPoint);
+        }
     }
+
+
+    LG_Log(
+        LogSeverity::DBG,
+        "[MAP_CreateLocalMapTracking] "
+        "Created local snapshot with %zu KeyFrames "
+        "and %zu MapPoints\n",
+        LocalMap.KeyFrames.size(),
+        LocalMap.MapPoints.size());
 
     return LocalMap;
 }
