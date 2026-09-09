@@ -19,6 +19,14 @@ They are visually identical — **put a physical sticker on one.** To check whic
 one you are on, run `whichnao.py`, or read
 `Device/DeviceList/ChestBoard/BodyId`.
 
+**Mind the version gap: the robots run NAOqi `2.1.4.13`, while the desktop SDK
+is `pynaoqi 2.8.6.23`.** They interoperate fine, but the API surface you get is
+the robot's 2.1, not the 2.8 the SDK folder name suggests — so check behaviour
+against the robot rather than trusting 2.8 documentation. Verified with
+`ALMotion.getRobotConfig()` and `ALSystem.systemVersion()` on `…344`
+(`Model Type naoH25`, `Head/Body/Arm Version VERSION_50`,
+`RobotConfig/Body/BaseVersion V5.0`, head `ALDT1312N090363`).
+
 ---
 
 ## Robot `…344` — the walking one
@@ -329,10 +337,14 @@ rewritten without touching a control loop.
   a bigger body. ~80 reads as an adult man, ~72 noticeably deeper.
 - `\rspd=N\` (relative speed, 60–140) slows it slightly, which reads as heavier
   and more deliberate. Too slow just sounds drunk.
-- **`setParameter("pitchShift", x)` is useless for this** — NAOqi only accepts
-  values ≥ 1.0, so it can raise a voice but never lower one. Markup also applies
-  per utterance, so the Speech Test box and the wander loop cannot fight over a
-  global setting.
+- **`setParameter("pitchShift", x)` is useless for this** — measured on `…344`:
+  `0.8` is rejected, `1.0` and `1.2` accepted. It can raise a voice, never lower
+  one. Markup also applies per utterance, so the Speech Test box and the wander
+  loop cannot fight over a global setting.
+- **`setVoice` is not an option either** — only two voices are installed,
+  `naoenu` (default) and `Emma22Enhanced`, both child/female. A voice dropdown
+  would have nothing masculine to offer. Vocal tract length is the only route
+  without installing another Acapela voice on the robot.
 - Presets in the `Speech & Voice` card: Stock NAO / Grown up / Guy / Deep guy /
   Very deep, plus Depth and Speed sliders. **Save** writes `voice_vct` and
   `voice_rspd` into `config.json`; currently `72 / 90` ("Deep guy").

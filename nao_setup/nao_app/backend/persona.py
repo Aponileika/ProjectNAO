@@ -273,9 +273,14 @@ class PhrasePicker(object):
 #             reads as heavier and more deliberate; too slow sounds drunk.
 #
 # ALTextToSpeech.setParameter("pitchShift", x) is deliberately not used:
-# NAOqi only accepts values >= 1.0 there, so it can raise a voice but never
-# lower one.  Markup is also per-utterance, which means the Speech Test box
-# and the wander loop cannot fight over a global setting.
+# measured on this robot, 0.8 is rejected outright while 1.0 and 1.2 are
+# accepted, so it can raise a voice but never lower one.  Markup is also
+# per-utterance, which means the Speech Test box and the wander loop cannot
+# fight over a global setting.
+#
+# Nor is setVoice an option here: this robot has only 'naoenu' and
+# 'Emma22Enhanced' installed, both child/female.  Vocal tract length is the
+# only route to a masculine voice without installing another Acapela voice.
 
 VCT_MIN,  VCT_MAX  = 50, 150
 RSPD_MIN, RSPD_MAX = 60, 140
