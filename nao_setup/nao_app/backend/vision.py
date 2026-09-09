@@ -7,6 +7,8 @@ try:
 except ImportError:
     tk = None
 
+from nao_app.backend import persona
+
 class VisionManager(object):
     def __init__(self, proxies, ui_callbacks=None):
         """
@@ -22,6 +24,21 @@ class VisionManager(object):
         self._cam_photo = None
         self._human_hold_until = 0.0
         self._alarm_active = False
+
+        # Character.  The app replaces these with its own picker and voice on
+        # startup so vision's lines match everything else the robot says; the
+        # defaults here keep VisionManager usable standalone.
+        self.persona = persona.PhrasePicker()
+        self.voice   = persona.VoiceStyle()
+
+    def say(self, text):
+        tts = self.get_proxy("tts")
+        if not tts or not text:
+            return
+        try:
+            tts.say(self.voice.apply(text))
+        except Exception:
+            pass
 
     def get_proxy(self, name):
         """Helper to get proxy from dict or object."""
@@ -224,12 +241,7 @@ class VisionManager(object):
             except Exception:
                 pass
         # Say the detection phrase ONCE (not in a tight loop)
-        tts = self.get_proxy("tts")
-        if tts:
-            try:
-                tts.say("Human detected.")
-            except Exception:
-                pass
+        self.say(self.persona.line("found_human") or "Human detected.")
         # Fire the external on_human_detected callback (e.g. to trigger dance)
         if "on_human_detected" in self.ui:
             try:
@@ -257,11 +269,7 @@ class VisionManager(object):
         
         def _diffuse():
             time.sleep(0.5)
-            if tts:
-                try:
-                    tts.say("situation diffused")
-                except Exception:
-                    pass
+            self.say("Situation diffused.")
 
         t = threading.Thread(target=_diffuse)
         t.daemon = True

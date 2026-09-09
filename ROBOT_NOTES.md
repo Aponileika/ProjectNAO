@@ -296,12 +296,58 @@ one. Don't be tempted to raise the TTL much without checking drift first.
 
 ---
 
+## Personality and voice (added 2026-09-10)
+
+All of it lives in `nao_app/backend/persona.py`, so the character can be
+rewritten without touching a control loop.
+
+- **Identity** — the robot is NAO, a V5 humanoid belonging to **FIA Robotics at
+  Linköping University**. `persona.system_prompt()` prepends that, plus the
+  character traits, to every Gemini request whose answer gets spoken
+  (`NaoAppWindow._in_character`). Deliberately *not* applied to the wander
+  loop's yes/no vision classifier — personality there corrupts answer parsing.
+- **Spoken spelling** — the English Acapela voice mangles "Linköping", so
+  `SPOKEN_INSTITUTION = "Linshurping University"` is used in speech while the
+  real spelling goes into text and prompts. Adjust that string if it still
+  sounds wrong out loud.
+- **Phrase banks** — `PHRASES` is keyed by situation (`walking`, `searching`,
+  `searching_human`, `avoid_sonar`, `avoid_bumper`, `avoid_boundary`, `stuck`,
+  `found_human`, `found_target`, `fell`, `greeting`, …). `PhrasePicker` shuffles
+  each bank and walks through it rather than using `random.choice`, which in a
+  five-line bank repeats itself back-to-back about one time in five and sounds
+  broken. The idle `walking` bank is the longest (22 lines) because it plays
+  most often.
+- **One speech path** — `NaoAppWindow.say()` / `.say_line()` and
+  `VisionManager.say()` are the only places that call `tts.say`. Everything is
+  styled and nothing raises: a TTS failure must never take down a control loop.
+
+### Making the voice deeper
+
+- **`\vct=N\` (vocal tract length, 50–150, 100 = stock) is the knob that
+  matters.** It models the size of the speaker's head and throat, so lowering it
+  does not merely pitch-shift a child voice down — it sounds like it came out of
+  a bigger body. ~80 reads as an adult man, ~72 noticeably deeper.
+- `\rspd=N\` (relative speed, 60–140) slows it slightly, which reads as heavier
+  and more deliberate. Too slow just sounds drunk.
+- **`setParameter("pitchShift", x)` is useless for this** — NAOqi only accepts
+  values ≥ 1.0, so it can raise a voice but never lower one. Markup also applies
+  per utterance, so the Speech Test box and the wander loop cannot fight over a
+  global setting.
+- Presets in the `Speech & Voice` card: Stock NAO / Grown up / Guy / Deep guy /
+  Very deep, plus Depth and Speed sliders. **Save** writes `voice_vct` and
+  `voice_rspd` into `config.json`; currently `72 / 90` ("Deep guy").
+- Text that already contains its own `\vct=` or `\rspd=` passes through
+  unstyled, so the Speech Test box still works for experimenting.
+
+---
+
 ## Open / untested
 
 - **Spatial memory and map window** — just added; watch the `[Map]` log lines to
   see whether chosen headings actually avoid known-blocked places.
-- **Deeper voice** — `\vct=70\` markup works today in the Speech Test box; not
-  yet wired in as a persistent setting.
+- **Voice depth on the actual speaker** — `72 / 90` is a starting guess. NAO's
+  small speaker rolls off low frequencies, so very low `vct` may sound thin
+  rather than deep; tune by ear with the card's Test button.
 - **`torso_wy` value** — `-0.08` worked well. If it starts falling *backward*,
   reduce toward `-0.04`.
 - **Longer-horizon mapping** would need drift correction (landmarks, or resetting

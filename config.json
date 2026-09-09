@@ -11,5 +11,8 @@
     "burst_resume_roll":  0.06,
     "_comment_walk_arms": "Arm swing while walking. Normally true - swinging arms help NAO balance. Set false only as an experiment, to remove arm motion as a variable.",
     "walk_arms":  true,
+    "_comment_voice": "Acapela voice shape, applied to everything the robot says. voice_vct is vocal tract length 50-150 (100 = stock NAO, lower = deeper and bigger-sounding); voice_rspd is relative speed 60-140. Set from the Speech & Voice card with Save.",
+    "voice_vct":  72,
+    "voice_rspd":  90,
     "filepath":  "C:\\Users\\aleks\\FIA\\NAO\\pynaoqi-python2.7-2.8.6.23-win64-vs2015-20191127_152649\\lib"
 }

@@ -4,6 +4,7 @@ import tkFont
 import threading
 import math
 from nao_app.ui.widgets import make_card, make_btn, BG, FG, ACCENT, SUCCESS, ERROR, WARN, CARD_BG, BTN_BG, BTN_FG
+from nao_app.backend import persona
 
 class NaoAppWindow(object):
     LANGUAGES = [
@@ -62,6 +63,12 @@ class NaoAppWindow(object):
         # config.json opts in.
         self.config_burst_gait = False
 
+        # Character and voice.  The picker keeps spoken lines from repeating;
+        # the style wraps every utterance in Acapela markup so the robot has
+        # one consistent voice wherever the words came from.
+        self.persona = persona.PhrasePicker()
+        self.voice   = persona.VoiceStyle()
+
         self.api_key_autofill = ""   # first key (shown in UI entry)
         self.api_keys_list    = []   # all keys, used for rotation
         try:
@@ -70,6 +77,7 @@ class NaoAppWindow(object):
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
             conf_path    = os.path.join(base_dir, "config.json")
             secrets_path = os.path.join(base_dir, "secrets.json")
+            self.config_path = conf_path
 
             if os.path.isfile(conf_path):
                 with open(conf_path, "r") as f:
@@ -104,6 +112,12 @@ class NaoAppWindow(object):
                             cdata.get("torso_wy", -0.08))))
                     except Exception:
                         pass
+                    # Voice shape.  Absent keys keep the module default.
+                    try:
+                        self.voice = persona.VoiceStyle(
+                            cdata.get("voice_vct"), cdata.get("voice_rspd"))
+                    except Exception:
+                        pass
 
             if os.path.isfile(secrets_path):
                 with open(secrets_path, "r") as f:
@@ -121,6 +135,15 @@ class NaoAppWindow(object):
                 print("[NaoAppWindow] Loaded %d API key(s) from config." % len(self.api_keys_list))
         except Exception as e:
             print("[NaoAppWindow] Could not load config/secrets: %s" % e)
+
+        # Vision speaks for itself on human detection, so give it the same
+        # character and voice rather than letting it use stock NAO.
+        if self.vision is not None:
+            try:
+                self.vision.persona = self.persona
+                self.vision.voice   = self.voice
+            except Exception:
+                pass
 
         self._controller_expanded = False
         # Live map state, shared with the wander thread so the map window can
@@ -488,14 +511,101 @@ class NaoAppWindow(object):
         make_btn(row, "Get", self._on_language_get, width=6, font_norm=self.font_norm).pack(side="left")
 
     def _card_speech(self, parent):
-        card = make_card(parent, "Speech Test", self.font_head)
+        card = make_card(parent, "Speech & Voice", self.font_head)
+
         row = tk.Frame(card, bg=CARD_BG)
         row.pack(fill="x")
         tk.Label(row, text="Say:", font=self.font_norm, bg=CARD_BG, fg=FG).pack(side="left")
         self.speech_entry = tk.Entry(row, font=self.font_norm, width=22)
-        self.speech_entry.insert(0, "Hello, I am NAO")
+        self.speech_entry.insert(0, persona.identity_sentence(spoken=True))
         self.speech_entry.pack(side="left", padx=4)
         make_btn(row, "Speak", self._on_speak, width=8, font_norm=self.font_norm).pack(side="left", padx=6)
+
+        # Voice shape.  The preset menu is what people will actually use; the
+        # two sliders are there for dialling in a voice the presets miss.
+        row2 = tk.Frame(card, bg=CARD_BG)
+        row2.pack(fill="x", pady=(6, 0))
+        tk.Label(row2, text="Voice:", font=self.font_norm, bg=CARD_BG, fg=FG).pack(side="left")
+        self.voice_preset_var = tk.StringVar(value=persona.DEFAULT_PRESET)
+        names = [p[0] for p in persona.VOICE_PRESETS]
+        m = tk.OptionMenu(row2, self.voice_preset_var, *names,
+                          command=self._on_voice_preset)
+        m.config(font=self.font_norm, bg=BTN_BG, fg=BTN_FG,
+                 activebackground=ACCENT, highlightthickness=0, width=10)
+        m.pack(side="left", padx=4)
+        make_btn(row2, "Test", self._on_voice_test, width=6,
+                 font_norm=self.font_norm).pack(side="left", padx=4)
+        make_btn(row2, "Save", self._on_voice_save, width=6,
+                 font_norm=self.font_norm).pack(side="left")
+
+        self.voice_vct_var  = tk.IntVar(value=self.voice.vct)
+        self.voice_rspd_var = tk.IntVar(value=self.voice.rspd)
+        for label, var, lo, hi in (
+                ("Depth", self.voice_vct_var,
+                 persona.VCT_MIN, persona.VCT_MAX),
+                ("Speed", self.voice_rspd_var,
+                 persona.RSPD_MIN, persona.RSPD_MAX)):
+            r = tk.Frame(card, bg=CARD_BG)
+            r.pack(fill="x")
+            tk.Label(r, text=label, font=self.font_small, bg=CARD_BG, fg=FG,
+                     width=6, anchor="w").pack(side="left")
+            tk.Scale(r, from_=lo, to=hi, orient="horizontal", variable=var,
+                     length=200, bg=CARD_BG, fg=FG, troughcolor=BTN_BG,
+                     highlightthickness=0, font=self.font_small,
+                     command=self._on_voice_slider).pack(side="left", padx=4)
+        tk.Label(card, text="lower Depth = deeper, bigger-sounding voice",
+                 font=self.font_small, bg=CARD_BG, fg=FG).pack(anchor="w")
+
+    # -- voice controls -------------------------------------------------
+
+    def _on_voice_preset(self, name=None):
+        name = name or self.voice_preset_var.get()
+        for label, vct, rspd in persona.VOICE_PRESETS:
+            if label == name:
+                self.voice.vct, self.voice.rspd = vct, rspd
+                self.voice_vct_var.set(vct)
+                self.voice_rspd_var.set(rspd)
+                self._set_status("Voice preset: %s" % label)
+                break
+
+    def _on_voice_slider(self, _value=None):
+        """Sliders win over the preset menu, so blank the preset label."""
+        self.voice.vct  = self.voice_vct_var.get()
+        self.voice.rspd = self.voice_rspd_var.get()
+        self.voice.clamp()
+
+    def _on_voice_test(self):
+        if not self._require_connection() or not self.conn.tts: return
+        self._on_voice_slider()
+        line = self.persona.line("greeting")
+        threading.Thread(target=lambda: self.say(line, blocking=True)).start()
+        self._set_status("Voice test (depth %d, speed %d)"
+                         % (self.voice.vct, self.voice.rspd))
+
+    def _on_voice_save(self):
+        """Persist the current voice to config.json so it survives a restart."""
+        self._on_voice_slider()
+        path = getattr(self, "config_path", None)
+        if not path:
+            self._set_status("No config.json path known", False)
+            return
+        try:
+            import json, os
+            data = {}
+            if os.path.isfile(path):
+                with open(path, "r") as f:
+                    data = json.load(f)
+            data.update(self.voice.as_dict())
+            data.setdefault("_comment_voice",
+                            "Acapela voice shape. voice_vct is vocal tract "
+                            "length 50-150 (100 = stock NAO, lower = deeper); "
+                            "voice_rspd is relative speed 60-140.")
+            with open(path, "w") as f:
+                json.dump(data, f, indent=4)
+            self._set_status("Voice saved (depth %d, speed %d)"
+                             % (self.voice.vct, self.voice.rspd))
+        except Exception as e:
+            self._set_status("Could not save voice: %s" % e, False)
 
     def _card_leds(self, parent):
         card = make_card(parent, "LEDs", self.font_head)
@@ -788,7 +898,7 @@ class NaoAppWindow(object):
                         print("[Connect] could not set English: %s" % e)
                         try: self.lang_var.set(self.conn.tts.getLanguage())
                         except Exception: pass
-                    self.conn.tts.post.say("Connected")
+                    self.say_line("greeting")
             except Exception:
                 pass
             self._set_status(msg, True)
@@ -822,14 +932,57 @@ class NaoAppWindow(object):
         except Exception as e:
             self._set_status("Language error: %s" % e, False)
 
+    # ------------------------------------------------------------------
+    # Speech
+    # ------------------------------------------------------------------
+
+    def say(self, text, blocking=False):
+        """Speak `text` in the robot's configured voice.
+
+        Every spoken line in the app goes through here, so the personality
+        stays consistent and one voice setting covers phrase banks, Gemini
+        replies and the Speech Test box alike.  Never raises: speech failing
+        must not take down a control loop."""
+        if not text or not self.conn or not self.conn.tts:
+            return
+        try:
+            styled = self.voice.apply(text)
+        except Exception:
+            styled = str(text)
+        try:
+            if blocking:
+                self.conn.tts.say(styled)
+            else:
+                self.conn.tts.post.say(styled)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _in_character(prompt):
+        """Prepend the character brief to a Gemini prompt.
+
+        Anything the robot will read aloud goes through here so a generated
+        reply sounds like the same robot as the phrase banks - and so it
+        always knows it is NAO, from FIA Robotics at Linkoping University.
+        Deliberately NOT used for the yes/no vision classifier in the wander
+        loop: personality there would only muddy the answer parsing."""
+        return persona.system_prompt() + "\n\n" + str(prompt)
+
+    def say_line(self, category, blocking=False, **fmt):
+        """Speak a random, non-repeating line from a persona phrase bank."""
+        try:
+            text = self.persona.line(category, **fmt)
+        except Exception:
+            return ""
+        if text:
+            self.say(text, blocking=blocking)
+        return text
+
     def _on_speak(self):
         if not self._require_connection() or not self.conn.tts: return
         text = self.speech_entry.get().strip()
         if not text: return
-        def _say():
-            try: self.conn.tts.say(str(text))
-            except Exception: pass
-        threading.Thread(target=_say).start()
+        threading.Thread(target=lambda: self.say(text, blocking=True)).start()
         self._set_status("Speaking: \"%s\"" % text)
 
     def _on_led_colour(self, colour_hex):
@@ -1150,8 +1303,9 @@ class NaoAppWindow(object):
                     if image_bytes is None:
                         self._set_status("No image captured - sending text prompt only.", False)
 
-                response_text = client.generate_text(prompt, image_bytes=image_bytes)
-                
+                response_text = client.generate_text(
+                    self._in_character(prompt), image_bytes=image_bytes)
+
                 if "Error" in response_text:
                     self.gemini_status.set("Gemini Error.")
                     self._set_status("Gemini Error: Check console.", False)
@@ -1208,7 +1362,9 @@ class NaoAppWindow(object):
                     if image_bytes is None:
                         self._set_status("No image captured - sending audio only.", False)
                 
-                response_text = client.generate_text(prompt, audio_bytes=wav_bytes, image_bytes=image_bytes)
+                response_text = client.generate_text(
+                    self._in_character(prompt),
+                    audio_bytes=wav_bytes, image_bytes=image_bytes)
                 
                 self.conn.leds.fadeRGB("AllLeds", 0x00FFFFFF, 0.2) # Back to normal white eyes
 
@@ -1311,7 +1467,7 @@ class NaoAppWindow(object):
                 self._on_quick_command(command_to_run)
             threading.Thread(target=do_command).start()
             
-        self.conn.tts.say(safe_text)
+        self.say(safe_text, blocking=True)
         
         # Give it a second to finish speaking before dropping tracker
         try:
@@ -1397,11 +1553,9 @@ class NaoAppWindow(object):
                     
                 # 4. Speech
                 if "say " in cmd:
-                    phrase = cmd.split("say ", 1)[-1]
-                    self.conn.tts.post.say(phrase)
+                    self.say(cmd.split("say ", 1)[-1])
                 elif "speak " in cmd:
-                    phrase = cmd.split("speak ", 1)[-1]
-                    self.conn.tts.post.say(phrase)
+                    self.say(cmd.split("speak ", 1)[-1])
                 
                 self.quick_cmd_var.set("") # Clear field
                 self._set_status("Command processed: " + cmd)
@@ -1435,12 +1589,10 @@ class NaoAppWindow(object):
         else:
             self.auto_status.set("Going for a walk...")
         self._set_status("Autonomous wander started. Use 'Stop Auto' to abort.")
-        if self.conn.tts:
-            try:
-                self.conn.tts.post.say("Starting search for %s." % target_label
-                                       if target else "Going for a walk.")
-            except Exception:
-                pass
+        if target:
+            self.say_line("search_start", target=target_label)
+        else:
+            self.say_line("walk_start")
         threading.Thread(target=self._wander_seek_thread,
                          args=(target, use_boundary, api_keys)).start()
 
@@ -2142,9 +2294,7 @@ class NaoAppWindow(object):
                 print("[Stuck] no progress - backing off and trying another way")
                 self.auto_status.set("Stuck - backing out...")
                 _note_blocked("stuck")
-                if self.conn.tts:
-                    try: self.conn.tts.post.say("I am stuck. Backing out.")
-                    except Exception: pass
+                self.say_line("stuck")
                 _planned_move(-0.15, 0.0, 0.0, "escape reverse")
                 time.sleep(0.4)          # let it settle before turning
                 turn = _pick_escape_turn()
@@ -2187,28 +2337,9 @@ class NaoAppWindow(object):
             _head_at_floor    = [False]                # currently in floor slot
             _head_scan_paused = [False]                # suppressed during avoidance
 
-            face_phrases = [
-                "Where is my human?",
-                "I am lonely.",
-                "Come out, come out, wherever you are.",
-                "I know you're hiding somewhere in this joint.",
-                "Gettin' kinda bored wandering around here.",
-                "Show your face.",
-            ]
-            search_phrases = [
-                "Still looking for that %s..." % target,
-                "Haven't spotted the %s yet." % target,
-                "Where's that %s hiding?" % target,
-                "Keep your eyes open, boss.",
-                "Scanning the area.",
-            ]
-            walk_phrases = [
-                "Just stretching my legs.",
-                "Nice day for a walk.",
-                "Out for a stroll.",
-                "Taking a look around.",
-                "One step at a time.",
-            ]
+            # Idle chatter comes from the persona banks (backend/persona.py),
+            # which shuffle rather than pick at random so the same sentence
+            # does not come round twice in a row.
 
             # ================================================================
             while getattr(self, "_seeking", False):
@@ -2245,10 +2376,11 @@ class NaoAppWindow(object):
                     self.auto_status.set("Found %s! (%s)" % (label, how))
 
                     # --- Immediate acknowledgment: shout NOW, don't block on Gemini ---
-                    shout = "I found the %s! Yes! Mission complete!" % target_label
-                    if self.conn.tts:
-                        try: self.conn.tts.post.say(shout)   # non-blocking: plays while robot moves
-                        except Exception: pass
+                    # Non-blocking: plays while the robot is still moving.
+                    if found_human:
+                        self.say_line("found_human")
+                    else:
+                        self.say_line("found_target", target=target_label)
 
                     if found_human:
                         # Lock eyes on the face while celebrating
@@ -2274,19 +2406,16 @@ class NaoAppWindow(object):
                     follow_up = "What would you like me to do next?"
                     if has_api:
                         try:
-                            fu_prompt = (
-                                "You are a friendly robot. You just completed a search "
-                                "mission and found '%s'. Ask the user in one short excited "
-                                "sentence what they would like you to do next."
-                            ) % target_label
+                            fu_prompt = self._in_character(
+                                "You just completed a search mission and found "
+                                "'%s'. Ask in one short excited sentence what "
+                                "you should do next." % target_label)
                             fu = search_client.generate_text(fu_prompt)
                             if fu and "Error" not in fu:
                                 follow_up = fu
                         except Exception:
                             pass
-                    if self.conn.tts:
-                        try: self.conn.tts.say(follow_up)
-                        except Exception: pass
+                    self.say(follow_up, blocking=True)
                     break
 
                 # 3. BACKGROUND GEMINI VISION CHECK (target mode)
@@ -2482,12 +2611,7 @@ class NaoAppWindow(object):
                     # that cannot get up unaided should go limp and wait for a
                     # human, not thrash.
                     self._emergency_relax()
-                    if self.conn.tts:
-                        try:
-                            self.conn.tts.post.say(
-                                "I fell. I have relaxed my motors. Please help me up.")
-                        except Exception:
-                            pass
+                    self.say_line("fell")
                     self._seeking = False
                     break
 
@@ -2702,15 +2826,12 @@ class NaoAppWindow(object):
                         reason_txt = "sonar %.2fm" % near
                     print("[Avoid] %s — backing off." % reason_txt)
                     self.auto_status.set("Avoiding (%s)..." % reason_txt)
-                    if self.conn.tts:
-                        if bumped:
-                            msg = "Oops, I bumped something. Backing up."
-                        elif not boundary_ok:
-                            msg = "Whoa, leaving the floor! Backing up."
-                        else:
-                            msg = "Whoa, blocked! Backing up."
-                        try: self.conn.tts.post.say(msg)
-                        except Exception: pass
+                    if bumped:
+                        self.say_line("avoid_bumper")
+                    elif not boundary_ok:
+                        self.say_line("avoid_boundary")
+                    else:
+                        self.say_line("avoid_sonar")
 
                     # Avoidance uses discrete planned moves for the same reason
                     # the stepping does: moveToward spends ~1s shifting weight
@@ -2784,14 +2905,13 @@ class NaoAppWindow(object):
                     # Normal wander movement
                     # Occasional speech
                     if time.time() > next_speech_t:
-                        if target:
-                            phrases = (search_phrases if not target_is_human
-                                       else face_phrases)
+                        if not target:
+                            bank = "walking"
+                        elif target_is_human:
+                            bank = "searching_human"
                         else:
-                            phrases = walk_phrases
-                        if self.conn.tts:
-                            try: self.conn.tts.post.say(random.choice(phrases))
-                            except Exception: pass
+                            bank = "searching"
+                        self.say_line(bank, target=target_label)
                         next_speech_t = time.time() + random.uniform(8.0, 25.0)
 
                     # Gradual ramp to full speed to avoid sudden jolts
