@@ -7,14 +7,14 @@
         for left image, Y + YUV, convert YUV -> RGB on mac, right image Y only (only need grayscale for disparity).
         Calculate disparity with SGBM (with opencv) -> 3d point cloud with rgb
 -   Plan work demo:
-        verify the existing stereo live feed code.
+        (DONE) verify the existing stereo live feed code.
 
-        figure out an easy and reliable way to tell if camera 0 is left or right and vice versa for camera 1, 
+        (SKIP) figure out an easy and reliable way to tell if camera 0 is left or right and vice versa for camera 1, 
         probably just add a physical marker on the stereo rig and then keep the software IDs fixed.
 
-        verify that stereo frame pairing is reasonable using the timestamps, and reject pairs where the left/right timestamp difference is too large.
+        (DONE) verify that stereo frame pairing is reasonable using the timestamps, and reject pairs where the left/right timestamp difference is too large.
 
-        lock camera settings before calibration, especially focus, and preferably keep exposure/gain reasonably consistent between the two cameras.
+        (DONE) lock camera settings before calibration, especially focus, and preferably keep exposure/gain reasonably consistent between the two cameras.
 
         use the live feed to gather stereo calibration images with the calibration board at different positions, rotations, depths, and near the image corners.
 
