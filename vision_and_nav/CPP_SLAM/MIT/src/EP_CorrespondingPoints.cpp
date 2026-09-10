@@ -20,6 +20,10 @@ static typeDescriptorTimingStatistics GetDescriptorTotalTiming{};
 static typeDescriptorTimingStatistics GetKeyPointsTiming{};
 static typeDescriptorTimingStatistics AnmsTiming{};
 static typeDescriptorTimingStatistics ComputeDescriptorsTiming{};
+#if defined(DESCRIPTOR_TYPE_TEBLID)
+static typeDescriptorTimingStatistics TeblidDetectionTiming{};
+static typeDescriptorTimingStatistics TeblidComputationTiming{};
+#endif
 static typeDescriptorTimingStatistics DescriptorPostProcessingTiming{};
 
 static void EPPriv_AddTimingSample(typeDescriptorTimingStatistics& Statistics, const fp64 Time)
@@ -52,10 +56,21 @@ static void EPPriv_LogTimingStatistics(const char* Name, const typeDescriptorTim
 }
 
 static void EPPriv_RecordGetDescriptorTiming(const fp64 TotalTime, const fp64 GetKeyPointsTime,
-        const fp64 AnmsTime, const fp64 ComputeDescriptorsTime)
+        const fp64 AnmsTime, const fp64 ComputeDescriptorsTime,
+        const fp64 TeblidDetectionTime, const fp64 TeblidComputationTime)
 {
     EPPriv_AddTimingSample(GetDescriptorTotalTiming, TotalTime);
     EPPriv_AddTimingSample(ComputeDescriptorsTiming, ComputeDescriptorsTime);
+#if defined(DESCRIPTOR_TYPE_TEBLID)
+    if(!PANTO_DESCRIPTOR_ANMS)
+    {
+        EPPriv_AddTimingSample(TeblidDetectionTiming, TeblidDetectionTime);
+        EPPriv_AddTimingSample(TeblidComputationTiming, TeblidComputationTime);
+    }
+#else
+    (void)TeblidDetectionTime;
+    (void)TeblidComputationTime;
+#endif
     const fp64 FeatureExtractionTime = PANTO_DESCRIPTOR_ANMS ?
         GetKeyPointsTime + AnmsTime + ComputeDescriptorsTime :
         ComputeDescriptorsTime;
@@ -76,11 +91,21 @@ static void EPPriv_RecordGetDescriptorTiming(const fp64 TotalTime, const fp64 Ge
     }
     else
     {
+#if defined(DESCRIPTOR_TYPE_TEBLID)
+        LG_Log(LogSeverity::DBG,
+                "[EP_GetDescriptorTiming] total = %.6f s, AKAZE keypoint detection = %.6f s, TEBLID descriptor computation = %.6f s, feature extraction aggregate = %.6f s, post-processing = %.6f s\n",
+                TotalTime,
+                TeblidDetectionTime,
+                TeblidComputationTime,
+                ComputeDescriptorsTime,
+                std::max<fp64>(0.0, TotalTime - FeatureExtractionTime));
+#else
         LG_Log(LogSeverity::DBG,
                 "[EP_GetDescriptorTiming] total = %.6f s, OpenCV detectAndCompute = %.6f s, post-processing = %.6f s\n",
                 TotalTime,
                 ComputeDescriptorsTime,
                 std::max<fp64>(0.0, TotalTime - FeatureExtractionTime));
+#endif
     }
 }
 
@@ -106,7 +131,13 @@ void EP_LogGetDescriptorTimingStatistics(void)
     }
     else
     {
+#if defined(DESCRIPTOR_TYPE_TEBLID)
+        EPPriv_LogTimingStatistics("EP_GetDescriptors/AKAZE keypoint detection", TeblidDetectionTiming);
+        EPPriv_LogTimingStatistics("EP_GetDescriptors/TEBLID descriptor computation", TeblidComputationTiming);
+        EPPriv_LogTimingStatistics("EP_GetDescriptors/TEBLID feature extraction aggregate", ComputeDescriptorsTiming);
+#else
         EPPriv_LogTimingStatistics("EP_GetDescriptors/OpenCV detectAndCompute", ComputeDescriptorsTiming);
+#endif
     }
     EPPriv_LogTimingStatistics("EP_GetDescriptors/post-processing", DescriptorPostProcessingTiming);
 }
@@ -208,6 +239,9 @@ void __EP_InitAkaze(void)
                     cv::BFMatcher(cv::NORM_HAMMING, false);
                 AkazeExtract.threshold = Threshold;
                 AkazeExtract.matchratio = PANTO_MATCHRATIO;
+#if defined(DESCRIPTOR_TYPE_TEBLID)
+                AkazeExtract.Teblid = cv::xfeatures2d::TEBLID::create(5.0);
+#endif  
             });
 }
 
@@ -225,6 +259,8 @@ DescRet __EP_GetDesc(const cv::Mat& img)
     fp64 GetKeyPointsTime = 0.0;
     fp64 AnmsTime = 0.0;
     fp64 ComputeDescriptorsTime = 0.0;
+    fp64 TeblidDetectionTime = 0.0;
+    fp64 TeblidComputationTime = 0.0;
 
     if(PANTO_DESCRIPTOR_ANMS)
     {
@@ -252,15 +288,29 @@ DescRet __EP_GetDesc(const cv::Mat& img)
     else
     {
         const PantoClock::time_point DetectAndComputeStartTime = PantoClock::now();
+#if !defined(DESCRIPTOR_TYPE_TEBLID)
         AkazeExtract.akaze->detectAndCompute(
                 img,
                 cv::noArray(),
                 KeyPoints,
                 Descriptors);
+#else
+        const PantoClock::time_point DetectionStartTime = PantoClock::now();
+        AkazeExtract.akaze->detect(img, KeyPoints, cv::noArray());
+        const PantoClock::time_point DetectionEndTime = PantoClock::now();
+
+        const PantoClock::time_point TeblidComputationStartTime = PantoClock::now();
+        AkazeExtract.Teblid->compute(img, KeyPoints, Descriptors);
+        const PantoClock::time_point TeblidComputationEndTime = PantoClock::now();
+
+        TeblidDetectionTime = std::chrono::duration<fp64>(
+                DetectionEndTime - DetectionStartTime).count();
+        TeblidComputationTime = std::chrono::duration<fp64>(
+                TeblidComputationEndTime - TeblidComputationStartTime).count();
+#endif
         const PantoClock::time_point DetectAndComputeEndTime = PantoClock::now();
 
-        ComputeDescriptorsTime =
-            std::chrono::duration<fp64>(DetectAndComputeEndTime - DetectAndComputeStartTime).count();
+        ComputeDescriptorsTime = std::chrono::duration<fp64>(DetectAndComputeEndTime - DetectAndComputeStartTime).count();
     }
 
     LG_Log(LogSeverity::DBG,
@@ -290,7 +340,9 @@ DescRet __EP_GetDesc(const cv::Mat& img)
                 GetDescriptorTotalTime,
                 GetKeyPointsTime,
                 AnmsTime,
-                ComputeDescriptorsTime);
+                ComputeDescriptorsTime,
+                TeblidDetectionTime,
+                TeblidComputationTime);
 
         std::cerr << "No descriptors found inf EP_CorrespExtract\n";
         return {};
@@ -347,7 +399,9 @@ DescRet __EP_GetDesc(const cv::Mat& img)
             GetDescriptorTotalTime,
             GetKeyPointsTime,
             AnmsTime,
-            ComputeDescriptorsTime);
+            ComputeDescriptorsTime,
+            TeblidDetectionTime,
+            TeblidComputationTime);
 
     return {
         .Points = std::move(FilteredPoints),

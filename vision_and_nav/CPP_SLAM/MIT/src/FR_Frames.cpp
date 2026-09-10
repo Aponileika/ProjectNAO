@@ -1,4 +1,6 @@
 #include "../include/FR_Frames.hpp"
+#include "Config.hpp"
+#include "EP_CorrespondingPoints.hpp"
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -24,6 +26,7 @@ namespace
     struct typeDecodedDataSetFrame
     {
         cv::Mat Gray;
+        DescRet Descriptors;
         fp64 TimeStamp = PANTO_TIMESTAMP_NOT_SET;
         std::string SourcePath;
     };
@@ -385,7 +388,9 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
         {
             .Frame = cv::Mat{},
             .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
-            .Path = ""
+            .Path = "",
+            .Descriptors{}
+                
         };
     }
 
@@ -418,7 +423,8 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
         {
             .Frame = cv::Mat{},
             .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
-            .Path = ""
+            .Path = "",
+            .Descriptors{}
         };
     }
 
@@ -426,7 +432,8 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
     {
         .Frame = std::move(Frame.Gray),
         .TimeStamp = Frame.TimeStamp,
-        .Path = WritePath.string()
+        .Path = WritePath.string(),
+        .Descriptors = std::move(Frame.Descriptors)
     };
 }
 
@@ -444,8 +451,10 @@ static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
             return;
         }
 
-        typeDecodedDataSetFrame Frame =
-            FRPriv_DecodeDataSetFrame(FramePath, TimeStamp);
+        typeDecodedDataSetFrame Frame = FRPriv_DecodeDataSetFrame(FramePath, TimeStamp);
+
+        Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
+
         std::unique_lock<std::mutex> Lock(reader.PreloadMutex);
         if(!reader.PreloadNotFull.wait(
                     Lock,

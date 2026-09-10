@@ -105,8 +105,7 @@ class typeTrackingScopedTimer
 };
 
 void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
-        typePreIntegration& PreIntegrationBetweenKF,
-        bool& TrackingLost, i32& NumProcessedLoops,
+        typePreIntegration& PreIntegrationBetweenKF, bool& TrackingLost, i32& NumProcessedLoops,
         u64& NumLateFramesSkipped);
 void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap);
 static std::vector<typeGroundTruth> GroundTruth;
@@ -198,8 +197,7 @@ static bool SLPriv_GetInitialMapParallaxStatistics(
             }
 
             const typeKeyFrame& KeyFrame = GlobalMap.KeyFrames[KeyFrameID];
-            const Eigen::Vector2d& Point =
-                KeyFrame.Points.ImagePoints[ImagePointID].Point;
+            const Eigen::Vector2d& Point = KeyFrame.Points.ImagePoints[ImagePointID].Point;
             const Eigen::Vector3d CameraRay(
                     (Point.x() - cx) / fx,
                     (Point.y() - cy) / fy,
@@ -760,6 +758,7 @@ void SLPriv_InitializeMap(void)
         PantoSLAM.PreviousFrameData.PreviousFrameMapPoints = MAP_GetLastFrameMapPoints(*PantoSLAM.GlobalMap, PantoSLAM.GlobalMap->KeyFrames.back());
         PantoSLAM.PreviousFrameData.PreviousPreviousFrame = PantoSLAM.GlobalMap->KeyFrames[0];
         PantoSLAM.PreviousFrameData.PreviousFrame = PantoSLAM.GlobalMap->KeyFrames.back();
+
 #if defined(CONFIG_IMU)
         PantoSLAM.PreviousFrameData.PreviousFrame.TrackingReferencePose =
             PantoSLAM.GlobalMap->KeyFrames[0].Camera.Pose;
@@ -1148,18 +1147,15 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             bool AdoptedCommittedKeyFrame = false;
             if(PreviousFrame.MappingGeneration != PANTO_ID_NOT_SET)
             {
-                for(const typeKeyFrame& GlobalKeyFrame :
-                        TrackingData.GlobalMap->KeyFrames)
+                for(const typeKeyFrame& GlobalKeyFrame : TrackingData.GlobalMap->KeyFrames)
                 {
-                    if(GlobalKeyFrame.MappingGeneration !=
-                            PreviousFrame.MappingGeneration)
+                    if(GlobalKeyFrame.MappingGeneration != PreviousFrame.MappingGeneration)
                     {
                         continue;
                     }
 
                     PreviousFrame = GlobalKeyFrame;
-                    if(InertialReferenceMappingGeneration ==
-                           GlobalKeyFrame.MappingGeneration)
+                    if(InertialReferenceMappingGeneration == GlobalKeyFrame.MappingGeneration)
                     {
                         InertialReferenceKeyFrame = GlobalKeyFrame;
                         InertialReferenceKFID = GlobalKeyFrame.ID;
@@ -1196,8 +1192,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             bool PreviousReferenceIsCurrent = false;
             for(std::size_t ReferenceIndex = 0; ReferenceIndex < InertialReferenceChain.size(); ReferenceIndex++)
             {
-                typeKeyFrame& Reference =
-                    InertialReferenceChain[ReferenceIndex];
+                typeKeyFrame& Reference = InertialReferenceChain[ReferenceIndex];
                 const typeKeyFrame* CommittedReference = nullptr;
                 if(Reference.MappingGeneration != PANTO_ID_NOT_SET)
                 {
@@ -1228,8 +1223,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                     if(MapChangedSincePreviousFrame)
                     {
                         SLPriv_ReconstructFrameFromReferenceKF(
-                                Reference,
-                                InertialReferenceChain[ReferenceIndex - 1],
+                                Reference, InertialReferenceChain[ReferenceIndex - 1],
                                 Reference.PreIntegrationData);
                     }
                     PreviousReferenceIsCurrent = true;
@@ -1251,8 +1245,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             }
             InertialReferenceKeyFrame = InertialReferenceChain.back();
             InertialReferenceKFID = ActiveReferenceIsCommitted
-                ? InertialReferenceKeyFrame.ID
-                : PANTO_ID_NOT_SET;
+                ? InertialReferenceKeyFrame.ID : PANTO_ID_NOT_SET;
             InertialReferenceMappingGeneration =
                 InertialReferenceKeyFrame.MappingGeneration;
 
@@ -1301,8 +1294,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                         Statistics(typeTrackingTimingStage::
                             CreateTrackingMap));
                 TrackingData.TrackingMap = MAP_CreateLocalMapTracking(
-                        *TrackingData.GlobalMap,
-                        *TrackingData.CovisibilityGraph,
+                        *TrackingData.GlobalMap, *TrackingData.CovisibilityGraph,
                         PreviousFrame);
             }
             {
@@ -1310,8 +1302,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                         Statistics(typeTrackingTimingStage::
                             GetPreviousFrameMapPoints));
                 TrackingData.PreviousFrameData.PreviousFrameMapPoints =
-                    MAP_GetLastFrameMapPoints(
-                            TrackingData.TrackingMap.MapPoints,
+                    MAP_GetLastFrameMapPoints( TrackingData.TrackingMap.MapPoints,
                             PreviousFrame);
             }
 #else
@@ -1323,8 +1314,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                         Statistics(typeTrackingTimingStage::
                             GetPreviousFrameMapPoints));
                 TrackingData.PreviousFrameData.PreviousFrameMapPoints =
-                    MAP_GetLastFrameMapPoints(
-                            *TrackingData.GlobalMap,
+                    MAP_GetLastFrameMapPoints( *TrackingData.GlobalMap,
                             TrackingData.PreviousFrameData.PreviousFrame);
             }
 #endif
@@ -1366,8 +1356,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         {
             typeTrackingScopedTimer Timer(
                     Statistics(typeTrackingTimingStage::PredictPose));
-            TrackingData.PosePrediction.Pose =
-                KEY_PredictPose(TrackingData.PreviousFrameData.PreviousFrame);
+            TrackingData.PosePrediction.Pose = KEY_PredictPose(TrackingData.PreviousFrameData.PreviousFrame);
         }
 #endif
 

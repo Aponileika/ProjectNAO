@@ -8,6 +8,7 @@
 #include "PANTO_Utils.hpp"
 #include <Eigen/Dense>
 #include <opencv2/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
 #include <opencv2/opencv.hpp>
 
 struct AKAZEExtract {
@@ -15,6 +16,9 @@ struct AKAZEExtract {
   cv::BFMatcher matcher;
   fp64 threshold;
   fp64 matchratio;
+#if defined(DESCRIPTOR_TYPE_TEBLID)
+  cv::Ptr<cv::xfeatures2d::TEBLID> Teblid;
+#endif
 };
 
 cv::Mat __EP_CrossProdMat(cv::Mat x);

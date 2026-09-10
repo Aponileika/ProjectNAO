@@ -7,12 +7,14 @@
 #include "CArenaAlloc.h"
 #include "Config.hpp"
 #include "PANTOVEC_PantoVector.hpp"
+#include "EP_CorrespondingPoints.hpp"
 
 typedef struct
 {
     cv::Mat Frame;
     fp64 TimeStamp;
     std::string Path;
+    DescRet Descriptors;
 }typePantoFrame;
 
 int FR_InitFrameGetter();

@@ -332,8 +332,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
     const Eigen::Matrix3d CameraR = BodyToCamera.R.transpose() * Rbw;
     const Eigen::Vector3d Camerat = BodyToCamera.R.transpose() *
         (tbw - BodyToCamera.t);
-    typeCamera PredictedPose = CM_CreateCam(
-            CameraR, Camerat, PANTO_TIMESTAMP_NOT_SET);
+    typeCamera PredictedPose = CM_CreateCam(CameraR, Camerat, PANTO_TIMESTAMP_NOT_SET);
 #endif
 
     const fp64 PosePreparationTime =
@@ -396,14 +395,10 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
 
         return KeyFrame;
     }
+
     PredictedPose.TimeStamp = Frame.TimeStamp;
 
-    const PantoClock::time_point GetDescriptorsStartTime = PantoClock::now();
-    DescRet Descriptors = EP_GetDescriptors(Frame.Frame);
-    const fp64 GetDescriptorsTime =
-        std::chrono::duration<fp64>(PantoClock::now() - GetDescriptorsStartTime).count();
-
-    KEYPriv_AddTimingSample(GetDescriptorsTiming, GetDescriptorsTime);
+    const DescRet& Descriptors = Frame.Descriptors;
 
     const PantoClock::time_point CreateImagePointsStartTime = PantoClock::now();
     typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePoints(
@@ -437,17 +432,16 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
     const fp64 GetKeyFrameOverheadTime = std::max<fp64>(
             0.0,
             GetKeyFrameTotalTime - PosePreparationTime - GetFrameTime -
-                GetDescriptorsTime - CreateImagePointsTime - AssembleKeyFrameTime);
+                CreateImagePointsTime - AssembleKeyFrameTime);
 
     KEYPriv_AddTimingSample(GetKeyFrameTotalTiming, GetKeyFrameTotalTime);
     KEYPriv_AddTimingSample(GetKeyFrameOverheadTiming, GetKeyFrameOverheadTime);
 
     LG_Log(LogSeverity::DBG,
-            "[KEY_GetKeyFrameTiming] total = %.6f s, pose preparation = %.6f s, FR_GetFrame = %.6f s, EP_GetDescriptors = %.6f s, PT_CreatePantoImagePoints = %.6f s, keyframe assembly = %.6f s, residual overhead = %.6f s\n",
+            "[KEY_GetKeyFrameTiming] total = %.6f s, pose preparation = %.6f s, FR_GetFrame = %.6f s, PT_CreatePantoImagePoints = %.6f s, keyframe assembly = %.6f s, residual overhead = %.6f s\n",
             GetKeyFrameTotalTime,
             PosePreparationTime,
             GetFrameTime,
-            GetDescriptorsTime,
             CreateImagePointsTime,
             AssembleKeyFrameTime,
             GetKeyFrameOverheadTime);

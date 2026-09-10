@@ -1,4 +1,5 @@
 #include "DBOW3_BuildVocab.hpp"
+#include "Config.hpp"
 #include <iostream>
 #include <vector>
 #include <string>
@@ -8,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <opencv2/xfeatures2d.hpp>
 
 
 #define PANTO_DBOW_BUILD_VOCAB true
@@ -53,6 +55,7 @@ int main(void)
     }
     const fp64 Threshold = OPENCV_AKAZETHRESHOLD;
     cv::Ptr<cv::AKAZE> Akaze = cv::AKAZE::create();
+    cv::Ptr<cv::xfeatures2d::TEBLID> Teblid = cv::xfeatures2d::TEBLID::create(5.0f);
     Akaze->setThreshold(Threshold);
     Akaze->setNOctaves(OPENCV_AKAZE_NOCTAVES);
     Akaze->setNOctaveLayers(OPENCV_AKAZE_NOCTAVELAYERS);
@@ -70,17 +73,18 @@ int main(void)
         }
         std::vector<cv::KeyPoint> KeyPoints;
         cv::Mat Descriptors;
-        Akaze->detectAndCompute(
+        Akaze->detect(
                 Image,
-                cv::noArray(),
                 KeyPoints,
-                Descriptors);
+                cv::noArray());
+        Teblid->compute(Image, KeyPoints, Descriptors);
         if(Descriptors.empty())
         {
             std::cerr << "No descriptors extracted from: " << ImagePath << "\n";
             return 1;
         }
         TrainingDescriptors.push_back(Descriptors);
+        std::cout << "Extracted Descriptors from: " << ImagePath << "\n";
     }
     std::chrono::steady_clock::time_point End = std::chrono::steady_clock::now();
     std::chrono::duration DurationFeat(
@@ -96,6 +100,7 @@ int main(void)
             DBoW3::L1_NORM);
 
     Begin = std::chrono::steady_clock::now();
+    std::cout << "Saved vocab to " << PANTO_VocabFilePath << "\n";
     Vocabulary.create(TrainingDescriptors);
     Vocabulary.save(PANTO_VocabFilePath);
     End = std::chrono::steady_clock::now();

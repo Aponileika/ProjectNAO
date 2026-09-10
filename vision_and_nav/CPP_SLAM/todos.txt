@@ -63,15 +63,17 @@ make viser not exit
 
     - (DONE) Add min num of 3d points for reconstruction.
 
-    - (STALLED) Optimize KeyGetKeyFrame, investigate what is taking time, getting descriptors -> detect and compute? anything else? Probably alter
+    - (DONE) Optimize KeyGetKeyFrame, investigate what is taking time, getting descriptors -> detect and compute? anything else? Probably alter
       opencv AKAZE code so nonlinear scale space is not thrown away. So make a "custom" version that just caches the nonlinear scale space,
       like detect and compute does, easy, just add a local private variable in AKAZE_impl that stores upyr and keeps track if it is current or not
       so if a detect -> compute has been called in order, upyr is saved for compute, when compute is called the upyr must be marked as invalid.
-    - M-LDB descriptor to TEBLID (remember to train a new vocabulary)? Optimize opencv akaze implementation. 
+
+    - Tracking should always be able to write, so writing from tracking shouldnt be blocked by localmapping, and for reading of global state use shared_mutex
+
+    - Benchmark: AKAZE + M_LDB, AKAZE + Teblid, ORB + ORB, CLAHE + ORB + ORB, CLAHE + ORB + Teblid, ORB + Teblid. Again, use or replicate 
+      slam orbs orb implementation.
 
     - Deferred triangulation.
-
-    - Add scale information to descriptor usage, this is a major flaw currently, kind of a big change.
 
     - Actually implement a robust fuzzy keyframe decision maker.
 

@@ -40,9 +40,9 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define CERES_EXPLICIT_ORDERING true
 
 // #define OPENCV_AKAZETHRESHOLD 0.001
-#define OPENCV_AKAZETHRESHOLD 0.001
-#define OPENCV_AKAZE_NOCTAVES 4
-#define OPENCV_AKAZE_NOCTAVELAYERS 4
+#define OPENCV_AKAZETHRESHOLD 0.002
+#define OPENCV_AKAZE_NOCTAVES 2
+#define OPENCV_AKAZE_NOCTAVELAYERS 2
 #define PANTO_DESCRIPTOR_ANMS false
 //Initializes with Ground truth frame data, to avoid having to code monocular IMU initialization
 #if defined(CONFIG_IMU)
@@ -51,7 +51,14 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
     #define PANTO_GROUNDTRUTH_INIT false
 #endif 
 
+#define DESCRIPTOR_TYPE_TEBLID
+
+#if !defined(DESCRIPTOR_TYPE_TEBLID)
 #define PANTO_DESCRIPTOR_SIZE 61 //Bytes
+#else
+#define PANTO_DESCRIPTOR_SIZE 32 //Bytes
+#endif
+
 #define PANTO_LOCAL_MAP_SAMPLE_STRIDE 5
 #define PANTO_NUM_BOOTSTRAP_FRAMES 1
 // [Number of frames], from bootstrap learning mean distance * number of frames
@@ -261,15 +268,25 @@ const Dataset panto_dataset =
 #define PANTO_MAPPOINT_MATCH_SEARCH_RADIUS 20.0f
 
 //arbitrary, now same as slam orb
+#if !defined(DESCRIPTOR_TYPE_TEBLID)
 #define PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD 200
 #define PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW 100
+#else
+#define PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD 100 
+#define PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW 50 
+#endif
 
 #define PANTO_ID_NOT_SET U64_MAX
 
 #define PANTO_TIMESTAMP_NOT_SET -1.0f
 
+#if !defined(DESCRIPTOR_TYPE_TEBLID)
 inline constexpr const char* PANTO_VocabFilePath =
     "PantoVocabulary.dbow3";
+#else
+inline constexpr const char* PANTO_VocabFilePath =
+    "PantoTeblidVocabulary.dbow3";
+#endif
 
 // Controls how many children in vocab tree
 #define PANTO_DBOW_BRANCHING_FACTOR 10

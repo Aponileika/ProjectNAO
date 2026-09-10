@@ -4,7 +4,7 @@ INCLUDE_DIR = ../include/
 EXT_INCLUDE_DIR = /usr/local/include
 EXT_LIB_DIR = /usr/local/lib
 
-OPENCVLIBS = -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_imgcodecs -lopencv_calib3d -lopencv_videoio -lopencv_features2d
+OPENCVLIBS = -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_imgcodecs -lopencv_calib3d -lopencv_videoio -lopencv_features2d -lopencv_xfeatures2d
 
 OPENCV := $(shell brew --prefix opencv)
 EIGEN := $(shell brew --prefix eigen)
