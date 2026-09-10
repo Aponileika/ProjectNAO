@@ -1648,7 +1648,7 @@ class NaoAppWindow(object):
                 elif "speak " in cmd:
                     self.say(cmd.split("speak ", 1)[-1])
                 
-                self.quick_cmd_var.set("") # Clear field
+                self.ui_call(self.quick_cmd_var.set, "")  # Tk write - main thread only
                 self._set_status("Command processed: " + cmd)
                 self.quick_status.set("Done.")
             except Exception as e:
