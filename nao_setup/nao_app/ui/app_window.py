@@ -3,8 +3,33 @@ import Tkinter as tk
 import tkFont
 import threading
 import math
+import Queue
 from nao_app.ui.widgets import make_card, make_btn, BG, FG, ACCENT, SUCCESS, ERROR, WARN, CARD_BG, BTN_BG, BTN_FG
 from nao_app.backend import persona
+
+class ThreadSafeVar(object):
+    """A StringVar whose set() is safe to call from a worker thread.
+
+    Tk is not thread-safe.  Setting a variable or configuring a widget off the
+    main thread corrupts the interpreter and kills the whole process with an
+    access violation inside python27.dll — no Python traceback, just a terminal
+    that stops mid-line.  It is a race, so it survives short runs and takes
+    down long ones, which is exactly how it presented: crashes "after a while"
+    during long wanders.
+
+    Writes are queued and applied by the app's UI pump on the main thread.
+    Reads go straight through; only writes touch Tk's internals."""
+
+    def __init__(self, app, value=""):
+        self.var  = tk.StringVar(value=value)
+        self._app = app
+
+    def set(self, value):
+        self._app.ui_call(self.var.set, value)
+
+    def get(self):
+        return self.var.get()
+
 
 class NaoAppWindow(object):
     LANGUAGES = [
@@ -161,6 +186,13 @@ class NaoAppWindow(object):
         self.root.state("zoomed")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # Everything that touches Tk from a worker thread goes through this
+        # queue and is applied by _ui_pump on the main thread.  See
+        # ThreadSafeVar for why: doing it directly segfaults the interpreter.
+        self._ui_q       = Queue.Queue()
+        self._main_thread = threading.current_thread()
+        self.root.after(50, self._ui_pump)
+
         self.font_title = tkFont.Font(family="Segoe UI", size=18, weight="bold")
         self.font_head  = tkFont.Font(family="Segoe UI", size=11, weight="bold")
         self.font_norm  = tkFont.Font(family="Segoe UI", size=10)
@@ -220,9 +252,11 @@ class NaoAppWindow(object):
 
         self.root.after(500, self._start_ip_scan)
 
-    # Titles of the cards hidden until the View menu asks for them.
-    OPTIONAL_CARDS = ("Volume", "Language", "LEDs", "Speech & Voice",
-                      "PS5 Controller", "Camera")
+    # Cards that are always on screen.  Everything else starts hidden and is
+    # switched on from the View menu, so the window opens as a blank slate and
+    # only shows what is actually being used.  Connection is exempt because
+    # nothing else in the app does anything until the robot is connected.
+    ALWAYS_VISIBLE = ("Connection",)
 
     @staticmethod
     def _collect_cards(parent):
@@ -242,18 +276,24 @@ class NaoAppWindow(object):
     def _build_view_menu(self, left, right):
         self._card_columns = [self._collect_cards(left), self._collect_cards(right)]
         self._card_vis = {}
+        # Menu order follows the order the cards are built in, so the menu and
+        # the window agree.  Derived from the real cards rather than a second
+        # hardcoded list, so a new card gets its entry automatically instead of
+        # silently staying visible forever.
+        ordered = []
         for cards in self._card_columns:
             for title, _w in cards:
-                if title in self.OPTIONAL_CARDS:
+                if title and title not in self.ALWAYS_VISIBLE \
+                        and title not in self._card_vis:
                     self._card_vis[title] = tk.BooleanVar(value=False)
+                    ordered.append(title)
 
         menubar = tk.Menu(self.root)
         view = tk.Menu(menubar, tearoff=0)
-        for title in self.OPTIONAL_CARDS:
-            if title in self._card_vis:
-                view.add_checkbutton(
-                    label=title, variable=self._card_vis[title],
-                    command=self._apply_card_visibility)
+        for title in ordered:
+            view.add_checkbutton(
+                label=title, variable=self._card_vis[title],
+                command=self._apply_card_visibility)
         view.add_separator()
         view.add_command(label="Show all", command=lambda: self._set_all_cards(True))
         view.add_command(label="Hide all", command=lambda: self._set_all_cards(False))
@@ -421,21 +461,25 @@ class NaoAppWindow(object):
             return
         self._ip_scan_running = True
 
+        # Read the port here, on the main thread.  Reading an Entry is a Tk
+        # call like any other and must not happen in the scan thread.
+        try:
+            scan_port = int(self.port_entry.get().strip() or "9559")
+        except Exception:
+            scan_port = 9559
+
         def _scan():
             try:
                 local_ip = self._get_local_ip()
                 if not local_ip:
-                    self.root.after(0, lambda: self._set_status("IP scan failed: local IP not found", False))
+                    self._set_status("IP scan failed: local IP not found", False)
                     return
                 parts = local_ip.split(".")
                 if len(parts) != 4:
-                    self.root.after(0, lambda: self._set_status("IP scan failed: bad local IP", False))
+                    self._set_status("IP scan failed: bad local IP", False)
                     return
                 prefix = ".".join(parts[:3]) + "."
-                try:
-                    port = int(self.port_entry.get().strip() or "9559")
-                except Exception:
-                    port = 9559
+                port = scan_port
 
                 for i in range(1, 255):
                     if not getattr(self, "_ip_scan_running", False):
@@ -450,7 +494,7 @@ class NaoAppWindow(object):
                                 self.ip_entry.delete(0, tk.END)
                                 self.ip_entry.insert(0, target)
                                 self._set_status("Suggested IP: %s" % target)
-                        self.root.after(0, _apply)
+                        self.ui_call(_apply)
                         break
             finally:
                 self._ip_scan_running = False
@@ -707,8 +751,9 @@ class NaoAppWindow(object):
         
         r4 = tk.Frame(card, bg=CARD_BG)
         r4.pack(fill="x")
-        self.gemini_status = tk.StringVar(value="Ready.")
-        tk.Label(r4, textvariable=self.gemini_status, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
+        # Written from the Gemini worker threads, so it must be thread-safe.
+        self.gemini_status = ThreadSafeVar(self, "Ready.")
+        tk.Label(r4, textvariable=self.gemini_status.var, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
         
         self.require_face = tk.BooleanVar(value=False)
         tk.Checkbutton(r4, text="Wait for Face", variable=self.require_face, font=self.font_small, bg=CARD_BG, fg=FG, selectcolor=CARD_BG, activebackground=CARD_BG, activeforeground=FG).pack(side="right")
@@ -750,8 +795,9 @@ class NaoAppWindow(object):
 
         r2 = tk.Frame(card, bg=CARD_BG)
         r2.pack(fill="x")
-        self.auto_status = tk.StringVar(value="Idle.")
-        tk.Label(r2, textvariable=self.auto_status, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
+        # Written continuously by the wander thread — the main crash source.
+        self.auto_status = ThreadSafeVar(self, "Idle.")
+        tk.Label(r2, textvariable=self.auto_status.var, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
 
     def _card_quick_command(self, parent):
         card = make_card(parent, "Quick Text Commands", self.font_head)
@@ -773,8 +819,9 @@ class NaoAppWindow(object):
         
         r2 = tk.Frame(card, bg=CARD_BG)
         r2.pack(fill="x")
-        self.quick_status = tk.StringVar(value="Ready.")
-        tk.Label(r2, textvariable=self.quick_status, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
+        # Written from the quick-command worker thread.
+        self.quick_status = ThreadSafeVar(self, "Ready.")
+        tk.Label(r2, textvariable=self.quick_status.var, font=self.font_small, bg=CARD_BG, fg=ACCENT).pack(side="left")
 
     def _card_controller(self, parent):
         card = make_card(parent, "PS5 Controller", self.font_head)
@@ -868,9 +915,52 @@ class NaoAppWindow(object):
         self.cam_preview_lbl = tk.Label(card, text="No feed", bg="#000000", fg=FG, anchor="center")
         self.cam_preview_lbl.pack(fill="x", padx=4, pady=(0, 2))
 
+    # ------------------------------------------------------------------
+    # Thread -> UI marshalling
+    # ------------------------------------------------------------------
+
+    def ui_call(self, fn, *args):
+        """Run fn(*args) on the Tk main thread.
+
+        Safe to call from anywhere.  On the main thread it runs immediately,
+        so callbacks and button handlers keep their existing behaviour."""
+        if threading.current_thread() is getattr(self, "_main_thread", None):
+            try:
+                fn(*args)
+            except Exception as e:
+                print("[UI] call failed: %s" % e)
+            return
+        try:
+            self._ui_q.put((fn, args))
+        except Exception:
+            pass
+
+    def _ui_pump(self):
+        """Drain queued UI work on the main thread, ~20x a second."""
+        # Bounded per tick so a burst of updates cannot lock up the event loop
+        # and freeze the window.
+        for _ in range(200):
+            try:
+                fn, args = self._ui_q.get_nowait()
+            except Queue.Empty:
+                break
+            except Exception:
+                break
+            try:
+                fn(*args)
+            except Exception as e:
+                print("[UI] queued call failed: %s" % e)
+        try:
+            self.root.after(50, self._ui_pump)
+        except Exception:
+            pass          # window is going away
+
     def _set_status(self, msg, ok=True):
-        self.status_var.set(msg)
-        self.status_lbl.config(fg=SUCCESS if ok else ERROR)
+        """Safe to call from any thread; the widget work is marshalled."""
+        def _apply():
+            self.status_var.set(msg)
+            self.status_lbl.config(fg=SUCCESS if ok else ERROR)
+        self.ui_call(_apply)
 
     def _require_connection(self):
         if not self.conn.connected:
@@ -2362,7 +2452,7 @@ class NaoAppWindow(object):
                             _task_done[0] = True   # abort any in-flight Gemini image checks
                             msg = "SDK found %s — task complete." % target_label
                             print("[WanderSeek] " + msg)
-                            self.root.after(0, lambda m=msg: self.gemini_status.set(m))
+                            self.gemini_status.set(msg)
                     except Exception:
                         pass
 

@@ -4,7 +4,7 @@ Running log of findings about the physical robots and this codebase. Everything
 here was **measured**, not assumed. Add to it as you learn more; the point is
 that nobody has to rediscover the same things twice.
 
-Last updated: 2026-09-09
+Last updated: 2026-09-10
 
 ---
 
@@ -291,12 +291,16 @@ one. Don't be tempted to raise the TTL much without checking drift first.
 
 ## UI
 
-- **View menu** — Volume, Language, LEDs, Speech & Voice, PS5 Controller and
-  Camera are hidden by default and toggled from `View`. They are rarely needed
-  and crowded the window. Toggling repacks the whole column so cards keep their
-  original order. To hide another card, add its exact title to
-  `OPTIONAL_CARDS`; the title is read back off the `LabelFrame`, so a typo
-  fails silently by simply leaving the card visible.
+- **View menu** — **every card except Connection starts hidden**; you switch on
+  what you need from `View`. Connection is exempt because nothing else in the
+  app works until the robot is connected. `View → Show all` brings the old
+  full layout back in one click.
+  - The menu is built from the cards actually present, in build order, rather
+    than from a second hardcoded list — so a new card gets a menu entry
+    automatically. Only `ALWAYS_VISIBLE` is hardcoded.
+  - Visibility is per-session; it is not written to `config.json`.
+  - Toggling repacks the whole column, because bare `pack()` would send a
+    re-shown card to the bottom instead of its original position.
 - **Map window** (`View → Map window`) — live top-down view at ~2.5 fps: green
   arrow for the robot and its heading, blue trail, red circles for remembered
   blocked points drawn at the real 0.45 m avoidance radius, 1 m grid. Drawn in
@@ -353,6 +357,53 @@ rewritten without touching a control loop.
   `voice_rspd` into `config.json`; currently `72 / 90` ("Deep guy").
 - Text that already contains its own `\vct=` or `\rspd=` passes through
   unstyled, so the Speech Test box still works for experimenting.
+
+---
+
+## Hard crash: Tk from worker threads (fixed 2026-09-10)
+
+**Symptom:** the terminal running the app dies mid-line after a few minutes of
+wandering. No Python traceback, no `=== app exited ===`, the log just stops.
+
+**Diagnosis:** it is not a Python exception at all. Windows Event Log,
+`Application Error`:
+
+```
+Faulting application name: python.exe
+Faulting module name: python27.dll
+Exception code: 0xc0000005        <- access violation
+Fault offset:   0x0000000000187750
+```
+
+Two crashes, identical fault offset, and the timestamp matched the log's last
+line to the second. That is the interpreter being killed, which is why nothing
+gets printed.
+
+**Cause: Tkinter is not thread-safe, and the app was calling it from workers.**
+`_set_status()` did `status_lbl.config(...)`, and the wander thread called it
+(plus `auto_status.set()`) continuously. It is a race, so short runs survive and
+long ones do not — exactly "crashes after a while".
+
+**Fix:** all thread→UI work is queued and applied on the main thread.
+- `NaoAppWindow.ui_call(fn, *args)` — runs `fn` immediately if already on the
+  main thread, otherwise queues it.
+- `_ui_pump()` — drains the queue every 50 ms, at most 200 items per tick so a
+  burst cannot freeze the event loop.
+- `ThreadSafeVar` — a `StringVar` whose `set()` marshals. `auto_status`,
+  `gemini_status` and `quick_status` use it, so the existing `.set()` call sites
+  needed no changes. Pass `.var` (not the proxy) to `textvariable=`.
+
+**Rules for anything added later:**
+- Never touch a widget or a Tk variable off the main thread — that includes
+  *reading* an `Entry`. Read values on the main thread and pass them in
+  (`_start_ip_scan` now captures the port before starting its thread).
+- `root.after()` is itself a Tk call: do not use it to marshal from a thread.
+  Use `ui_call`.
+- Camera (`_poll_camera`) and map (`_draw_map`) already run on the main thread
+  via `after`, so their widget calls are fine as-is.
+
+Verified with a stress test: 8 threads × 800 cross-thread updates (6400 total)
+delivered, queue drained, no crash.
 
 ---
 
