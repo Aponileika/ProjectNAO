@@ -7,6 +7,11 @@ import Queue
 from nao_app.ui.widgets import make_card, make_btn, BG, FG, ACCENT, SUCCESS, ERROR, WARN, CARD_BG, BTN_BG, BTN_FG
 from nao_app.backend import persona
 
+# Where the robot's wandering speech comes from.  Phrase banks are the
+# scripted lines in backend/persona.py; the local model writes its own.
+SPEECH_SOURCE_PHRASES = "Phrase banks"
+SPEECH_SOURCE_LOCAL   = "Local model"
+
 class ThreadSafeVar(object):
     """A StringVar whose set() is safe to call from a worker thread.
 
@@ -93,6 +98,19 @@ class NaoAppWindow(object):
         # one consistent voice wherever the words came from.
         self.persona = persona.PhrasePicker()
         self.voice   = persona.VoiceStyle()
+
+        # Local language model, used for spoken lines during a wander.  Off
+        # until switched on from the AI card: it must never be something the
+        # robot depends on, only something it uses when it is there.  The
+        # director hands back "" whenever it has nothing ready, and say_line()
+        # falls straight through to the phrase banks above.
+        from nao_app.ai.ollama_client import OllamaClient
+        from nao_app.ai.speech_director import SpeechDirector
+        self.local_llm = OllamaClient()
+        self.director  = SpeechDirector(
+            self.local_llm, enabled=False,
+            on_error=lambda msg: self.ui_call(self.llm_status.set,
+                                              "Local model: %s" % str(msg)[:40]))
 
         self.api_key_autofill = ""   # first key (shown in UI entry)
         self.api_keys_list    = []   # all keys, used for rotation
@@ -710,6 +728,65 @@ class NaoAppWindow(object):
                 keys.append(k)
         return keys
 
+    # ------------------------------------------------------------------
+    # Local language model
+    # ------------------------------------------------------------------
+
+    def _on_speech_source(self, choice=None):
+        """Switch wander speech between the phrase banks and the local model.
+
+        Turning it on starts the background generator, which loads the model
+        and begins filling its buffers straight away - roughly fifteen seconds
+        before the robot sounds any different.  Until then, and any time the
+        model cannot keep up, the phrase banks carry the speech."""
+        choice = choice or self.speech_source_var.get()
+        want_local = (choice == SPEECH_SOURCE_LOCAL)
+
+        if not want_local:
+            self.director.enabled = False
+            self.director.stop()
+            self.llm_status.set("Local model: off (using phrase banks)")
+            return
+
+        self.llm_status.set("Local model: checking...")
+
+        def _enable():
+            if not self.local_llm.available():
+                # Do not leave the menu claiming something that is not true.
+                self.director.enabled = False
+                self.ui_call(self.speech_source_var.set, SPEECH_SOURCE_PHRASES)
+                self.llm_status.set(
+                    "Local model unreachable at %s - is Ollama running?"
+                    % self.local_llm.host)
+                return
+            self.director.enabled = True
+            self.director.start()
+            self.director.reset(target="")
+            self.llm_status.set("Local model: loading %s..." % self.local_llm.model)
+            if self.local_llm.warm(system=persona.system_prompt()):
+                self.llm_status.set("Local model ready: %s" % self.local_llm.model)
+            else:
+                self.llm_status.set("Local model: %s" % str(self.local_llm.last_error)[:44])
+
+        threading.Thread(target=_enable).start()
+
+    def _on_check_local_llm(self):
+        """Report what the local model server has, without changing anything."""
+        self.llm_status.set("Checking %s..." % self.local_llm.host)
+
+        def _check():
+            names = self.local_llm.list_models()
+            if not names:
+                self.llm_status.set("No local server at %s (%s)" % (
+                    self.local_llm.host, str(self.local_llm.last_error)[:30]))
+                return
+            have = self.local_llm.model in names
+            self.llm_status.set("%d model(s): %s%s" % (
+                len(names), ", ".join(names)[:44],
+                "" if have else "  [%s not pulled]" % self.local_llm.model))
+
+        threading.Thread(target=_check).start()
+
     def _make_gemini_client(self):
         """Create a GeminiClient pre-loaded with all available API keys."""
         from nao_app.ai.gemini_client import GeminiClient
@@ -760,6 +837,29 @@ class NaoAppWindow(object):
         
         self.include_image = tk.BooleanVar(value=True)
         tk.Checkbutton(r4, text="Include Vision", variable=self.include_image, font=self.font_small, bg=CARD_BG, fg=FG, selectcolor=CARD_BG, activebackground=CARD_BG, activeforeground=FG).pack(side="right")
+
+        # ---- Wander speech source -------------------------------------
+        # Which of the two writes the robot's lines while it is wandering.
+        # Gemini is not an option here: a round trip per sentence is too slow
+        # to keep up with a walking robot, which is the whole reason the
+        # local model exists.
+        r5 = tk.Frame(card, bg=CARD_BG)
+        r5.pack(fill="x", pady=(8, 0))
+        tk.Label(r5, text="Wander speech:", font=self.font_norm,
+                 bg=CARD_BG, fg=FG).pack(side="left")
+        self.speech_source_var = tk.StringVar(value=SPEECH_SOURCE_PHRASES)
+        tk.OptionMenu(r5, self.speech_source_var,
+                      SPEECH_SOURCE_PHRASES, SPEECH_SOURCE_LOCAL,
+                      command=self._on_speech_source).pack(side="left", padx=4)
+        make_btn(r5, "Check", self._on_check_local_llm, width=6,
+                 font_norm=self.font_norm).pack(side="left", padx=2)
+
+        r6 = tk.Frame(card, bg=CARD_BG)
+        r6.pack(fill="x")
+        # Written from the director's worker thread, so it must be thread-safe.
+        self.llm_status = ThreadSafeVar(self, "Local model: off")
+        tk.Label(r6, textvariable=self.llm_status.var, font=self.font_small,
+                 bg=CARD_BG, fg=ACCENT).pack(side="left")
 
     def _card_autonomous(self, parent):
         card = make_card(parent, "Autonomous Wander", self.font_head)
@@ -1060,11 +1160,23 @@ class NaoAppWindow(object):
         return persona.system_prompt() + "\n\n" + str(prompt)
 
     def say_line(self, category, blocking=False, **fmt):
-        """Speak a random, non-repeating line from a persona phrase bank."""
+        """Speak a line for `category` - generated if possible, scripted if not.
+
+        Every spoken line in the wander loop comes through here, so this is
+        the one place the local model has to be wired in.  It asks the
+        director first, which returns a pre-generated line or "" immediately
+        and never blocks a control loop.  Empty means the model is off, cold,
+        or still working, and the phrase bank answers instead."""
+        text = ""
         try:
-            text = self.persona.line(category, **fmt)
+            text = self.director.line(category, **fmt)
         except Exception:
-            return ""
+            text = ""
+        if not text:
+            try:
+                text = self.persona.line(category, **fmt)
+            except Exception:
+                return ""
         if text:
             self.say(text, blocking=blocking)
         return text
@@ -1680,6 +1792,14 @@ class NaoAppWindow(object):
         else:
             self.auto_status.set("Going for a walk...")
         self._set_status("Autonomous wander started. Use 'Stop Auto' to abort.")
+        # New wander, new context: forget the last one's events and start
+        # generating lines for what this one is actually doing.
+        try:
+            self.director.reset(target=target_label)
+            self.director.note("you have just started %s" % (
+                "looking for %s" % target_label if target_label else "walking around"))
+        except Exception:
+            pass
         if target:
             self.say_line("search_start", target=target_label)
         else:
@@ -3293,6 +3413,13 @@ class NaoAppWindow(object):
     def _on_close(self):
         self._on_camera_stop()
         self.controller.stop_controller()
+        # Stop generating before the window goes: the worker would otherwise
+        # sit in a request while Tk is being torn down underneath it.
+        try:
+            self.director.enabled = False
+            self.director.stop()
+        except Exception:
+            pass
         self.root.destroy()
 
     def run(self):
