@@ -69,7 +69,8 @@ make viser not exit
       so if a detect -> compute has been called in order, upyr is saved for compute, when compute is called the upyr must be marked as invalid.
 
     - In general the current locking mechanism is very bad, locking is far too restrictive, should go to locking individual things instead of the entire
-      global map all the time.
+      global map all the time. SPSC queue that is transferred from tracking -> local. tracking should never mutate the global map, tracking consumes once at
+      the start then commits changes to local mapping.
 
     - Tracking should always be able to write, so writing from tracking shouldnt be blocked by localmapping, and for reading of global state use shared_mutex
 
