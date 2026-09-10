@@ -17,3 +17,8 @@ env/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Run logs from main.py
+logs/
+nao_out.log
+nao_err.log
