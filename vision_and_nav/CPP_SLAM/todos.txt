@@ -68,6 +68,9 @@ make viser not exit
       like detect and compute does, easy, just add a local private variable in AKAZE_impl that stores upyr and keeps track if it is current or not
       so if a detect -> compute has been called in order, upyr is saved for compute, when compute is called the upyr must be marked as invalid.
 
+    - In general the current locking mechanism is very bad, locking is far too restrictive, should go to locking individual things instead of the entire
+      global map all the time.
+
     - Tracking should always be able to write, so writing from tracking shouldnt be blocked by localmapping, and for reading of global state use shared_mutex
 
     - Benchmark: AKAZE + M_LDB, AKAZE + Teblid, ORB + ORB, CLAHE + ORB + ORB, CLAHE + ORB + Teblid, ORB + Teblid. Again, use or replicate 
