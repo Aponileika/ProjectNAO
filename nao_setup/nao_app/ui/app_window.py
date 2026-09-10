@@ -3233,19 +3233,29 @@ class NaoAppWindow(object):
                 try: wander_video.unsubscribe(novelty_cam_name)
                 except Exception: pass
 
-    # Right arm held out at chest height, elbow bent, ready to be shaken.
-    # Shoulder pitch 0 is straight forward; a little positive drops the hand
-    # to about the height a standing person reaches down to.
-    _SHAKE_JOINTS = ["RShoulderPitch", "RShoulderRoll", "RElbowRoll",
-                     "RElbowYaw", "RWristYaw"]
-    _SHAKE_OFFER  = [0.35, -0.15, 0.60, 1.00, 0.0]
-    _SHAKE_DOWN   = [0.55, -0.15, 0.85, 1.00, 0.0]   # the "shake" of the shake
-    _SHAKE_REST   = [1.50, -0.15, 0.85, 1.20, 0.0]   # arm back at its side
+    # LEFT arm: this robot is missing fingers on the right hand, so the left
+    # is the one to offer.
+    #
+    # These are the right-arm angles mirrored, which is not the same as
+    # copying them.  NAO's roll joints are signed opposites between the arms -
+    # LElbowRoll only accepts negative values (-1.545..-0.035) where
+    # RElbowRoll only accepts positive, and the shoulder rolls likewise - so
+    # reusing the right-hand numbers would drive the arm into its own limits.
+    # Pitch is the one that carries across unchanged: 0 is straight forward,
+    # and a little positive drops the hand to about the height a standing
+    # person reaches down to.
+    _SHAKE_JOINTS = ["LShoulderPitch", "LShoulderRoll", "LElbowRoll",
+                     "LElbowYaw", "LWristYaw"]
+    _SHAKE_OFFER  = [0.35, 0.15, -0.60, -1.00, 0.0]
+    _SHAKE_DOWN   = [0.55, 0.15, -0.85, -1.00, 0.0]   # the "shake" of the shake
+    _SHAKE_REST   = [1.50, 0.15, -0.85, -1.20, 0.0]   # arm back at its side
+    _SHAKE_HAND   = "LHand"
+    _SHAKE_CHAIN  = "LArm"
 
     def _offer_handshake(self):
         """Hold a hand out and ask for a shake.
 
-        Only the right arm moves and the robot is standing still throughout,
+        Only the left arm moves and the robot is standing still throughout,
         so this is one of the safer things it can do - but the arm is still
         mass held away from the centre line, so it goes out slowly and comes
         back to the robot's side rather than being left extended."""
@@ -3261,7 +3271,7 @@ class NaoAppWindow(object):
         # down with it and the arm never moved.  Setting stiffness is
         # preparation, not the gesture - if it fails, still try to move.
         try:
-            motion.setStiffnesses("RArm", 1.0)
+            motion.setStiffnesses(self._SHAKE_CHAIN, 1.0)
         except Exception as e:
             print("[Handshake] could not set arm stiffness (%s) - "
                   "attempting the gesture anyway." % e)
@@ -3271,7 +3281,7 @@ class NaoAppWindow(object):
             # gesture and the question should land together.
             self.say_line("handshake")
             try:
-                motion.openHand("RHand")
+                motion.openHand(self._SHAKE_HAND)
             except Exception:
                 pass                      # not fatal, the arm is still offered
             time.sleep(3.0)               # give them time to actually take it
@@ -3285,7 +3295,7 @@ class NaoAppWindow(object):
                 time.sleep(0.45)
 
             try:
-                motion.closeHand("RHand")
+                motion.closeHand(self._SHAKE_HAND)
             except Exception:
                 pass
             time.sleep(0.3)
