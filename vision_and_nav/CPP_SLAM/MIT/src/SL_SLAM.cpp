@@ -1140,8 +1140,8 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             // tracking iteration. Building a second snapshot after feature
             // matching can mix point positions from one local-BA commit with
             // keyframe poses/covisibility from another.
-            std::scoped_lock Lock(TrackingData.GlobalMap->Mutex,
-                    TrackingData.CovisibilityGraph->Mutex);
+            std::scoped_lock Lock(TrackingData.GlobalMap->Mutex, TrackingData.CovisibilityGraph->Mutex);
+            // Todo optimize this whole thing, it is very slow, and written by a retard (codex)
             typeKeyFrame& PreviousFrame = TrackingData.PreviousFrameData.PreviousFrame;
             const bool MapChangedSincePreviousFrame =
                 TrackingData.GlobalMap->Revision != LastSeenMapRevision;
@@ -1194,20 +1194,16 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             bool InertialReferenceResolvedFromMap = false;
             std::size_t LastCommittedReferenceIndex = 0;
             bool PreviousReferenceIsCurrent = false;
-            for(std::size_t ReferenceIndex = 0;
-                ReferenceIndex < InertialReferenceChain.size();
-                ReferenceIndex++)
+            for(std::size_t ReferenceIndex = 0; ReferenceIndex < InertialReferenceChain.size(); ReferenceIndex++)
             {
                 typeKeyFrame& Reference =
                     InertialReferenceChain[ReferenceIndex];
                 const typeKeyFrame* CommittedReference = nullptr;
                 if(Reference.MappingGeneration != PANTO_ID_NOT_SET)
                 {
-                    for(const typeKeyFrame& GlobalKeyFrame :
-                            TrackingData.GlobalMap->KeyFrames)
+                    for(const typeKeyFrame& GlobalKeyFrame : TrackingData.GlobalMap->KeyFrames)
                     {
-                        if(GlobalKeyFrame.MappingGeneration ==
-                                Reference.MappingGeneration)
+                        if(GlobalKeyFrame.MappingGeneration == Reference.MappingGeneration)
                         {
                             CommittedReference = &GlobalKeyFrame;
                             break;
@@ -1250,10 +1246,8 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                     InertialReferenceChain.size();
             if(LastCommittedReferenceIndex > 0)
             {
-                InertialReferenceChain.erase(
-                        InertialReferenceChain.begin(),
-                        InertialReferenceChain.begin() +
-                            LastCommittedReferenceIndex);
+                InertialReferenceChain.erase(InertialReferenceChain.begin(),
+                        InertialReferenceChain.begin() + LastCommittedReferenceIndex);
             }
             InertialReferenceKeyFrame = InertialReferenceChain.back();
             InertialReferenceKFID = ActiveReferenceIsCommitted
@@ -1288,8 +1282,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             }
             LastSeenMapRevision = TrackingData.GlobalMap->Revision;
 
-            typeKeyFrame& PreviousPreviousFrame =
-                TrackingData.PreviousFrameData.PreviousPreviousFrame;
+            typeKeyFrame& PreviousPreviousFrame = TrackingData.PreviousFrameData.PreviousPreviousFrame;
             if(PreviousPreviousFrame.MappingGeneration != PANTO_ID_NOT_SET)
             {
                 for(const typeKeyFrame& GlobalKeyFrame :

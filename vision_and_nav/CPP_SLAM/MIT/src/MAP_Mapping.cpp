@@ -482,6 +482,7 @@ typePantoVector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap
 {
     const typePantoKeypointFrame& LastKeyFramePoints = LastKeyFrame.Points;
     typePantoVector<typePantoMapPoint> LastKeyFrameMapPoints;
+    LastKeyFrameMapPoints.reserve(LastKeyFramePoints.ImagePoints.size());
     const typePantoVector<typePantoMapPoint>& MapPoints = Map.MapPoints;
 
     for(const typePantoImagePoint& ImagePoint : LastKeyFramePoints.ImagePoints)
