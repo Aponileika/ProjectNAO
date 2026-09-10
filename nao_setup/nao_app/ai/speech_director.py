@@ -87,8 +87,9 @@ SITUATIONS = {
     "stuck":           "You are wedged against something and are working your way out.",
     "remembered_block":"You have arrived somewhere you already know is blocked, and you remember it.",
     "found_human":     "You have just spotted a person.",
-    "handshake":       ("You are holding your hand out to a person you just met, "
-                        "asking them to shake it. Ask them directly."),
+    "handshake":       ("You are holding your hand out to a person you just met. "
+                        "Ask to shake their hand, directly and warmly - close "
+                        "in meaning to 'let me shake your hand'."),
     "found_target":    "You have just found %(target)s, which is what you were looking for.",
     "fell":            "You have fallen over and your motors have been released.",
     "task_done":       "You have finished walking and are coming to a stop.",

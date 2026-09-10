@@ -3253,8 +3253,19 @@ class NaoAppWindow(object):
         motion = self.conn.motion
         if not motion:
             return
+        # Stiffness is guarded on its own.  It was a malformed call here that
+        # broke this gesture: ALMotion expands a chain name to its joints and
+        # insists the stiffness count matches, so ["RArm"], [1.0] raised
+        # "Expected the number of stiffnesses to equal the number of joints".
+        # Being the first statement in the block, it took the entire handshake
+        # down with it and the arm never moved.  Setting stiffness is
+        # preparation, not the gesture - if it fails, still try to move.
         try:
-            motion.setStiffnesses(["RArm"], [1.0])
+            motion.setStiffnesses("RArm", 1.0)
+        except Exception as e:
+            print("[Handshake] could not set arm stiffness (%s) - "
+                  "attempting the gesture anyway." % e)
+        try:
             motion.setAngles(self._SHAKE_JOINTS, self._SHAKE_OFFER, 0.20)
             # Ask while the arm is on its way out, not after it arrives: the
             # gesture and the question should land together.
@@ -3302,7 +3313,7 @@ class NaoAppWindow(object):
             try:
                 # Stiffness first: stopMove may have relaxed the walk engine,
                 # and setAngles on a limp arm does nothing.
-                motion.setStiffnesses(["Body"], [1.0])
+                motion.setStiffnesses("Body", 1.0)
                 time.sleep(0.2)
             except Exception as e:
                 print("[Celebrate] stiffness error: %s" % e)
@@ -3322,7 +3333,7 @@ class NaoAppWindow(object):
         if motion:
             try:
                 # Ensure stiffness is on before moving
-                motion.setStiffnesses(["Body"], [1.0])
+                motion.setStiffnesses("Body", 1.0)
                 time.sleep(0.2)
                 # Victory wave: alternate arm raises
                 for _ in range(2):
