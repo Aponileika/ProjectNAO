@@ -72,6 +72,9 @@ make viser not exit
       global map all the time. SPSC queue that is transferred from tracking -> local. tracking should never mutate the global map, tracking consumes once at
       the start then commits changes to local mapping.
 
+      Published snapshot: mapping constructs the tracking snapshot privately and atomically replaces a shared_ptr<const Snapshot>. 
+      Tracking only performs an atomic pointer load, so its snapshot acquisition is effectively lock-free.
+
     - Tracking should always be able to write, so writing from tracking shouldnt be blocked by localmapping, and for reading of global state use shared_mutex
 
     - Benchmark: AKAZE + M_LDB, AKAZE + Teblid, ORB + ORB, CLAHE + ORB + ORB, CLAHE + ORB + Teblid, ORB + Teblid. Again, use or replicate 
