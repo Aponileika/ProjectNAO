@@ -2310,7 +2310,17 @@ class NaoAppWindow(object):
             _STOP_DIST      = 0.45   # m — hard stop and turn away (blind spot is ~0.25)
             _SLOW_DIST      = 0.90   # m — start creeping below this
             _SONAR_WINDOW_S = 0.6    # s — act on the closest reading in this window
+            # The ultrasound cannot measure inside its own blind spot, so any
+            # value below this carries no distance information at all.  It is
+            # what the key reads before ALSonar has ever published (0.0), and
+            # what a dropped echo can momentarily produce.  Treating those as
+            # "something is touching me" is why the robot would report an
+            # obstacle in an empty room, and because `near` is a MINIMUM over a
+            # window, one bad sample poisoned the next 0.6 s.  Anything closer
+            # than the blind spot is the bumpers' job, not the sonar's.
+            _SONAR_MIN_VALID = 0.25  # m — below this the reading is not a distance
             _sonar_hist     = []     # list of (timestamp, distance)
+            _sonar_bad      = [0]    # consecutive implausible sonar samples
             _sense_fail     = [0]
             _last_trace     = [0.0]  # periodic diagnostic trace
 
@@ -2703,6 +2713,7 @@ class NaoAppWindow(object):
                 bumped = False
                 tilt_x = tilt_y = 0.0
                 fall_flag = False
+                _sense_blocked = False     # set when the sensor read itself fails
                 if self.conn.memory:
                     vals = None
                     try:
@@ -2718,9 +2729,24 @@ class NaoAppWindow(object):
                     if vals and len(vals) == len(_SENSE_KEYS):
                         try:
                             sonar_v = [float(v) for v in vals[:_N_SONAR]]
-                            if sonar_v:
-                                l_dist = sonar_v[0]
-                                r_dist = sonar_v[-1]
+                            # Discard readings from inside the blind spot: they
+                            # are not distances, and taken literally they mean
+                            # "blocked" forever.  Losing them costs nothing -
+                            # the sonar could not see anything that close in
+                            # the first place, which is what the bumpers cover.
+                            _clean = [d for d in sonar_v if d >= _SONAR_MIN_VALID]
+                            if len(_clean) < len(sonar_v):
+                                _sonar_bad[0] += 1
+                                if _sonar_bad[0] in (20, 200) or _sonar_bad[0] % 600 == 0:
+                                    print("[Sense] sonar returning values below "
+                                          "%.2fm (%d times) - raw %s. Is ALSonar "
+                                          "subscribed?" % (_SONAR_MIN_VALID,
+                                                           _sonar_bad[0], sonar_v))
+                            else:
+                                _sonar_bad[0] = 0
+                            if _clean:
+                                l_dist = _clean[0]
+                                r_dist = _clean[-1]
                             # Bumpers read 1.0 when pressed.  These are the only
                             # sensors that cannot miss an obstacle — sonar is
                             # blind to anything low, thin, or soft.
@@ -2741,7 +2767,12 @@ class NaoAppWindow(object):
                         # so a flaky link looked identical to an empty room.
                         _sense_fail[0] += 1
                         if _sense_fail[0] >= 3:
-                            l_dist = r_dist = 0.0      # treat as blocked
+                            # Say "blocked" outright rather than faking a zero
+                            # distance.  The two mean different things and only
+                            # one of them is a sensor reading; conflating them
+                            # is what made a dead sonar indistinguishable from
+                            # a wall pressed against the chest.
+                            _sense_blocked = True
                             if _sense_fail[0] % 20 == 3:
                                 print("[Sense] proximity read failing — assuming blocked.")
 
@@ -2851,11 +2882,14 @@ class NaoAppWindow(object):
                     # tiltmag is what the stability governor actually acts on,
                     # and phase/stepping matters more than the old fwd/turn
                     # columns, which are always zero under discrete stepping.
+                    # Raw L/R sit next to the windowed minimum on purpose: when
+                    # the robot claims an obstacle in an empty room, the answer
+                    # is whether the sensor is reporting a distance at all.
                     print("[Trace] tiltX=%+.3f tiltY=%+.3f tiltmag=%.3f "
-                          "rollpk=%.3f near=%.2f %s" % (
+                          "rollpk=%.3f son=%.2f/%.2f near=%.2f %s" % (
                               tilt_x, tilt_y,
                               math.sqrt(tilt_x * tilt_x + tilt_y * tilt_y),
-                              roll_peak, near,
+                              roll_peak, l_dist, r_dist, near,
                               ("stepping" if (_burst_gait and _phase[0] == "walk"
                                               and _step_issued[0])
                                else ("settling" if _burst_gait
@@ -3017,7 +3051,8 @@ class NaoAppWindow(object):
                 if _burst_gait:
                     _head_scan_paused[0] = True
 
-                obstacle = bumped or (near <= _STOP_DIST) or not boundary_ok
+                obstacle = (bumped or _sense_blocked or (near <= _STOP_DIST)
+                            or not boundary_ok)
 
                 if obstacle:
                     _head_scan_paused[0] = True
