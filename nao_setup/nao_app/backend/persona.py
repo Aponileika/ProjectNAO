@@ -198,6 +198,15 @@ PHRASES = {
         "%(target)s found. I would take a bow, but balance.",
     ],
 
+    # Offering a hand to shake.  Spoken while the arm is already going out,
+    # so these ask rather than announce - the human has to know it is for them.
+    "handshake": [
+        "Shake hands with me?",
+        "Here is my hand. Shake it?",
+        "Pleased to meet you. Shall we shake on it?",
+        "Give me a handshake?",
+    ],
+
     # Went over.
     "fell": [
         "I fell. I have relaxed my motors. Please help me up.",

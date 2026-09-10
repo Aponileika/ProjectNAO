@@ -63,6 +63,7 @@ EVENT_NOTES = {
     "stuck":            "you got wedged and had to work your way out",
     "remembered_block": "you returned to a spot you knew was blocked",
     "found_human":      "you spotted a person",
+    "handshake":        "you offered your hand to shake",
     "found_target":     "you found what you were looking for",
     "fell":             "you fell over",
     "task_done":        "you finished and stopped",
@@ -86,6 +87,8 @@ SITUATIONS = {
     "stuck":           "You are wedged against something and are working your way out.",
     "remembered_block":"You have arrived somewhere you already know is blocked, and you remember it.",
     "found_human":     "You have just spotted a person.",
+    "handshake":       ("You are holding your hand out to a person you just met, "
+                        "asking them to shake it. Ask them directly."),
     "found_target":    "You have just found %(target)s, which is what you were looking for.",
     "fell":            "You have fallen over and your motors have been released.",
     "task_done":       "You have finished walking and are coming to a stop.",

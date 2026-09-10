@@ -3233,8 +3233,63 @@ class NaoAppWindow(object):
                 try: wander_video.unsubscribe(novelty_cam_name)
                 except Exception: pass
 
+    # Right arm held out at chest height, elbow bent, ready to be shaken.
+    # Shoulder pitch 0 is straight forward; a little positive drops the hand
+    # to about the height a standing person reaches down to.
+    _SHAKE_JOINTS = ["RShoulderPitch", "RShoulderRoll", "RElbowRoll",
+                     "RElbowYaw", "RWristYaw"]
+    _SHAKE_OFFER  = [0.35, -0.15, 0.60, 1.00, 0.0]
+    _SHAKE_DOWN   = [0.55, -0.15, 0.85, 1.00, 0.0]   # the "shake" of the shake
+    _SHAKE_REST   = [1.50, -0.15, 0.85, 1.20, 0.0]   # arm back at its side
+
+    def _offer_handshake(self):
+        """Hold a hand out and ask for a shake.
+
+        Only the right arm moves and the robot is standing still throughout,
+        so this is one of the safer things it can do - but the arm is still
+        mass held away from the centre line, so it goes out slowly and comes
+        back to the robot's side rather than being left extended."""
+        import time
+        motion = self.conn.motion
+        if not motion:
+            return
+        try:
+            motion.setStiffnesses(["RArm"], [1.0])
+            motion.setAngles(self._SHAKE_JOINTS, self._SHAKE_OFFER, 0.20)
+            # Ask while the arm is on its way out, not after it arrives: the
+            # gesture and the question should land together.
+            self.say_line("handshake")
+            try:
+                motion.openHand("RHand")
+            except Exception:
+                pass                      # not fatal, the arm is still offered
+            time.sleep(3.0)               # give them time to actually take it
+
+            # Two small shakes.  Whether or not a hand arrived, this reads as
+            # the gesture completing rather than the arm just dropping.
+            for _ in range(2):
+                motion.setAngles(self._SHAKE_JOINTS, self._SHAKE_DOWN, 0.25)
+                time.sleep(0.45)
+                motion.setAngles(self._SHAKE_JOINTS, self._SHAKE_OFFER, 0.25)
+                time.sleep(0.45)
+
+            try:
+                motion.closeHand("RHand")
+            except Exception:
+                pass
+            time.sleep(0.3)
+            motion.setAngles(self._SHAKE_JOINTS, self._SHAKE_REST, 0.20)
+            time.sleep(0.6)
+        except Exception as e:
+            print("[Handshake] error: %s" % e)
+            # Never leave the arm stuck out: put it back even on failure.
+            try:
+                motion.setAngles(self._SHAKE_JOINTS, self._SHAKE_REST, 0.20)
+            except Exception:
+                pass
+
     def _celebrate_found_human(self):
-        """High-five gesture, then sit."""
+        """Offer a handshake to the person, then settle into a crouch."""
         import time
         if not self._motion_allowed():
             return
@@ -3245,26 +3300,14 @@ class NaoAppWindow(object):
             except Exception: pass
         if motion:
             try:
-                # Ensure stiffness is on before moving (stopMove may have relaxed walk engine)
+                # Stiffness first: stopMove may have relaxed the walk engine,
+                # and setAngles on a limp arm does nothing.
                 motion.setStiffnesses(["Body"], [1.0])
                 time.sleep(0.2)
-                # Raise right arm high for high-five
-                motion.setAngles(
-                    ["RShoulderPitch", "RShoulderRoll", "RElbowRoll", "RElbowYaw",
-                     "RWristYaw"],
-                    [-1.25, -0.20, 0.03, 1.20, 0.0],
-                    0.25)
-                time.sleep(2.5)
-                # Lower arm back down
-                motion.setAngles(
-                    ["RShoulderPitch", "RShoulderRoll", "RElbowRoll", "RElbowYaw",
-                     "RWristYaw"],
-                    [1.50, -0.15, 0.85, 1.20, 0.0],
-                    0.20)
-                time.sleep(0.5)
             except Exception as e:
-                print("[Celebrate] high-five error: %s" % e)
-        self._sit_after_task()
+                print("[Celebrate] stiffness error: %s" % e)
+        self._offer_handshake()
+        self._rest_after_task()
 
     def _celebrate_found_object(self, target_name):
         """Victory arm-wave, then sit."""
@@ -3303,7 +3346,7 @@ class NaoAppWindow(object):
                 time.sleep(0.5)
             except Exception as e:
                 print("[Celebrate] object-dance error: %s" % e)
-        self._sit_after_task()
+        self._rest_after_task()
 
     def _motion_allowed(self):
         """False once an emergency relax has locked motion.
@@ -3312,21 +3355,35 @@ class NaoAppWindow(object):
         deliberate Relax — which is exactly what a fallen robot must not do."""
         return not getattr(self, "_motion_locked", False)
 
-    def _sit_after_task(self):
-        """Sit down once a wander/seek task is complete. The full dance
-        sequence is riskier (fall-prone) and is now opt-in only via the
-        'Dance' button in the Posture card, rather than running automatically."""
+    def _rest_after_task(self):
+        """Settle into a crouch once a wander/seek task is complete.
+
+        Crouch, not Sit.  Sitting is a long way to travel from standing and
+        the robot has to get its legs out in front of it to do it, which on
+        this body is another chance to go over.  A crouch keeps the feet
+        under the hips the whole way down and ends lower than a stand, so it
+        is both a shorter move and a stabler place to stop.
+
+        Sit is kept only as a fallback, for the case where Crouch is not
+        available on this firmware.  The full dance sequence is riskier again
+        and stays opt-in via the Dance button in the Posture card."""
         if not self._motion_allowed():
-            print("[Sit] skipped: motion locked (relax).")
+            print("[Rest] skipped: motion locked (relax).")
             return
-        if self.conn.posture:
+        if not self.conn.posture:
+            return
+        try:
+            # Via StandInit, as every other seated/crouched transition in this
+            # app does: goToPosture plans from a known pose far more reliably
+            # than from whatever shape a walk left the robot in.
+            self.conn.posture.goToPosture("StandInit", 0.5)
+            self.conn.posture.goToPosture("Crouch", 0.5)
+        except Exception as e:
+            print("[Rest] crouch failed (%s) - falling back to Sit." % e)
             try:
                 self.conn.posture.goToPosture("Sit", 0.5)
-            except Exception:
-                try:
-                    self.conn.posture.goToPosture("SitRelax", 0.5)
-                except Exception as e:
-                    print("[Celebrate] sit error: %s" % e)
+            except Exception as e2:
+                print("[Rest] sit error: %s" % e2)
 
     def _has_fallen(self):
         if not self.conn.memory:
