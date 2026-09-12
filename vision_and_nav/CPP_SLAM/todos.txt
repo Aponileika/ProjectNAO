@@ -70,7 +70,8 @@ make viser not exit
 
     - In general the current locking mechanism is very bad, locking is far too restrictive, should go to locking individual things instead of the entire
       global map all the time. SPSC queue that is transferred from tracking -> local. tracking should never mutate the global map, tracking consumes once at
-      the start then commits changes to local mapping.
+      the start then commits changes to local mapping. Use a visibility that tracking commits every loop, local mapping consumes the entire queue before 
+      recent mappoint culling. Evaluate how this change affects recentmappoint culling, will lead to less points being culled.
 
       Published snapshot: mapping constructs the tracking snapshot privately and atomically replaces a shared_ptr<const Snapshot>. 
       Tracking only performs an atomic pointer load, so its snapshot acquisition is effectively lock-free.

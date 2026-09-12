@@ -761,6 +761,7 @@ void MAP_CullRecentMapPoints(std::unordered_set<u64>& RecentMapPointIndexes,
             MappingData.RecentMapPointsCulled++;
             continue;
         }
+        // Note this test MUST be last! Otherwise old points with low tracking will not be properly culled
         else if(Age >= 3)
         {
             RemoveRecentIndexes.push_back(MapPointID);
