@@ -283,16 +283,14 @@ static void SLPriv_UpdateCameraFromNavigationState(typeKeyFrame& Frame)
 }
 
 static void SLPriv_ReconstructFrameFromReferenceKF(typeKeyFrame& Frame,
-        const typeKeyFrame& CurrentReference,
-        const typePreIntegrationData& ReferenceToFramePreIntegration)
+        const typeKeyFrame& CurrentReference, const typePreIntegrationData& ReferenceToFramePreIntegration)
 {
     if(!Frame.HasTrackingReferenceState)
     {
         return;
     }
 
-    Frame.NavigationState = IMU_PredictNavigationState(
-            CurrentReference.NavigationState, ReferenceToFramePreIntegration);
+    Frame.NavigationState = IMU_PredictNavigationState(CurrentReference.NavigationState, ReferenceToFramePreIntegration);
     SLPriv_UpdateCameraFromNavigationState(Frame);
     Frame.TrackingReferencePose = CurrentReference.Camera.Pose;
     Frame.TrackingReferenceNavigationState = CurrentReference.NavigationState;
@@ -1126,6 +1124,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             }
         }
 
+        TrackingData.TrackingStats = typeTrackingStatistics{};
         NumProcessedLoops++;
         typeTrackingScopedTimer IterationTimer(
                 Statistics(typeTrackingTimingStage::IterationTotal));
@@ -1212,8 +1211,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                 else if(TrackingData.GlobalMap->KeyFrames.contains(
                             Reference.ID))
                 {
-                    CommittedReference =
-                        &TrackingData.GlobalMap->KeyFrames[Reference.ID];
+                    CommittedReference = &TrackingData.GlobalMap->KeyFrames[Reference.ID];
                 }
 
                 if(CommittedReference != nullptr)
@@ -1257,25 +1255,36 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                 std::abs(PreviousFrame.Camera.TimeStamp -
                          InertialReferenceKeyFrame.Camera.TimeStamp) < 1e-9;
             if(MapChangedSincePreviousFrame &&
-               !AdoptedCommittedKeyFrame &&
-               InertialReferenceResolvedFromMap &&
-               PreviousFrame.HasTrackingReferenceState &&
-               !PreviousFrameIsInertialReference)
+                    !AdoptedCommittedKeyFrame &&
+                    InertialReferenceResolvedFromMap)
             {
-                SLPriv_ReconstructFrameFromReferenceKF(
-                        PreviousFrame,
-                        InertialReferenceKeyFrame,
-                        PreviousFrame.
-                            TrackingReferencePreIntegrationData);
-                LG_Log(LogSeverity::DBG,
-                        "[SLAMAsyncCorrection] Repropagated frame %.9f from optimized KF %llu at map revision %llu\n",
-                        PreviousFrame.Camera.TimeStamp,
-                        static_cast<unsigned long long>(
-                            InertialReferenceKeyFrame.ID),
-                        static_cast<unsigned long long>(
-                            TrackingData.GlobalMap->Revision));
-                PreviousTrajectoryCamera = PreviousFrame.Camera;
-                UpdatePreviousTrajectory = true;
+                if(PreviousFrameIsInertialReference)
+                {
+                    // These are separate copies of the same selected keyframe.
+                    PreviousFrame = InertialReferenceKeyFrame;
+
+                    PreviousTrajectoryCamera = PreviousFrame.Camera;
+                    UpdatePreviousTrajectory = true;
+                }
+                else if(PreviousFrame.HasTrackingReferenceState)
+                {
+                    SLPriv_ReconstructFrameFromReferenceKF(
+                            PreviousFrame,
+                            InertialReferenceKeyFrame,
+                            PreviousFrame.TrackingReferencePreIntegrationData);
+
+                    LG_Log(LogSeverity::DBG,
+                            "[SLAMAsyncCorrection] Repropagated frame %.9f "
+                            "from reference KF %llu at map revision %llu\n",
+                            PreviousFrame.Camera.TimeStamp,
+                            static_cast<unsigned long long>(
+                                InertialReferenceKeyFrame.ID),
+                            static_cast<unsigned long long>(
+                                TrackingData.GlobalMap->Revision));
+
+                    PreviousTrajectoryCamera = PreviousFrame.Camera;
+                    UpdatePreviousTrajectory = true;
+                }
             }
             LastSeenMapRevision = TrackingData.GlobalMap->Revision;
 
@@ -1306,7 +1315,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                         Statistics(typeTrackingTimingStage::
                             GetPreviousFrameMapPoints));
                 TrackingData.PreviousFrameData.PreviousFrameMapPoints =
-                    MAP_GetLastFrameMapPoints( TrackingData.TrackingMap.MapPoints,
+                    MAP_GetLastFrameMapPoints(TrackingData.GlobalMap->MapPoints,
                             PreviousFrame);
             }
 #else
@@ -1318,10 +1327,9 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                         Statistics(typeTrackingTimingStage::
                             GetPreviousFrameMapPoints));
                 TrackingData.PreviousFrameData.PreviousFrameMapPoints =
-                    MAP_GetLastFrameMapPoints( *TrackingData.GlobalMap,
-                            TrackingData.PreviousFrameData.PreviousFrame);
+                    MAP_GetLastFrameMapPoints(*TrackingData.GlobalMap, TrackingData.PreviousFrameData.PreviousFrame);
             }
-#endif
+#endif // CONFIG_IMU
         }
 
 #if defined(CONFIG_IMU)
@@ -1558,7 +1566,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             for(const u64& VisibleIndex : LocalMapInfo.VisibleMapPointIDs)
             {
 
-                TrackingData.TrackingStats.NumFound[VisibleIndex]++;
+                TrackingData.TrackingStats.NumVisible[VisibleIndex]++;
             }
         }
 
@@ -1961,16 +1969,12 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
             // triangulation. A queued predecessor may not have had a map ID
             // when tracking submitted this frame.
             assert(LocalMap.GlobalMap->KeyFrames.contains(PreviousKFID));
-            const typeKeyFrame& CurrentReference =
-                LocalMap.GlobalMap->KeyFrames[PreviousKFID];
-
+            const typeKeyFrame& CurrentReference = LocalMap.GlobalMap->KeyFrames[PreviousKFID];
             {
                 typeLocalMappingScopedTimer Timer(
                         Statistics(typeLocalMappingTimingStage::
                             ReconstructInertialState));
-                SLPriv_ReconstructFrameFromReferenceKF(
-                        NewKeyFrame, CurrentReference,
-                        NewKeyFrame.PreIntegrationData);
+                SLPriv_ReconstructFrameFromReferenceKF(NewKeyFrame, CurrentReference, NewKeyFrame.PreIntegrationData);
             }
 #endif
             {
@@ -2121,42 +2125,40 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                         LocalMap.LocalMap);
             }
 
+            LG_Log(LogSeverity::DBG, "[SLAMLoop] Culling local map\n");
+
+            {
+                typeLocalMappingScopedTimer TransactionTimer(
+                        Statistics(typeLocalMappingTimingStage::
+                            CullingTransaction));
+                std::scoped_lock Lock(
+                        LocalMap.GlobalMap->Mutex,
+                        LocalMap.CovisibilityGraph->Mutex);
+#if defined(DEBUG)
+                MAP_AssertGraphEqual(
+                        *LocalMap.GlobalMap,
+                        *LocalMap.CovisibilityGraph);
+#endif
+                {
+                    typeLocalMappingScopedTimer Timer(
+                            Statistics(typeLocalMappingTimingStage::
+                                CullObservationEdges));
+                    MAP_CullObservationEdges(
+                            LocalMap.GlobalMap,
+                            LocalMap.CovisibilityGraph);
+                }
+
             // Keep already-recorded keyframe samples aligned with later local
             // BA corrections. This does not block tracking on the mapper.
-            for(const typeKeyFrame& OptimizedKeyFrame :
-                    LocalMap.LocalMap.KeyFrames)
+            for(const typeKeyFrame& OptimizedKeyFrame : LocalMap.LocalMap.KeyFrames)
             {
-                typeLocalMappingScopedTimer Timer(
-                        Statistics(typeLocalMappingTimingStage::
-                            UpdateTrackingTrajectory));
+                typeLocalMappingScopedTimer Timer(Statistics(typeLocalMappingTimingStage:: UpdateTrackingTrajectory));
                 SLPriv_UpdateTrackingTrajectoryPose(
                         OptimizedKeyFrame.Camera.TimeStamp,
                         OptimizedKeyFrame.Camera);
             }
         }
 
-        LG_Log(LogSeverity::DBG, "[SLAMLoop] Culling local map\n");
-
-        {
-            typeLocalMappingScopedTimer TransactionTimer(
-                    Statistics(typeLocalMappingTimingStage::
-                        CullingTransaction));
-            std::scoped_lock Lock(
-                    LocalMap.GlobalMap->Mutex,
-                    LocalMap.CovisibilityGraph->Mutex);
-#if defined(DEBUG)
-            MAP_AssertGraphEqual(
-                    *LocalMap.GlobalMap,
-                    *LocalMap.CovisibilityGraph);
-#endif
-            {
-                typeLocalMappingScopedTimer Timer(
-                        Statistics(typeLocalMappingTimingStage::
-                            CullObservationEdges));
-                MAP_CullObservationEdges(
-                        LocalMap.GlobalMap,
-                        LocalMap.CovisibilityGraph);
-            }
 
 #if defined(DEBUG)
             {

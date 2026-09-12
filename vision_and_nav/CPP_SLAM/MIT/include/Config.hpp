@@ -266,6 +266,7 @@ const Dataset panto_dataset =
 #define PANTO_CELL_SIZE 32
 
 #define PANTO_MAPPOINT_MATCH_SEARCH_RADIUS 20.0f
+#define PANTO_MAPPOINTFUSION_SEARCH_RADIUS  3.0f
 
 //arbitrary, now same as slam orb
 #if !defined(DESCRIPTOR_TYPE_TEBLID)

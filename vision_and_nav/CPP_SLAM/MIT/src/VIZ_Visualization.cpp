@@ -255,8 +255,7 @@ static void VIZPriv_WriteTrajectoryFile(
     }
 }
 
-static void VIZPriv_WriteTimeStampFile(
-        const std::vector<fp64>& TimeStamps,
+static void VIZPriv_WriteTimeStampFile(const std::vector<fp64>& TimeStamps,
         const std::string& Path)
 {
     FILE* fp = fopen(Path.c_str(), "wb");
@@ -267,8 +266,7 @@ static void VIZPriv_WriteTimeStampFile(
 
     if(!TimeStamps.empty())
     {
-        fwrite(
-                TimeStamps.data(),
+        fwrite( TimeStamps.data(),
                 sizeof(fp64),
                 TimeStamps.size(),
                 fp);

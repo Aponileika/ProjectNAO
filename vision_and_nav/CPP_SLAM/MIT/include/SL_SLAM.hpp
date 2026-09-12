@@ -83,7 +83,7 @@ class typeTrackingStatisticsQueue
 
                 for(const auto& [MapPointID, NumVisible] : Front.NumVisible)
                 {
-                    Combined.NumFound[MapPointID] += NumVisible;
+                    Combined.NumVisible[MapPointID] += NumVisible;
                 }
 
                 TrackingStatQueue.pop();
