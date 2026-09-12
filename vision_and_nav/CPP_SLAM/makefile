@@ -31,7 +31,7 @@ BASE_CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -std=c++20 \
 	-I$(OPENCV)/include/opencv4 \
 	-I$(SOPHUS)/include 
 
-CXXFLAGS := $(BASE_CXXFLAGS) -O2
+CXXFLAGS := $(BASE_CXXFLAGS) -O3 -march=native
 SANITIZER_LDFLAGS :=
 
 ifeq ($(DEBUG),1)
