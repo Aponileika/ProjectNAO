@@ -69,8 +69,7 @@ class typeKeyFrameQueue
             {
                 // this makes sense, if for some reason the push fails, tracking continues as normal
                 std::lock_guard<std::mutex> Lock(Mutex);
-                Generation = KeyFrameGen.fetch_add(
-                        1, std::memory_order_relaxed) + 1;
+                Generation = KeyFrameGen.fetch_add(1, std::memory_order_relaxed) + 1;
                 KeyFrame.MappingGeneration = Generation;
                 KeyFrameQueue.push(std::move(KeyFrame));
             }

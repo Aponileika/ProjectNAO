@@ -24,6 +24,7 @@
 #include <Eigen/Dense>
 #include <condition_variable>
 #include <iostream>
+#include <mutex>
 #include <opencv2/opencv.hpp>
 #include <stdio.h>
 #include <unordered_set>
@@ -47,12 +48,66 @@ typedef struct
 
 typedef struct
 {
+    std::unordered_map<u64, u64> NumFound;
+    std::unordered_map<u64, u64> NumVisible;
+}typeTrackingStatistics;
+
+class typeTrackingStatisticsQueue
+{
+    public:
+        std::queue<typeTrackingStatistics> TrackingStatQueue;
+        std::mutex Mutex;
+
+        typeTrackingStatisticsQueue() = default;
+
+        void push(const typeTrackingStatistics& Statistics)
+        {
+            std::scoped_lock<std::mutex> Lock(Mutex);
+            TrackingStatQueue.push(Statistics);
+        }
+
+        typeTrackingStatistics consume(void)
+        {
+            std::scoped_lock<std::mutex> Lock(Mutex);
+
+            typeTrackingStatistics Combined;
+
+            while(!TrackingStatQueue.empty())
+            {
+                const typeTrackingStatistics& Front = TrackingStatQueue.front();
+
+                for(const auto& [MapPointID, NumFound] : Front.NumFound)
+                {
+                    Combined.NumFound[MapPointID] += NumFound;
+                }
+
+                for(const auto& [MapPointID, NumVisible] : Front.NumVisible)
+                {
+                    Combined.NumFound[MapPointID] += NumVisible;
+                }
+
+                TrackingStatQueue.pop();
+            }
+            return Combined;
+        }
+};
+
+typedef struct
+{
+    typeGlobalMap GlobalMap;
+    typeCovisibilityGraph CovisibilityGraph;
+}typeTrackingSnapShot;
+
+typedef struct
+{
     typePreviousFrameData PreviousFrameData;
     typeLocalMapTracking TrackingMap;
     typeKeyFrame NewFrame;
     fp64 AccumulatedDistance;
     typePosePrediction PosePrediction;
+    typeTrackingStatistics TrackingStats;
 
+    typeTrackingStatisticsQueue* TrackingStatQueue;
     typeKeyFrameQueue *KeyFrameQueue;
     typeGlobalMap *GlobalMap;
     typeCovisibilityGraph *CovisibilityGraph;
@@ -70,6 +125,7 @@ typedef struct
     typeLocalMap LocalMap;
     std::unordered_set<u64> RecentMapPointIndexes;
 
+    typeTrackingStatisticsQueue* TrackingStatQueue;
     typeKeyFrameQueue *KeyFrameQueue;
     typeGlobalMap *GlobalMap;
     typeCovisibilityGraph *CovisibilityGraph;

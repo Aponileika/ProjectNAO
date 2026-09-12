@@ -899,6 +899,7 @@ void SL_PantoSLAM(i32 num_loops)
 
     i32 RemainingLoops = num_loops;
     u64 NumLateFramesSkipped = 0;
+    typeTrackingStatisticsQueue* StatQueue = new typeTrackingStatisticsQueue();
     while(RemainingLoops > 0)
     {
         typePreIntegration PreIntegrationBetweenKF{};
@@ -916,7 +917,9 @@ void SL_PantoSLAM(i32 num_loops)
             .NewFrame = typeKeyFrame{},
             .AccumulatedDistance = fp64{},
             .PosePrediction = PantoSLAM.NextFramePosePrediction,
+            .TrackingStats = typeTrackingStatistics{},
 
+            .TrackingStatQueue = StatQueue,
             .KeyFrameQueue = &KeyFrameQueue,
             .GlobalMap = PantoSLAM.GlobalMap,
             .CovisibilityGraph = PantoSLAM.CovisibilityGraph
@@ -938,6 +941,7 @@ void SL_PantoSLAM(i32 num_loops)
             .LocalMap = typeLocalMap{},
             .RecentMapPointIndexes = *PantoSLAM.RecentMapPointIndexes,
 
+            .TrackingStatQueue = StatQueue,
             .KeyFrameQueue = &KeyFrameQueue,
             .GlobalMap = PantoSLAM.GlobalMap,
             .CovisibilityGraph = PantoSLAM.CovisibilityGraph,
@@ -1383,22 +1387,17 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             // TrackingMap and its reference pose were captured atomically
             // above; do not combine them with a newer global-map revision.
             TrackingData.NewFrame.PreviousKFID = InertialReferenceKFID;
-            TrackingData.NewFrame.TrackingReferencePose =
-                InertialReferenceKeyFrame.Camera.Pose;
-            TrackingData.NewFrame.TrackingReferenceNavigationState =
-                InertialReferenceKeyFrame.NavigationState;
-            TrackingData.NewFrame.TrackingReferencePreIntegrationData =
-                PreIntegrationBetweenKF;
-            TrackingData.NewFrame.TrackingReferenceMappingGeneration =
-                InertialReferenceMappingGeneration;
+            TrackingData.NewFrame.TrackingReferencePose = InertialReferenceKeyFrame.Camera.Pose;
+            TrackingData.NewFrame.TrackingReferenceNavigationState = InertialReferenceKeyFrame.NavigationState;
+            TrackingData.NewFrame.TrackingReferencePreIntegrationData = PreIntegrationBetweenKF;
+            TrackingData.NewFrame.TrackingReferenceMappingGeneration = InertialReferenceMappingGeneration;
             TrackingData.NewFrame.HasTrackingReferenceState = true;
 #else
             std::scoped_lock Lock( TrackingData.GlobalMap->Mutex,
                     TrackingData.CovisibilityGraph->Mutex);
             // A point can disappear after the previous-frame snapshot was
             // taken but before feature extraction finishes.
-            SLPriv_RemoveMissingMapPointAssociations(
-                    TrackingData.NewFrame,
+            SLPriv_RemoveMissingMapPointAssociations( TrackingData.NewFrame,
                     *TrackingData.GlobalMap);
             TrackingData.TrackingMap = MAP_CreateLocalMapTracking(
                     *TrackingData.GlobalMap,
@@ -1550,9 +1549,17 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             typeTrackingScopedTimer Timer(
                     Statistics(typeTrackingTimingStage::
                         CommitTrackingStatistics));
-            MAP_CommitTrackingStatistics(
-                    TrackingData.GlobalMap,
-                    LocalMapInfo);
+            for(const u64& FoundIndex : LocalMapInfo.FoundMapPointIDs)
+            {
+
+                TrackingData.TrackingStats.NumFound[FoundIndex]++;
+            }
+
+            for(const u64& VisibleIndex : LocalMapInfo.VisibleMapPointIDs)
+            {
+
+                TrackingData.TrackingStats.NumFound[VisibleIndex]++;
+            }
         }
 
         {
@@ -1596,13 +1603,13 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                     LocalMapInfo,
                     TrackingData.AccumulatedDistance);
         }
+        TrackingData.TrackingStatQueue->push(TrackingData.TrackingStats);
         bool IsKeyFrame = false;
         {
             typeTrackingScopedTimer Timer(
                     Statistics(typeTrackingTimingStage::IsKeyFrame));
             IsKeyFrame = KEY_IsKeyFrame(KeyFrameInfo);
         }
-        // if(IsKeyFrame)
         if(((NumProcessedLoops % 5) == 0))
         {
 #if defined(CONFIG_IMU)
@@ -2018,6 +2025,23 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                 typeLocalMappingScopedTimer Timer(
                         Statistics(typeLocalMappingTimingStage::
                             CullRecentMapPoints));
+                const typeTrackingStatistics& TrackingStats = LocalMap.TrackingStatQueue->consume();
+                for(const auto& [MapPointID, NumFound] : TrackingStats.NumFound)
+                {
+                    if(LocalMap.GlobalMap->MapPoints.contains(MapPointID))
+                    {
+                        LocalMap.GlobalMap->MapPoints[MapPointID].NumFound += NumFound;
+                    }
+                }
+
+                for(const auto& [MapPointID, NumVisible] : TrackingStats.NumVisible)
+                {
+                    if(LocalMap.GlobalMap->MapPoints.contains(MapPointID))
+                    {
+                        LocalMap.GlobalMap->MapPoints[MapPointID].NumVisible += NumVisible;
+                    }
+                }
+
                 MAP_CullRecentMapPoints(
                         LocalMap.RecentMapPointIndexes,
                         LocalMap.GlobalMap,
