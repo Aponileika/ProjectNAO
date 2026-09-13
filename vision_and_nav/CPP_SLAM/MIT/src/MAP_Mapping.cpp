@@ -65,6 +65,7 @@ u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame)
 {
     const u64 ID = GlobalMap->KeyFrames.push_back(KeyFrame);
     GlobalMap->KeyFrames[ID].ID = ID;
+#if defined(DEBUG)
     if(KeyFrame.MappingGeneration != PANTO_ID_NOT_SET)
     {
         const auto [It, Inserted] =
@@ -72,6 +73,7 @@ u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame)
 
         assert(Inserted); // Each queued generation identifies one keyframe.
     }
+#endif
     GlobalMap->Age++;
     GlobalMap->MapStateRevision++;
     return ID;
@@ -338,8 +340,7 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisi
 
     if(IMUAnchorID == PANTO_ID_NOT_SET)
     {
-        IMUAnchorID =
-            GlobalMap.KeyFrames[LocalKeyFrameIDs.back()].PreviousKFID;
+        IMUAnchorID = GlobalMap.KeyFrames[LocalKeyFrameIDs.back()].PreviousKFID;
     }
 
     assert(IMUAnchorID != PANTO_ID_NOT_SET);
@@ -1034,15 +1035,14 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& 
 
     for(const typeKeyFrame& KeyFrame : LocalMapKeyFrames)
     {
-        for(const typePantoImagePoint& ImagePoint :
-                GlobalMap->KeyFrames[KeyFrame.ID].Points.ImagePoints)
+        for(const typePantoImagePoint& ImagePoint : GlobalMap->KeyFrames[KeyFrame.ID].Points.ImagePoints)
         {
             if(ImagePoint.MapPointID == PANTO_ID_NOT_SET)
             {
                 continue;
             }
 
-            LocalMapPointIDs.insert( ImagePoint.MapPointID);
+            LocalMapPointIDs.insert(ImagePoint.MapPointID);
         }
     }
 
@@ -1091,16 +1091,17 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& 
             {
                 const std::vector<u64>& KeyFrameIDs = MapPoint.KeyFrameIDs;
                 const std::vector<u64>& ImagePointIDs = MapPoint.ImagePointIDs;
+
                 typeKeyFrame& KeyFrame1 = GlobalMap->KeyFrames[KeyFrameIDs[0]];
                 typeKeyFrame& KeyFrame2 = GlobalMap->KeyFrames[KeyFrameIDs[1]];
 
-                typePantoImagePoint& ImagePoint1 =
-                    KeyFrame1.Points.ImagePoints[ImagePointIDs[0]];
-                typePantoImagePoint& ImagePoint2 =
-                    KeyFrame2.Points.ImagePoints[ImagePointIDs[1]];
+                typePantoImagePoint& ImagePoint1 = KeyFrame1.Points.ImagePoints[ImagePointIDs[0]];
+                typePantoImagePoint& ImagePoint2 = KeyFrame2.Points.ImagePoints[ImagePointIDs[1]];
 
+#if defined(DEBUG)
                 assert(ImagePoint1.MapPointID == PANTO_ID_NOT_SET);
                 assert(ImagePoint2.MapPointID == PANTO_ID_NOT_SET);
+#endif
 
                 const u64 MapPointID = GlobalMap->MapPoints.push_back(MapPoint);
                 GlobalMap->MapPoints[MapPointID].ID = MapPointID;
@@ -1162,12 +1163,14 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
         return false;
     };
 
-    const auto RecalculateDescriptor = [GlobalMap](typePantoMapPoint& MapPoint)
+    std::vector<i32> ScratchDistances;
+    ScratchDistances.reserve(32);
+
+    const auto RecalculateDescriptor = [GlobalMap, &ScratchDistances](typePantoMapPoint& MapPoint)
     {
         std::vector<typeDescriptor> Descriptors;
         Descriptors.reserve(MapPoint.KeyFrameIDs.active_size());
-        for(std::size_t ObservationIndex = 0;
-            ObservationIndex < MapPoint.KeyFrameIDs.size(); ObservationIndex++)
+        for(std::size_t ObservationIndex = 0; ObservationIndex < MapPoint.KeyFrameIDs.size(); ObservationIndex++)
         {
             if(!MapPoint.KeyFrameIDs.contains(ObservationIndex))
             {
@@ -1179,9 +1182,7 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
         }
         if(!Descriptors.empty())
         {
-            MapPoint.Descriptor = Descriptors.size() == 1
-                ? Descriptors.front()
-                : PT_CalculateNewDescriptor(Descriptors);
+            MapPoint.Descriptor = Descriptors.size() == 1 ? Descriptors.front() : PT_CalculateNewDescriptor(Descriptors, ScratchDistances);
         }
     };
 

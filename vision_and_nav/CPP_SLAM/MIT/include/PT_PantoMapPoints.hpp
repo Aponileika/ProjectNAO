@@ -23,35 +23,45 @@ inline u64 PT_GetNumObservations(const typePantoMapPoint& MapPoint)
     return static_cast<u64>(MapPoint.KeyFrameIDs.active_size());
 }
 
-inline typeDescriptor PT_CalculateNewDescriptor(const std::vector<typeDescriptor>& Descriptors)
+inline typeDescriptor PT_CalculateNewDescriptor(const std::vector<typeDescriptor>& Descriptors, std::vector<i32>& Distances)
 {
-    u64 BestDescriptorID = 0;
-    fp64 BestMedianDistance = std::numeric_limits<fp64>::max();
+    assert(!Descriptors.empty());
 
-    for(std::size_t i{}; i < Descriptors.size(); i++)
+    const std::size_t Count = Descriptors.size();
+    if(Count == 1)
     {
-        std::vector<i32> Distances;
-        Distances.reserve(Descriptors.size() - 1);
+        return Descriptors.front();
+    }
 
-        for(std::size_t j{}; j < Descriptors.size(); j++)
+    std::size_t BestDescriptorID = 0;
+    i32 BestMedianDistance = std::numeric_limits<i32>::max();
+
+    for(std::size_t i = 0; i < Count; ++i)
+    {
+        Distances.clear();
+
+        for(std::size_t j = 0; j < Count; ++j)
         {
-            if(i == j)
+            if(i != j)
             {
-                continue;
+                Distances.push_back(PANTO_HammingDistance(Descriptors[i], Descriptors[j]));
             }
-
-            Distances.push_back(PANTO_HammingDistance( Descriptors[i],
-                        Descriptors[j]));
         }
 
-        std::sort(Distances.begin(), Distances.end());
+        auto Middle = Distances.begin() + Distances.size() / 2;
+        std::nth_element(Distances.begin(), Middle, Distances.end());
 
-        const fp64 MedianDistance = Distances[Distances.size() / 2];
-
+        const i32 MedianDistance = *Middle;
         if(MedianDistance < BestMedianDistance)
         {
             BestMedianDistance = MedianDistance;
             BestDescriptorID = i;
+        }
+
+        // Hamming distances cannot be negative; later ties cannot win.
+        if(BestMedianDistance == 0)
+        {
+            break;
         }
     }
 

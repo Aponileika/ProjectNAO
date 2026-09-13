@@ -54,15 +54,18 @@ static std::string LG_MakeTimestampedLogPath(const std::string& basePath, const 
 
 void LG_InitLogger()
 {
+    printf("Locking in logger\n");
     std::lock_guard<std::recursive_mutex> Lock(LoggerMutex);
 
     if (gloggerisinit) return;
 
     std::string logPath = PANTO_LOGPATH;
 
+    printf("making paths\n");
     const std::string LogPathDebug = LG_MakeTimestampedLogPath(logPath, "DEBUG");
     const std::string LogPathData = LG_MakeTimestampedLogPath(logPath, "DATA");
     const std::string LogPathError = LG_MakeTimestampedLogPath(logPath, "ERROR");
+    printf("made paths\n");
 
     glogger =
     {
@@ -73,6 +76,8 @@ void LG_InitLogger()
         .Datafp = std::fopen(LogPathData.c_str(), "a"),
         .Errorfp = std::fopen(LogPathError.c_str(), "a")
     };
+
+    printf("made glogger\n");
 
     if (!glogger.Debugfp || !glogger.Datafp || !glogger.Errorfp) 
     {
@@ -85,6 +90,7 @@ void LG_InitLogger()
 
     LG_Log(LogSeverity::DBG, "Logger initiated\n");
     LG_Log(LogSeverity::DBG, "Log file: %s\n", logPath.c_str());
+    printf("glogger init is done\n");
 }
 
 void LG_CloseLogger()

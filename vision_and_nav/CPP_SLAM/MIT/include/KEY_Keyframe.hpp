@@ -78,7 +78,7 @@ typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose, std::vector<typePantoMap
 typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState, std::vector<typePantoMapPoint>& LastFrameMapPoints);
 #endif
 
-void KEY_LogGetKeyFrameTimingStatistics(void);
+void KEY_LogKeyFrameTimingStatistics(void);
 void KEY_LogIsKeyFrameStatistics(void);
 void KEY_Reset(void);
 bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information);

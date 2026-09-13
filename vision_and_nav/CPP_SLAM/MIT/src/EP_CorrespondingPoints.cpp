@@ -195,6 +195,7 @@ fp64 EP_CheckEpipolarConstraint(const Eigen::Vector2d& Point1, const Eigen::Vect
     fp64 Distance2 = std::abs(HomogPoint2.transpose() * EpipolarLine2);
 
     fp64 MaxDistance = std::max(Distance1, Distance2);
+
     return MaxDistance;
 }
 
@@ -272,7 +273,7 @@ DescRet __EP_GetDesc(const cv::Mat& img)
             std::chrono::duration<fp64>(GetKeyPointsEndTime - GetKeyPointsStartTime).count();
 
         const PantoClock::time_point AnmsStartTime = PantoClock::now();
-        KeyPoints = __EP_Anms(KeyPoints, img.cols, img.rows);
+        // KeyPoints = __EP_Anms(KeyPoints, img.cols, img.rows);
         const PantoClock::time_point AnmsEndTime = PantoClock::now();
 
         AnmsTime =
@@ -409,25 +410,3 @@ DescRet __EP_GetDesc(const cv::Mat& img)
     };
 }
 
-
-std::vector<cv::KeyPoint> __EP_Anms(std::vector<cv::KeyPoint>& KeyPoints, const i32 ImageColumns, const i32 ImageRows)
-{
-    if(KeyPoints.empty())
-    {
-        return {};
-    }
-
-    std::sort(KeyPoints.begin(), KeyPoints.end(), [](cv::KeyPoint a, cv::KeyPoint b)
-                                    {
-                                        return a.response > b.response;
-                                    });
-    const int NumFeatures = std::min<int>(CV_NFEATURES, KeyPoints.size());
-    std::vector<int> anmskp_mask = ssc(KeyPoints, NumFeatures, 0.2, ImageColumns, ImageRows);
-    std::vector<cv::KeyPoint> kp_anms;
-    kp_anms.resize(anmskp_mask.size());
-    for(std::size_t i = 0; i < anmskp_mask.size(); i++)
-    {
-        kp_anms[i] = KeyPoints[anmskp_mask[i]];
-    }
-    return kp_anms;
-}

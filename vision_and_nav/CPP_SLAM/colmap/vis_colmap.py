@@ -273,9 +273,7 @@ def load_snapshot(root: Path, snapshot_id: int):
     else:
         ground_truth = np.empty((0, 3), dtype=np.float64)
 
-    ground_truth_timestamps = read_timestamp_binary(
-        root / "sparse" / "ground_truth_timestamps.bin"
-    )
+    ground_truth_timestamps = read_timestamp_binary(root / "sparse" / "ground_truth_timestamps.bin")
 
     if len(ground_truth_timestamps) not in (0, len(ground_truth)):
         raise RuntimeError(
@@ -453,7 +451,7 @@ def update_expected_ground_truth_marker(
         return
 
     try:
-        image_timestamp = int(Path(images[image_id].name).stem) * 1e-9
+        image_timestamp = float(Path(images[image_id].name).stem.removeprefix("frame"))
     except ValueError:
         print(
             f"[VISER] Cannot parse timestamp from image "

@@ -1,6 +1,5 @@
 #ifndef __EP_CORRESPONDINGPOINTSPRIV_HPP
 #define __EP_CORRESPONDINGPOINTSPRIV_HPP
-#include "../../vendor/ANMS-Codes/C++/include/anms.h"
 #include "../include/EP_CorrespondingPoints.hpp"
 #include "CArenaAlloc.h"
 #include "CM_Camera.hpp"

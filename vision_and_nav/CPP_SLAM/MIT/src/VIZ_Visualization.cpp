@@ -170,8 +170,7 @@ void VIZ_SetGroundTruth(
             "/sparse/ground_truth.bin");
 }
 
-void VIZ_SetGroundTruth(
-        const std::vector<Eigen::Vector3d>& GroundTruthTrajectory,
+void VIZ_SetGroundTruth(const std::vector<Eigen::Vector3d>& GroundTruthTrajectory,
         const std::vector<fp64>& GroundTruthTimeStamps)
 {
     assert(GroundTruthTrajectory.size() == GroundTruthTimeStamps.size());
@@ -210,8 +209,7 @@ void VIZ_FlushIMUTest(void)
 void VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& TrackingTrajectory, const std::string& SnapshotPath)
 {
     VIZPriv_WriteTrajectoryFile(
-            TrackingTrajectory,
-            SnapshotPath + "/tracking.bin");
+            TrackingTrajectory, SnapshotPath + "/tracking.bin");
 }
 
 static void VIZPriv_WriteTrajectoryFile(
@@ -393,8 +391,7 @@ void VIZPriv_WriteDistortion(const typePantoVector<typeKeyFrame>& KeyFrames, con
 
 void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
 {
-    const std::string ImagePath =
-        SnapshotPath + "/images.bin";
+    const std::string ImagePath = SnapshotPath + "/images.bin";
 
     static_assert(sizeof(u64) == 8);
     static_assert(sizeof(fp64) == 8);
@@ -411,24 +408,19 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
         return;
     }
 
-    const u64 NumImages =
-        static_cast<u64>(KeyFrames.active_size());
+    const u64 NumImages = static_cast<u64>(KeyFrames.active_size());
 
     fwrite( &NumImages, sizeof(u64), 1, fp);
 
     for(const typeKeyFrame& KeyFrame : KeyFrames)
     {
         const i32 ImageID = static_cast<i32>(KeyFrame.ID + 1);
-
         const i32 CameraID = static_cast<i32>(KeyFrame.ID + 1);
-
         fwrite( &ImageID, sizeof(i32), 1, fp);
 
-        const Eigen::Matrix3d& Rcw =
-            KeyFrame.Camera.Pose.R;
+        const Eigen::Matrix3d& Rcw = KeyFrame.Camera.Pose.R;
 
-        const Eigen::Vector3d& tcw =
-            KeyFrame.Camera.Pose.t;
+        const Eigen::Vector3d& tcw = KeyFrame.Camera.Pose.t;
 
         Eigen::Quaterniond Quaternion(Rcw);
 
@@ -442,17 +434,17 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
             Quaternion.z()
         };
 
-        fwrite( COLMAPQuaternion, sizeof(fp64), 4, fp);
+        fwrite(COLMAPQuaternion, sizeof(fp64), 4, fp);
 
-        fwrite( tcw.data(), sizeof(fp64), 3, fp);
+        fwrite(tcw.data(), sizeof(fp64), 3, fp);
 
-        fwrite( &CameraID, sizeof(i32), 1, fp);
+        fwrite(&CameraID, sizeof(i32), 1, fp);
 
-        const std::filesystem::path CurrentImagePath( KeyFrame.ImagePath);
+        const std::filesystem::path CurrentImagePath(KeyFrame.ImagePath);
 
         const std::string ImageName = CurrentImagePath.filename().string();
 
-        fwrite( ImageName.c_str(), sizeof(char), ImageName.size() + 1, fp);
+        fwrite(ImageName.c_str(), sizeof(char), ImageName.size() + 1, fp);
 
         const u64 NumImagePoints = static_cast<u64>( KeyFrame.Points.ImagePoints.active_size());
 
@@ -475,7 +467,7 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
                 Point3DID = static_cast<i64>(ImagePoint.MapPointID + 1);
             }
 
-            fwrite( &Point3DID, sizeof(i64), 1, fp);
+            fwrite(&Point3DID, sizeof(i64), 1, fp);
         }
     }
 

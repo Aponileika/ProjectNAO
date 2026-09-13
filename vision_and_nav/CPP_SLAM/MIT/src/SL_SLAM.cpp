@@ -4,6 +4,7 @@
 #include "IMU_IMUReader.hpp"
 #include "IMU_PreIntegration.hpp"
 #include "KEY_Keyframe.hpp"
+#include "LG_Logging.hpp"
 #include "MAP_Mapping.hpp"
 #include "OP_BA.hpp"
 #include "PANTOVEC_PantoVector.hpp"
@@ -250,13 +251,10 @@ static Eigen::Vector3d SLPriv_GetGroundTruthCameraPosition(
 #endif
 
 #if !defined(DEBUG)
-static void SLPriv_UpdateVisualization(typeGlobalMap* GlobalMap, typeTimingStatistics& VisualizationUpdateTiming)
+static void SLPriv_UpdateVisualization(const typeGlobalMap& GlobalMap, typeTimingStatistics& VisualizationUpdateTiming)
 {
-    std::scoped_lock Lock(
-            GlobalMap->Mutex, PantoSLAM.TrackingTrajectoryMutex);
-
     const PantoClock::time_point StartTime = PantoClock::now();
-    VIZ_WriteColmap(*GlobalMap, PantoSLAM.TrackingTrajectory);
+    VIZ_WriteColmap(GlobalMap, PantoSLAM.TrackingTrajectory);
     const fp64 UpdateTime = std::chrono::duration<fp64>(
             PantoClock::now() - StartTime).count();
 
@@ -537,7 +535,7 @@ void SLPriv_ResetMapAndTracking(void)
 
 void SLPriv_InitializeMap(void)
 {
-
+    LG_Log(LogSeverity::DBG, "Test1");
     if(PANTO_GROUNDTRUTH_INIT)
     {
         if(GroundTruth.empty())
@@ -632,8 +630,7 @@ void SLPriv_InitializeMap(void)
             const std::size_t SecondGroundTruthIndex = GroundTruthIndex - 1;
             const Eigen::Vector3d SecondWorldAcceleration = SLPriv_GetGroundTruthAcceleration(SecondGroundTruthIndex);
 
-            if(!IMU_AddGravityInitializationMeasurement(
-                        Second, SecondIMUMeasurement, SecondWorldAcceleration))
+            if(!IMU_AddGravityInitializationMeasurement( Second, SecondIMUMeasurement, SecondWorldAcceleration))
             {
                 LG_Log(LogSeverity::DATA,
                         "[SLPriv_InitializeMap] Ignored invalid gravity initialization sample at timestamp %.9f\n",
@@ -741,13 +738,13 @@ void SLPriv_InitializeMap(void)
         const fp64 RefinedCameraBaseline =
             (CM_GetCameraCenter(PantoSLAM.GlobalMap->KeyFrames[1].Camera) -
              CM_GetCameraCenter(PantoSLAM.GlobalMap->KeyFrames[0].Camera)).norm();
-        LG_Log(LogSeverity::DATA,
-                "[SLAMGTInitialization] Camera baseline after points-only refinement = %.6f m\n",
+        LG_Log(LogSeverity::DATA, "[SLAMGTInitialization] Camera baseline after points-only refinement = %.6f m\n",
                 RefinedCameraBaseline);
 
         for(const typeKeyFrame& KeyFrame : PantoSLAM.GlobalMap->KeyFrames)
         {
-            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap->MapPoints, KeyFrame.ID);
+            LG_Log(LogSeverity::DBG, "Adding keyframe to graph %llu\n", KeyFrame.ID);
+            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap->MapPoints);
             PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Camera));
             PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
                     KeyFrame.Camera.TimeStamp);
@@ -772,6 +769,7 @@ void SLPriv_InitializeMap(void)
         PantoSLAM.NextFramePosePrediction.Pose = CM_PredictPose(PantoSLAM.PreviousFrameData.PreviousFrame.Camera.Pose,
                 PantoSLAM.PreviousFrameData.PreviousPreviousFrame.Camera.Pose);
 #endif
+        LG_Log(LogSeverity::DBG, "GT Init done");
     }
     else
     {
@@ -799,7 +797,7 @@ void SLPriv_InitializeMap(void)
 
         for(const typeKeyFrame& KeyFrame : PantoSLAM.GlobalMap->KeyFrames)
         {
-            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap->MapPoints, KeyFrame.ID);
+            GRAPH_AddKeyFrame(PantoSLAM.CovisibilityGraph, KeyFrame, PantoSLAM.GlobalMap->MapPoints);
             PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(KeyFrame.Camera));
             PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
                     KeyFrame.Camera.TimeStamp);
@@ -838,6 +836,8 @@ void SLPriv_InitializeMap(void)
 
 void SL_PantoSLAM(i32 num_loops)
 {
+    LG_Log(LogSeverity::DBG, "PantoSLAM");
+
     typeTimingStatistics VisualizationUpdateTiming{};
 
 #if !defined(DEBUG)
@@ -891,7 +891,7 @@ void SL_PantoSLAM(i32 num_loops)
 
 #if !defined(DEBUG)
     SLPriv_UpdateVisualization(
-            PantoSLAM.GlobalMap,
+            *PantoSLAM.GlobalMap,
             VisualizationUpdateTiming);
 #endif
 
@@ -925,6 +925,7 @@ void SL_PantoSLAM(i32 num_loops)
 
         bool TrackingLost = false;
         i32 NumProcessedLoops = 0;
+        LG_Log(LogSeverity::DBG, "Entering tracking");
         std::thread TrackingThread(
                 SLPriv_TrackingThread,
                 std::ref(TrackingData),
@@ -980,7 +981,7 @@ void SL_PantoSLAM(i32 num_loops)
 
 #if !defined(DEBUG)
         SLPriv_UpdateVisualization(
-                PantoSLAM.GlobalMap,
+                *PantoSLAM.GlobalMap,
                 VisualizationUpdateTiming);
 #endif
     }
@@ -989,7 +990,7 @@ void SL_PantoSLAM(i32 num_loops)
     LG_Log(LogSeverity::DATA,
             "[SLAMFramePacingSummary] Frames skipped because tracking was late = %llu\n",
             static_cast<unsigned long long>(NumLateFramesSkipped));
-    KEY_LogGetKeyFrameTimingStatistics();
+    KEY_LogKeyFrameTimingStatistics();
     EP_LogGetDescriptorTimingStatistics();
     MAP_LogMappingData();
     LG_EnableDataSummaryLoggingForCurrentThread(false);
@@ -1000,7 +1001,7 @@ void SL_PantoSLAM(i32 num_loops)
         // Publish once after both workers have stopped so the viewer receives
         // the final committed map even if no final keyframe caused an update.
         SLPriv_UpdateVisualization(
-                PantoSLAM.GlobalMap,
+                *PantoSLAM.GlobalMap,
                 VisualizationUpdateTiming);
     }
 
@@ -1285,8 +1286,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             typeKeyFrame& PreviousPreviousFrame = TrackingData.PreviousFrameData.PreviousPreviousFrame;
 
             if(const typeKeyFrame* Committed = MAP_FindKeyFrameByGeneration(
-                        *TrackingData.GlobalMap,
-                        PreviousPreviousFrame.MappingGeneration))
+                        *TrackingData.GlobalMap, PreviousPreviousFrame.MappingGeneration))
             {
                 PreviousPreviousFrame = *Committed;
             }
@@ -1343,8 +1343,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         {
             typeTrackingScopedTimer Timer(
                     Statistics(typeTrackingTimingStage::IMUStateArrival));
-            IMU_NewNavigationStateArrival(
-                    TrackingData.PreviousFrameData.PreviousFrame.
+            IMU_NewNavigationStateArrival(TrackingData.PreviousFrameData.PreviousFrame.
                         NavigationState);
         }
 
@@ -1843,6 +1842,7 @@ enum class typeLocalMappingTimingStage : std::size_t
     CullRecentMapPoints,
     CreateNewMapPoints,
     FuseMapPoints,
+    AdjustRecentMapPoints,
     CreateLocalMap,
     BundleAdjustLocal,
     CommitLocalMap,
@@ -1870,6 +1870,7 @@ LocalMappingTimingNames =
     "cull recent map points",
     "create new map points",
     "fuse mappoints",
+    "adjust recent mappoints",
     "create local map snapshot",
     "local bundle adjustment",
     "commit local map",
@@ -1905,8 +1906,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
     std::array<typeTimingStatistics,
         static_cast<std::size_t>(typeLocalMappingTimingStage::Count)>
         Timing{};
-    const auto Statistics = [&Timing](const typeLocalMappingTimingStage Stage)
-        -> typeTimingStatistics&
+    const auto Statistics = [&Timing](const typeLocalMappingTimingStage Stage)->typeTimingStatistics&
     {
         return Timing[static_cast<std::size_t>(Stage)];
     };
@@ -1939,8 +1939,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
         std::vector<u64> NewPointIndexes;
         std::vector<u64> FusedPointIndexes;
         {
-            typeLocalMappingScopedTimer TransactionTimer(
-                    Statistics( typeLocalMappingTimingStage::TopologyTransaction));
+            typeLocalMappingScopedTimer TransactionTimer(Statistics( typeLocalMappingTimingStage::TopologyTransaction));
             // All topology changes are one map/graph transaction. The local
             // optimization snapshot is copied before releasing these locks.
             std::scoped_lock Lock(LocalMap.GlobalMap->Mutex, LocalMap.CovisibilityGraph->Mutex);
@@ -2010,8 +2009,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                 GRAPH_AddKeyFrame(
                         LocalMap.CovisibilityGraph,
                         CurrentKeyFrame,
-                        LocalMap.GlobalMap->MapPoints,
-                        ID);
+                        LocalMap.GlobalMap->MapPoints);
             }
 
 #if defined(DEBUG)
@@ -2086,13 +2084,17 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                         ID);
             }
 
-            for(const u64 MapPointID : NewPointIndexes)
             {
-                LocalMap.RecentMapPointIndexes.insert(MapPointID);
-            }
-            for(const u64 MapPointID : FusedPointIndexes)
-            {
-                LocalMap.RecentMapPointIndexes.erase(MapPointID);
+                typeLocalMappingScopedTimer Timer(Statistics(typeLocalMappingTimingStage::AdjustRecentMapPoints));
+
+                for(const u64 MapPointID : NewPointIndexes)
+                {
+                    LocalMap.RecentMapPointIndexes.insert(MapPointID);
+                }
+                for(const u64 MapPointID : FusedPointIndexes)
+                {
+                    LocalMap.RecentMapPointIndexes.erase(MapPointID);
+                }
             }
 
             LocalMap.GlobalMap->MapStateRevision++;
@@ -2184,7 +2186,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                     Statistics(typeLocalMappingTimingStage::
                         UpdateVisualization));
             SLPriv_UpdateVisualization(
-                    LocalMap.GlobalMap,
+                    *LocalMap.GlobalMap,
                     *LocalMap.VisualizationUpdateTiming);
         }
 #endif

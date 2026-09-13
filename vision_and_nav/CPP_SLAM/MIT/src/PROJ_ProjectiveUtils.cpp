@@ -67,38 +67,71 @@ Eigen::Vector3d PROJ_GetCameraCenter(const Eigen::Matrix4d T)
 Eigen::Vector4d PROJ_TriangulateDLT(const Eigen::Vector2d &Point1,
                                     const Eigen::Vector2d &Point2,
                                     const Eigen::Matrix<fp64, 3, 4> &P1,
-                                    const Eigen::Matrix<fp64, 3, 4> &P2) {
-  Eigen::Matrix4d A;
+                                    const Eigen::Matrix<fp64, 3, 4> &P2) 
+{
+    Eigen::Matrix4d A;
 
-  const fp64 Point1x = Point1.x();
-  const fp64 Point1y = Point1.y();
+    const fp64 Point1x = Point1.x();
+    const fp64 Point1y = Point1.y();
 
-  const fp64 Point2x = Point2.x();
-  const fp64 Point2y = Point2.y();
+    const fp64 Point2x = Point2.x();
+    const fp64 Point2y = Point2.y();
 
-  const Eigen::RowVector4d P1R0 = P1.row(0);
-  const Eigen::RowVector4d P1R1 = P1.row(1);
-  const Eigen::RowVector4d P1R2 = P1.row(2);
+    const Eigen::RowVector4d P1R0 = P1.row(0);
+    const Eigen::RowVector4d P1R1 = P1.row(1);
+    const Eigen::RowVector4d P1R2 = P1.row(2);
 
-  const Eigen::RowVector4d P2R0 = P2.row(0);
-  const Eigen::RowVector4d P2R1 = P2.row(1);
-  const Eigen::RowVector4d P2R2 = P2.row(2);
+    const Eigen::RowVector4d P2R0 = P2.row(0);
+    const Eigen::RowVector4d P2R1 = P2.row(1);
+    const Eigen::RowVector4d P2R2 = P2.row(2);
 
-  A.row(0) = Point1x * P1R2 - P1R0;
+    A.row(0) = Point1x * P1R2 - P1R0;
+    A.row(1) = Point1y * P1R2 - P1R1;
+    A.row(2) = Point2x * P2R2 - P2R0;
+    A.row(3) = Point2y * P2R2 - P2R1;
 
-  A.row(1) = Point1y * P1R2 - P1R1;
+    const Eigen::JacobiSVD<Eigen::Matrix4d> SVD(A, Eigen::ComputeFullV);
 
-  A.row(2) = Point2x * P2R2 - P2R0;
+    Eigen::Vector4d X = SVD.matrixV().col(3);
 
-  A.row(3) = Point2y * P2R2 - P2R1;
+    X /= X.w();
 
-  const Eigen::JacobiSVD<Eigen::Matrix4d> SVD(A, Eigen::ComputeFullV);
+    return X;
+}
 
-  Eigen::Vector4d X = SVD.matrixV().col(3);
+std::vector<Eigen::Vector4d> PROJ_TriangulateDLT(const std::vector<Eigen::Vector2d>& Point1,
+                                    const std::vector<Eigen::Vector2d>& Point2,
+                                    const Eigen::Matrix<fp64, 3, 4> &P1,
+                                    const Eigen::Matrix<fp64, 3, 4> &P2) 
+{
+    assert(Point1.size() == Point2.size());
 
-  X /= X.w();
+    Eigen::Matrix4d A;
 
-  return X;
+    const Eigen::RowVector4d P1R0 = P1.row(0);
+    const Eigen::RowVector4d P1R1 = P1.row(1);
+    const Eigen::RowVector4d P1R2 = P1.row(2);
+
+    const Eigen::RowVector4d P2R0 = P2.row(0);
+    const Eigen::RowVector4d P2R1 = P2.row(1);
+    const Eigen::RowVector4d P2R2 = P2.row(2);
+
+    std::vector<Eigen::Vector4d> MapPoints;
+    MapPoints.reserve(Point1.size());
+
+    Eigen::JacobiSVD<Eigen::Matrix4d, Eigen::ComputeFullV> SVD;
+    for(std::size_t i{}; i < Point1.size(); i++)
+    {
+        A.row(0) = Point1[i].x() * P1R2 - P1R0;
+        A.row(1) = Point1[i].y() * P1R2 - P1R1;
+        A.row(2) = Point2[i].x() * P2R2 - P2R0;
+        A.row(3) = Point2[i].y() * P2R2 - P2R1;
+
+        SVD.compute(A);
+        MapPoints.push_back(SVD.matrixV().col(3));
+    }
+
+    return MapPoints;
 }
 
 std::vector<Eigen::Vector4d> PROJ_TriangulateLOST(

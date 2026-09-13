@@ -63,6 +63,7 @@ int main(int argc, char* argv[])
     {
         num_loops = std::stoi(argv[1]);
     }
+    printf("initting logger\n");
     LG_InitLogger();
     LG_Log(LogSeverity::DBG, "Initiating SLAM\n");
     SL_InitSlam();

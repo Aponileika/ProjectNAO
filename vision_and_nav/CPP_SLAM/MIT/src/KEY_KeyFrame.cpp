@@ -1,8 +1,10 @@
 #include "KEY_Keyframe.hpp"
+#include "Config.hpp"
 #include "IMU_IMUReader.hpp"
 #include "IMU_PreIntegration.hpp"
 #include "KEY_KeyFramePriv.hpp"
 #include "PT_PantoMapPoints.hpp"
+#include "opencv2/opencv.hpp"
 
 struct typeKeyFrameTimingStatistics
 {
@@ -18,6 +20,8 @@ static typeKeyFrameTimingStatistics GetDescriptorsTiming{};
 static typeKeyFrameTimingStatistics CreateImagePointsTiming{};
 static typeKeyFrameTimingStatistics AssembleKeyFrameTiming{};
 static typeKeyFrameTimingStatistics GetKeyFrameOverheadTiming{};
+static typeKeyFrameTimingStatistics SetAsKeyFrameNonVocabTransform{};
+static typeKeyFrameTimingStatistics SetAsKeyFrameVocabTransform{};
 
 struct typeIsKeyFrameStatistics
 {
@@ -87,8 +91,7 @@ typeFuzzyKeyFrameInference FuzzyInference =
     .SpatialTrackingThreshold = NAN
 };
 
-typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame,
-        const u64 ID)
+typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typePantoFrame& Frame, const u64 ID)
 {
     typeKeyFrame KeyFrame{};
 
@@ -335,8 +338,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
     typeCamera PredictedPose = CM_CreateCam(CameraR, Camerat, PANTO_TIMESTAMP_NOT_SET);
 #endif
 
-    const fp64 PosePreparationTime =
-        std::chrono::duration<fp64>(PantoClock::now() - PosePreparationStartTime).count();
+    const fp64 PosePreparationTime = std::chrono::duration<fp64>(PantoClock::now() - PosePreparationStartTime).count();
 
     KEYPriv_AddTimingSample(PosePreparationTiming, PosePreparationTime);
 
@@ -422,8 +424,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
         .ID = PANTO_ID_NOT_SET,
         .ImagePath = std::move(Frame.Path)
     };
-    const fp64 AssembleKeyFrameTime =
-        std::chrono::duration<fp64>(PantoClock::now() - AssembleKeyFrameStartTime).count();
+    const fp64 AssembleKeyFrameTime = std::chrono::duration<fp64>(PantoClock::now() - AssembleKeyFrameStartTime).count();
 
     KEYPriv_AddTimingSample(AssembleKeyFrameTiming, AssembleKeyFrameTime);
 
@@ -449,7 +450,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
     return KeyFrame;
 }
 
-void KEY_LogGetKeyFrameTimingStatistics(void)
+void KEY_LogKeyFrameTimingStatistics(void)
 {
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/internal total", GetKeyFrameTotalTiming);
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/pose preparation", PosePreparationTiming);
@@ -458,6 +459,8 @@ void KEY_LogGetKeyFrameTimingStatistics(void)
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/PT_CreatePantoImagePoints", CreateImagePointsTiming);
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/keyframe assembly", AssembleKeyFrameTiming);
     KEYPriv_LogTimingStatistics("KEY_GetKeyFrame/residual overhead", GetKeyFrameOverheadTiming);
+    KEYPriv_LogTimingStatistics("KEY_SetAsKeyFrame non Vocab", SetAsKeyFrameNonVocabTransform);
+    KEYPriv_LogTimingStatistics("KEY_SetAsKeyFrame vocab transform", SetAsKeyFrameVocabTransform);
 }
 
 void KEY_LogIsKeyFrameStatistics(void)
@@ -569,12 +572,12 @@ bool KEY_IsKeyFrame(const typeKeyFrameInformation& Information)
 void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint>& GlobalMapPoints, 
         const typePantoVector<typeKeyFrame>& GlobalKeyFrames, const DBoW3::Vocabulary* Vocabulary)
 {
+    const auto& StartTimeBeforeVocab = PantoClock::now();
     const u64 ID = KeyFrame.ID;
     LG_Log(LogSeverity::DBG, "[KEY_SetAsKeyFrame] ID = %llu\n", ID);
     std::vector<cv::Mat> DescriptorVector;
     DescriptorVector.reserve(KeyFrame.Points.ImagePoints.active_size());
-    for(const typePantoImagePoint& ImagePoint :
-            KeyFrame.Points.ImagePoints)
+    for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
     {
         // Descriptors belong to the frame. Keeping them in a process-global
         // FIFO lets tracking pop a pending keyframe's descriptors while local
@@ -588,6 +591,11 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
 
+    std::vector<typeDescriptor> Descriptors;
+
+    std::vector<i32> ScratchDistances;
+    ScratchDistances.reserve(32);
+
     for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
     {
         const u64 MapPointID = ImagePoint.MapPointID;
@@ -598,6 +606,8 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
 
         const u64 ImagePointID = ImagePoint.ID;
         typePantoMapPoint& MapPoint = GlobalMapPoints[MapPointID];
+
+#if defined(DEBUG)
         for(const u64 ExistingKeyFrameID : MapPoint.KeyFrameIDs)
         {
             if(ExistingKeyFrameID == ID)
@@ -609,21 +619,25 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
                 assert(false);
             }
         }
+#endif
 
         MapPoint.ImagePointIDs.push_back(ImagePointID);
         MapPoint.KeyFrameIDs.push_back(ID);
 
-        std::vector<typeDescriptor> Descriptors;
+        Descriptors.clear();
         Descriptors.reserve(MapPoint.KeyFrameIDs.size());
 
         for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
         {
-            if(MapPoint.ImagePointIDs.contains(i) && MapPoint.KeyFrameIDs.contains(i))
+            if(MapPoint.ImagePointIDs.contains(i))
             {
+#if defined(DEBUG)
+                assert(MapPoint.KeyFrameIDs.contains(i));
+#endif
                 const u64 ImagePointID = MapPoint.ImagePointIDs[i];
                 const u64 KeyFrameID   = MapPoint.KeyFrameIDs[i];
 
-                Descriptors.push_back(GlobalKeyFrames[KeyFrameID]. Points.ImagePoints[ImagePointID]. Descriptor);
+                Descriptors.push_back(GlobalKeyFrames[KeyFrameID].Points.ImagePoints[ImagePointID].Descriptor);
             }
         }
 
@@ -632,63 +646,20 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
             MapPoint.Descriptor = Descriptors[0];
             continue;
         }
-
-        MapPoint.Descriptor = PT_CalculateNewDescriptor(Descriptors);
+        MapPoint.Descriptor = PT_CalculateNewDescriptor(Descriptors, ScratchDistances);
     }
-
+    const auto& TimeBeforeVocab = std::chrono::duration<fp64>(PantoClock::now() - StartTimeBeforeVocab).count();
+    KEYPriv_AddTimingSample(SetAsKeyFrameNonVocabTransform, TimeBeforeVocab);
+    const auto& TimeStartVocab = PantoClock::now();
     Vocabulary->transform(DescriptorVector, KeyFrame.BowVector, KeyFrame.FeatureVector, Levels);
+    const auto& TimeVocab = std::chrono::duration<fp64>(PantoClock::now() - TimeStartVocab).count();
+    KEYPriv_AddTimingSample(SetAsKeyFrameVocabTransform, TimeVocab);
 }
 
 std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, typeKeyFrame& KeyFrame2, const u64 MapAge)
 {
     std::vector<typePantoMapPoint> MapPoints;
     MapPoints.reserve(PANTO_NEW_MAPPOINT_RESERVE);
-
-    std::size_t NumSharedNodes = 0;
-    std::size_t NumImagePoint1Candidates = 0;
-    std::size_t NumImagePoint1Invalid = 0;
-    std::size_t NumImagePoint1Associated = 0;
-    std::size_t NumDescriptorComparisons = 0;
-    std::size_t NumImagePoint2Invalid = 0;
-    std::size_t NumImagePoint2AssociatedSkips = 0;
-    std::size_t NumNotTopTwoRejected = 0;
-    std::size_t NumEpipolarAccepted = 0;
-    std::size_t NumEpipolarRejected = 0;
-    std::size_t NumEpipolarNonFiniteRejected = 0;
-    std::size_t NumEpipolarRejectedThresholdToThresholdPlusTwo = 0;
-    std::size_t NumEpipolarRejectedThresholdPlusTwoToTen = 0;
-    std::size_t NumEpipolarRejectedTenToTwenty = 0;
-    std::size_t NumEpipolarRejectedTwentyPlus = 0;
-    fp64 SumEpipolarDistanceAccepted = 0.0;
-    fp64 SquaredSumEpipolarDistanceAccepted = 0.0;
-    fp64 SumEpipolarDistanceRejected = 0.0;
-    fp64 SquaredSumEpipolarDistanceRejected = 0.0;
-    std::size_t NumParallaxRejected = 0;
-    std::size_t NumNoBestMatchRejected = 0;
-    std::size_t NumHammingRejected = 0;
-    std::size_t NumBestHammingDistanceSamples = 0;
-    fp64 SumBestHammingDistance = 0.0;
-    fp64 SquaredSumBestHammingDistance = 0.0;
-    std::size_t NumRatioRejected = 0;
-    std::size_t NumNonFiniteRejected = 0;
-    std::size_t NumProjectionRejected = 0;
-    std::size_t NumProjectionNonFiniteRejected = 0;
-    std::size_t NumDepth1OnlyRejected = 0;
-    std::size_t NumDepth2OnlyRejected = 0;
-    std::size_t NumBothDepthRejected = 0;
-    std::size_t NumRejectedDepthSamples = 0;
-    fp64 SumRejectedDepth1 = 0.0;
-    fp64 SquaredSumRejectedDepth1 = 0.0;
-    fp64 SumRejectedDepth2 = 0.0;
-    fp64 SquaredSumRejectedDepth2 = 0.0;
-    std::size_t NumReprojectionRejected = 0;
-    fp64 SumRejectedReprojectionPixelError = 0.0;
-    fp64 SquaredSumRejectedReprojectionPixelError = 0.0;
-    std::size_t NumReprojectionRejectedThresholdToThresholdPlusTwo = 0;
-    std::size_t NumReprojectionRejectedThresholdPlusTwoToTen = 0;
-    std::size_t NumReprojectionRejectedTenToTwenty = 0;
-    std::size_t NumReprojectionRejectedTwentyPlus = 0;
-    std::size_t NumCheiralityRejected = 0;
 
     const Eigen::Matrix3d F21  = EP_GetFundamentalMatrix21(KeyFrame1.Camera.Pose, KeyFrame2.Camera.Pose);
     const Eigen::Matrix3d F12 = F21.transpose();
@@ -708,6 +679,9 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
     const typeCamera& Camera1 = KeyFrame1.Camera;
     const typeCamera& Camera2 = KeyFrame2.Camera;
 
+    const Eigen::Matrix3d& Camera1RTranspose = Camera1.Pose.R.transpose();
+    const Eigen::Matrix3d& Camera2RTranspose = Camera2.Pose.R.transpose();
+
     const Eigen::Matrix3d K = CM_GetIntrinsics()->K;
 
     Eigen::Matrix<fp64, 3, 4> Rt1 = CM_GetRt(KeyFrame1.Camera);
@@ -722,12 +696,15 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
 
     const fp64 cx = K(0, 2);
     const fp64 cy = K(1, 2);
+
+    const fp64 fxrep = 1 / fx;
+    const fp64 fyrep = 1 / fy;
+
     
     while(FeatureIterator1 != FeatureVector1.end() && FeatureIterator2 != FeatureVector2.end())
     {
         if(FeatureIterator1->first == FeatureIterator2->first)
         {
-            NumSharedNodes++;
 
             //Feature vector match
             const std::vector<u32>& FeatureIDs1 = FeatureIterator1->second;
@@ -737,38 +714,31 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
             {
                 if(!AllImagePoints1.contains(static_cast<u64>(FeatureID1)))
                 {
-                    NumImagePoint1Invalid++;
                     continue;
                 }
                 typePantoImagePoint& ImagePoint1 = AllImagePoints1[FeatureID1];
 
-                u32 BestDistance = std::numeric_limits<u32>::max();
-
-                u64 BestFeatureID = PANTO_ID_NOT_SET;
-
                 if(ImagePoint1.MapPointID != PANTO_ID_NOT_SET)
                 {
-                    NumImagePoint1Associated++;
                     continue;
                 }
 
-                NumImagePoint1Candidates++;
-
                 const Eigen::Vector3d Ray1Camera =
                 {
-                    (ImagePoint1.Point.x() - cx) / fx,
-                    (ImagePoint1.Point.y() - cy) / fy,
+                    (ImagePoint1.Point.x() - cx) * fxrep,
+                    (ImagePoint1.Point.y() - cy) * fyrep,
                     1.0
                 };
 
+                const Eigen::Vector3d Ray1World = Camera1RTranspose * Ray1Camera;
 
-                const Eigen::Vector3d Ray1World = Camera1.Pose.R.transpose() * Ray1Camera;
+                u32 BestDistance = std::numeric_limits<u32>::max();
+                u64 BestFeatureID = PANTO_ID_NOT_SET;
 
                 for(const u32& FeatureID2 : FeatureIDs2)
                 {
                     if(!AllImagePoints2.contains(static_cast<u64>(FeatureID2)))
                     {
-                        NumImagePoint2Invalid++;
                         continue;
                     }
                     typePantoImagePoint& ImagePoint2 = AllImagePoints2[FeatureID2];
@@ -776,57 +746,17 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
                     if(ImagePoint2.MapPointID != PANTO_ID_NOT_SET ||
                        SelectedImagePointIDs2.contains(ImagePoint2.ID))
                     {
-                        NumImagePoint2AssociatedSkips++;
                         continue;
                     }
-
-                    NumDescriptorComparisons++;
 
                     const u32 Distance = PANTO_HammingDistance(ImagePoint1.Descriptor, ImagePoint2.Descriptor);
 
-                    const fp64 MeanEpipolarDistance =
-                        EP_CheckEpipolarConstraint(ImagePoint1.Point, ImagePoint2.Point, F21, F12);
+                    const fp64 MeanEpipolarDistance = EP_CheckEpipolarConstraint(ImagePoint1.Point, ImagePoint2.Point, F21, F12);
 
                     if(MeanEpipolarDistance >= PANTO_EPIPOLARTRESHOLD)
                     {
-                        NumEpipolarRejected++;
-
-                        if(std::isfinite(MeanEpipolarDistance))
-                        {
-                            SumEpipolarDistanceRejected += MeanEpipolarDistance;
-                            SquaredSumEpipolarDistanceRejected +=
-                                MeanEpipolarDistance * MeanEpipolarDistance;
-
-                            if(MeanEpipolarDistance < PANTO_EPIPOLARTRESHOLD + 2.0)
-                            {
-                                NumEpipolarRejectedThresholdToThresholdPlusTwo++;
-                            }
-                            else if(MeanEpipolarDistance < 10.0)
-                            {
-                                NumEpipolarRejectedThresholdPlusTwoToTen++;
-                            }
-                            else if(MeanEpipolarDistance < 20.0)
-                            {
-                                NumEpipolarRejectedTenToTwenty++;
-                            }
-                            else
-                            {
-                                NumEpipolarRejectedTwentyPlus++;
-                            }
-                        }
-                        else
-                        {
-                            NumEpipolarNonFiniteRejected++;
-                        }
-
                         continue;
                     }
-
-                    NumEpipolarAccepted++;
-                    SumEpipolarDistanceAccepted += MeanEpipolarDistance;
-                    SquaredSumEpipolarDistanceAccepted +=
-                        MeanEpipolarDistance * MeanEpipolarDistance;
-
 
                     const Eigen::Vector3d Ray2Camera =
                     {
@@ -836,13 +766,12 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
                     };
 
 
-                    const Eigen::Vector3d Ray2World = Camera2.Pose.R.transpose() * Ray2Camera;
+                    const Eigen::Vector3d Ray2World = Camera2RTranspose * Ray2Camera;
 
                     const fp64 CosParallax = Ray1World.normalized().dot(Ray2World.normalized());
 
                     if(CosParallax <= 0 || CosParallax > PANTO_MAXIMUMCOSPARALLAX)
                     {
-                        NumParallaxRejected++;
                         continue;
                     }
 
@@ -855,17 +784,11 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
 
                 if(BestFeatureID == PANTO_ID_NOT_SET)
                 {
-                    NumNoBestMatchRejected++;
                     continue;
                 }
 
-                NumBestHammingDistanceSamples++;
-                SumBestHammingDistance += static_cast<fp64>(BestDistance);
-                SquaredSumBestHammingDistance += static_cast<fp64>(BestDistance) * static_cast<fp64>(BestDistance);
-
                 if(BestDistance >= PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW)
                 {
-                    NumHammingRejected++;
                     continue;
                 }
 
@@ -875,7 +798,6 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
 
                 if(!MapPoint.allFinite())
                 {
-                    NumNonFiniteRejected++;
                     continue;
                 }
 
@@ -884,8 +806,6 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
 
                 if(!PointCamera1.allFinite() || !PointCamera2.allFinite())
                 {
-                    NumProjectionRejected++;
-                    NumProjectionNonFiniteRejected++;
                     continue;
                 }
 
@@ -894,26 +814,6 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
 
                 if(Depth1Rejected || Depth2Rejected)
                 {
-                    NumProjectionRejected++;
-                    NumRejectedDepthSamples++;
-                    SumRejectedDepth1 += PointCamera1.z();
-                    SquaredSumRejectedDepth1 += PointCamera1.z() * PointCamera1.z();
-                    SumRejectedDepth2 += PointCamera2.z();
-                    SquaredSumRejectedDepth2 += PointCamera2.z() * PointCamera2.z();
-
-                    if(Depth1Rejected && Depth2Rejected)
-                    {
-                        NumBothDepthRejected++;
-                    }
-                    else if(Depth1Rejected)
-                    {
-                        NumDepth1OnlyRejected++;
-                    }
-                    else
-                    {
-                        NumDepth2OnlyRejected++;
-                    }
-
                     continue;
                 }
 
@@ -933,35 +833,10 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
                 };
 
                 const fp64 ReprojectionError1 = (ReprojectedPoint1 - ImagePoint1.Point).squaredNorm();
-
                 const fp64 ReprojectionError2 = (ReprojectedPoint2 - ImagePoint2.Point).squaredNorm();
 
-                const fp64 MaxReprojectionPixelError = sqrt(std::max(ReprojectionError1, ReprojectionError2));
-
-                if(ReprojectionError1 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED ||
-                   ReprojectionError2 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED)
+                if(ReprojectionError1 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED || ReprojectionError2 > PANTO_INIT_MAX_REPROJECTION_ERROR_SQUARED)
                 {
-                    NumReprojectionRejected++;
-                    SumRejectedReprojectionPixelError += MaxReprojectionPixelError;
-                    SquaredSumRejectedReprojectionPixelError += MaxReprojectionPixelError * MaxReprojectionPixelError;
-
-                    if(MaxReprojectionPixelError < PANTO_INIT_MAX_REPROJECTION_ERROR + 2.0)
-                    {
-                        NumReprojectionRejectedThresholdToThresholdPlusTwo++;
-                    }
-                    else if(MaxReprojectionPixelError < 10.0)
-                    {
-                        NumReprojectionRejectedThresholdPlusTwoToTen++;
-                    }
-                    else if(MaxReprojectionPixelError < 20.0)
-                    {
-                        NumReprojectionRejectedTenToTwenty++;
-                    }
-                    else
-                    {
-                        NumReprojectionRejectedTwentyPlus++;
-                    }
-
                     continue;
                 }
 
@@ -971,10 +846,6 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
                             KeyFrameIDs, ImagePointIDs, PANTO_ID_NOT_SET, MapAge);
                     MapPoints.push_back(NewPoint);
                     SelectedImagePointIDs2.insert(ImagePoint2.ID);
-                }
-                else
-                {
-                    NumCheiralityRejected++;
                 }
             }
             ++FeatureIterator1;
@@ -989,208 +860,6 @@ std::vector<typePantoMapPoint> KEY_InsertNewMapPoints(typeKeyFrame& KeyFrame1, t
             FeatureIterator2 = FeatureVector2.lower_bound(FeatureIterator1->first);
         }
     }
-
-    std::size_t NumImagePoint2Associated = 0;
-    std::size_t NumImagePoint2Unassociated = 0;
-
-    for(const typePantoImagePoint& ImagePoint : AllImagePoints2)
-    {
-        if(ImagePoint.MapPointID == PANTO_ID_NOT_SET)
-        {
-            NumImagePoint2Unassociated++;
-        }
-        else
-        {
-            NumImagePoint2Associated++;
-        }
-    }
-
-    const std::size_t NumSelectedMatches =
-        NumImagePoint1Candidates - NumNoBestMatchRejected;
-
-    const std::size_t NumDescriptorAccepted =
-        NumSelectedMatches - NumHammingRejected - NumRatioRejected;
-
-    const std::size_t NumFiniteTriangulations =
-        NumDescriptorAccepted - NumNonFiniteRejected;
-
-    const std::size_t NumPositiveDepthTriangulations =
-        NumFiniteTriangulations - NumProjectionRejected;
-
-    const std::size_t NumReprojectionAccepted =
-        NumPositiveDepthTriangulations - NumReprojectionRejected;
-
-    const fp64 MeanEpipolarDistanceAccepted =
-        NumEpipolarAccepted > 0 ?
-        SumEpipolarDistanceAccepted / static_cast<fp64>(NumEpipolarAccepted) : 0.0;
-
-    const fp64 EpipolarDistanceVarianceAccepted =
-        NumEpipolarAccepted > 0 ?
-        SquaredSumEpipolarDistanceAccepted / static_cast<fp64>(NumEpipolarAccepted) -
-        MeanEpipolarDistanceAccepted * MeanEpipolarDistanceAccepted : 0.0;
-
-    const std::size_t NumFiniteEpipolarRejected =
-        NumEpipolarRejected - NumEpipolarNonFiniteRejected;
-
-    const fp64 MeanEpipolarDistanceRejected =
-        NumFiniteEpipolarRejected > 0 ?
-        SumEpipolarDistanceRejected / static_cast<fp64>(NumFiniteEpipolarRejected) : 0.0;
-
-    const fp64 EpipolarDistanceVarianceRejected =
-        NumFiniteEpipolarRejected > 0 ?
-        SquaredSumEpipolarDistanceRejected / static_cast<fp64>(NumFiniteEpipolarRejected) -
-        MeanEpipolarDistanceRejected * MeanEpipolarDistanceRejected : 0.0;
-
-    const fp64 EpipolarDistanceStandardDeviationAccepted =
-        sqrt(std::max(0.0, EpipolarDistanceVarianceAccepted));
-
-    const fp64 EpipolarDistanceStandardDeviationRejected =
-        sqrt(std::max(0.0, EpipolarDistanceVarianceRejected));
-
-    const fp64 MeanBestHammingDistance =
-        NumBestHammingDistanceSamples > 0 ?
-        SumBestHammingDistance / static_cast<fp64>(NumBestHammingDistanceSamples) : 0.0;
-
-    const fp64 BestHammingDistanceVariance =
-        NumBestHammingDistanceSamples > 0 ?
-        SquaredSumBestHammingDistance / static_cast<fp64>(NumBestHammingDistanceSamples) -
-        MeanBestHammingDistance * MeanBestHammingDistance : 0.0;
-
-    const fp64 BestHammingDistanceStandardDeviation =
-        sqrt(std::max(0.0, BestHammingDistanceVariance));
-
-    const fp64 MeanRejectedDepth1 =
-        NumRejectedDepthSamples > 0 ?
-        SumRejectedDepth1 / static_cast<fp64>(NumRejectedDepthSamples) : 0.0;
-
-    const fp64 RejectedDepth1Variance =
-        NumRejectedDepthSamples > 0 ?
-        SquaredSumRejectedDepth1 / static_cast<fp64>(NumRejectedDepthSamples) -
-        MeanRejectedDepth1 * MeanRejectedDepth1 : 0.0;
-
-    const fp64 MeanRejectedDepth2 =
-        NumRejectedDepthSamples > 0 ?
-        SumRejectedDepth2 / static_cast<fp64>(NumRejectedDepthSamples) : 0.0;
-
-    const fp64 RejectedDepth2Variance =
-        NumRejectedDepthSamples > 0 ?
-        SquaredSumRejectedDepth2 / static_cast<fp64>(NumRejectedDepthSamples) -
-        MeanRejectedDepth2 * MeanRejectedDepth2 : 0.0;
-
-    const fp64 RejectedDepth1StandardDeviation =
-        sqrt(std::max(0.0, RejectedDepth1Variance));
-
-    const fp64 RejectedDepth2StandardDeviation =
-        sqrt(std::max(0.0, RejectedDepth2Variance));
-
-    const fp64 MeanRejectedReprojectionPixelError =
-        NumReprojectionRejected > 0 ?
-        SumRejectedReprojectionPixelError /
-        static_cast<fp64>(NumReprojectionRejected) : 0.0;
-
-    const fp64 RejectedReprojectionPixelErrorVariance =
-        NumReprojectionRejected > 0 ?
-        SquaredSumRejectedReprojectionPixelError /
-        static_cast<fp64>(NumReprojectionRejected) -
-        MeanRejectedReprojectionPixelError * MeanRejectedReprojectionPixelError : 0.0;
-
-    const fp64 RejectedReprojectionPixelErrorStandardDeviation =
-        sqrt(std::max(0.0, RejectedReprojectionPixelErrorVariance));
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] KF %llu -> KF %llu: shared nodes = %zu, KF1 unassociated candidates = %zu, KF2 unassociated = %zu, KF2 associated = %zu\n",
-            KeyFrame1.ID,
-            KeyFrame2.ID,
-            NumSharedNodes,
-            NumImagePoint1Candidates,
-            NumImagePoint2Unassociated,
-            NumImagePoint2Associated);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Candidate funnel: KF1 candidates = %zu, selected matches = %zu, descriptor accepted = %zu, finite triangulations = %zu, positive depth = %zu, reprojection accepted = %zu, created = %zu\n",
-            NumImagePoint1Candidates,
-            NumSelectedMatches,
-            NumDescriptorAccepted,
-            NumFiniteTriangulations,
-            NumPositiveDepthTriangulations,
-            NumReprojectionAccepted,
-            MapPoints.size());
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Per-feature rejects: KF1 invalid = %zu, KF1 associated = %zu, no best match = %zu, hamming = %zu, ratio = %zu, non-finite = %zu, projection/depth = %zu, reprojection = %zu, cheirality = %zu\n",
-            NumImagePoint1Invalid,
-            NumImagePoint1Associated,
-            NumNoBestMatchRejected,
-            NumHammingRejected,
-            NumRatioRejected,
-            NumNonFiniteRejected,
-            NumProjectionRejected,
-            NumReprojectionRejected,
-            NumCheiralityRejected);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Pairwise search work: descriptor comparisons = %zu, KF2 invalid skips = %zu, KF2 associated skips = %zu, not top two = %zu, epipolar rejected = %zu, parallax rejected = %zu\n",
-            NumDescriptorComparisons,
-            NumImagePoint2Invalid,
-            NumImagePoint2AssociatedSkips,
-            NumNotTopTwoRejected,
-            NumEpipolarRejected,
-            NumParallaxRejected);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Epipolar accepted: samples = %zu, mean distance = %lf, standard deviation = %lf\n",
-            NumEpipolarAccepted,
-            MeanEpipolarDistanceAccepted,
-            EpipolarDistanceStandardDeviationAccepted);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Epipolar rejected: finite samples = %zu, non-finite samples = %zu, mean distance = %lf, standard deviation = %lf\n",
-            NumFiniteEpipolarRejected,
-            NumEpipolarNonFiniteRejected,
-            MeanEpipolarDistanceRejected,
-            EpipolarDistanceStandardDeviationRejected);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Epipolar rejected bins: [threshold, threshold + 2) = %zu, [threshold + 2, 10) = %zu, [10, 20) = %zu, [20, +inf) = %zu\n",
-            NumEpipolarRejectedThresholdToThresholdPlusTwo,
-            NumEpipolarRejectedThresholdPlusTwoToTen,
-            NumEpipolarRejectedTenToTwenty,
-            NumEpipolarRejectedTwentyPlus);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Best Hamming distance: samples = %zu, mean = %lf, standard deviation = %lf\n",
-            NumBestHammingDistanceSamples,
-            MeanBestHammingDistance,
-            BestHammingDistanceStandardDeviation);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Projection/depth rejected: non-finite = %zu, KF1 depth only = %zu, KF2 depth only = %zu, both depths = %zu\n",
-            NumProjectionNonFiniteRejected,
-            NumDepth1OnlyRejected,
-            NumDepth2OnlyRejected,
-            NumBothDepthRejected);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Rejected depths: samples = %zu, KF1 mean = %lf, KF1 standard deviation = %lf, KF2 mean = %lf, KF2 standard deviation = %lf\n",
-            NumRejectedDepthSamples,
-            MeanRejectedDepth1,
-            RejectedDepth1StandardDeviation,
-            MeanRejectedDepth2,
-            RejectedDepth2StandardDeviation);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Rejected reprojection max pixel error: samples = %zu, mean = %lf, standard deviation = %lf\n",
-            NumReprojectionRejected,
-            MeanRejectedReprojectionPixelError,
-            RejectedReprojectionPixelErrorStandardDeviation);
-
-    LG_Log(LogSeverity::DBG,
-            "[KEY_InsertNewMapPoints] Rejected reprojection max pixel error bins: (threshold, threshold + 2) = %zu, [threshold + 2, 10) = %zu, [10, 20) = %zu, [20, +inf) = %zu\n",
-            NumReprojectionRejectedThresholdToThresholdPlusTwo,
-            NumReprojectionRejectedThresholdPlusTwoToTen,
-            NumReprojectionRejectedTenToTwenty,
-            NumReprojectionRejectedTwentyPlus);
-
     return MapPoints;
 }
 

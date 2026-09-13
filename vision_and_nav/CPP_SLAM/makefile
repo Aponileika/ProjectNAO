@@ -31,7 +31,7 @@ BASE_CXXFLAGS := -Wall -Wextra -Wno-deprecated-declarations -std=c++20 \
 	-I$(OPENCV)/include/opencv4 \
 	-I$(SOPHUS)/include 
 
-CXXFLAGS := $(BASE_CXXFLAGS) -O3 -march=native
+CXXFLAGS := $(BASE_CXXFLAGS) -O3 -DNDEBUG -march=native -mcpu=native -ffp-contract=fast -flto
 SANITIZER_LDFLAGS :=
 
 ifeq ($(DEBUG),1)
@@ -55,9 +55,11 @@ LDFLAGS := \
   -L$(TBB)/lib \
   -L$(EXT_LIB_DIR) \
   -L$(OPENCV)/lib \
-  -Wl,-rpath,$(OPENCV)/lib \
-  # -Wl,-rpath,$(EXT_LIB_DIR) \
   $(SANITIZER_LDFLAGS)
+
+ifeq ($(UNAME_S),Darwin)
+LDFLAGS += -Wl,-rpath,$(EXT_LIB_DIR)
+endif
 
 LDLIBS := \
   -lceres \

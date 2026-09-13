@@ -30,8 +30,6 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 "\n"
 "              P a n t o P i l o t\n";
 
-// #define PANTO_DBG
-
 #define CERES_MAX_ITER 50
 #define CERES_NUM_THREADS 4
 #define CERES_HUBER_THRESHOLD 2.5
@@ -48,7 +46,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #if defined(CONFIG_IMU)
     #define PANTO_GROUNDTRUTH_INIT true
 #else
-    #define PANTO_GROUNDTRUTH_INIT false
+    #define PANTO_GROUNDTRUTH_INIT true 
 #endif 
 
 #define DESCRIPTOR_TYPE_TEBLID

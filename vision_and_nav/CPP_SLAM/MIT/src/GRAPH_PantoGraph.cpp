@@ -3,15 +3,9 @@
 #include <cstring>
 #include <unordered_set>
 
-void GRAPH_AddKeyFrame(typeCovisibilityGraph* CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints,
-        const u64 ID)
+void GRAPH_AddKeyFrame(typeCovisibilityGraph* CovisibilityGraph, const typeKeyFrame& KeyFrame, const typePantoVector<typePantoMapPoint>& GlobalMapPoints)
 {
-    assert(KeyFrame.ID == ID);
-
-    const u64 GraphID =
-        CovisibilityGraph->CovisibilityGraph.push_back({});
-
-    assert(GraphID == ID);
+    const u64 GraphID = CovisibilityGraph->CovisibilityGraph.push_back({});
 
     std::unordered_map<u64, u64>& Connections = CovisibilityGraph->CovisibilityGraph[KeyFrame.ID];
 

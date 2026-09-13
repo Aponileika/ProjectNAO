@@ -61,8 +61,7 @@ static bool FRPriv_ReadNextDataSetEntry(std::string& FramePath,
         fp64& TimeStamp);
 static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(
         const std::string& FramePath, const fp64 TimeStamp);
-static typePantoFrame FRPriv_FinalizeDataSetFrame(
-        typeDecodedDataSetFrame Frame);
+static typePantoFrame FRPriv_FinalizeDataSetFrame( typeDecodedDataSetFrame Frame);
 static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken);
 
 int FR_InitFrameGetter()
@@ -282,8 +281,7 @@ typePantoFrame __FR_GetFrameDataSet()
             };
         }
 
-        typeDecodedDataSetFrame Frame =
-            std::move(reader.PreloadedFrames.front());
+        typeDecodedDataSetFrame Frame = std::move(reader.PreloadedFrames.front());
         reader.PreloadedFrames.pop_front();
         Lock.unlock();
         reader.PreloadNotFull.notify_one();
@@ -309,8 +307,7 @@ typePantoFrame __FR_GetFrameDataSet()
     reader.BufferedTimeStamp = PANTO_TIMESTAMP_NOT_SET;
     reader.HasBufferedFrame = false;
 
-    return FRPriv_FinalizeDataSetFrame(
-            FRPriv_DecodeDataSetFrame(FramePath, TimeStamp));
+    return FRPriv_FinalizeDataSetFrame(FRPriv_DecodeDataSetFrame(FramePath, TimeStamp));
 }
 
 static bool FRPriv_BufferNextDataSetFrame(void)
@@ -369,8 +366,7 @@ static bool FRPriv_ReadNextDataSetEntry(std::string& FramePath,
     return false;
 }
 
-static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(
-        const std::string& FramePath, const fp64 TimeStamp)
+static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(const std::string& FramePath, const fp64 TimeStamp)
 {
     typeDecodedDataSetFrame Result{};
     Result.TimeStamp = TimeStamp;
@@ -396,9 +392,7 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
 
     const std::filesystem::path SourcePath(Frame.SourcePath);
     const std::filesystem::path WritePath =
-        std::filesystem::path("./colmap/images") /
-        ("frame" + std::to_string(reader.OutputFrameIndex++) +
-         SourcePath.extension().string());
+        std::filesystem::path("./colmap/images") / ("frame" + std::to_string(Frame.TimeStamp) + SourcePath.extension().string());
 
     std::error_code FileError;
     std::filesystem::create_hard_link(SourcePath, WritePath, FileError);
