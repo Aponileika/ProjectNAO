@@ -65,9 +65,33 @@ u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame)
 {
     const u64 ID = GlobalMap->KeyFrames.push_back(KeyFrame);
     GlobalMap->KeyFrames[ID].ID = ID;
+    if(KeyFrame.MappingGeneration != PANTO_ID_NOT_SET)
+    {
+        const auto [It, Inserted] =
+            GlobalMap->KeyFrameIDByMappingGeneration.emplace(KeyFrame.MappingGeneration, ID);
+
+        assert(Inserted); // Each queued generation identifies one keyframe.
+    }
     GlobalMap->Age++;
-    GlobalMap->Revision++;
+    GlobalMap->MapStateRevision++;
     return ID;
+}
+
+static const typeKeyFrame* MAP_FindKeyFrameByGeneration(const typeGlobalMap& GlobalMap, const u64 Generation)
+{
+    if(Generation == PANTO_ID_NOT_SET)
+        return nullptr;
+
+    const auto It =
+        GlobalMap.KeyFrameIDByMappingGeneration.find(Generation);
+
+    if(It == GlobalMap.KeyFrameIDByMappingGeneration.end())
+        return nullptr; // Not committed yet.
+
+    const u64 ID = It->second;
+    assert(GlobalMap.KeyFrames.contains(ID));
+
+    return &GlobalMap.KeyFrames[ID];
 }
 
 typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph,
@@ -451,7 +475,7 @@ bool MAP_CommitLocalMap(typeGlobalMap* GlobalMap,
         }
     }
 
-    GlobalMap->Revision++;
+    GlobalMap->BundleRevision++;
 
     return true;
 }

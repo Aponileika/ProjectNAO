@@ -1061,10 +1061,12 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
     u64 InertialReferenceKFID = InertialReferenceKeyFrame.ID;
     u64 InertialReferenceMappingGeneration =
         InertialReferenceKeyFrame.MappingGeneration;
-    u64 LastSeenMapRevision = 0;
+    u64 LastSeenBundleRevision = 0;
+    u64 LastSeenStateRevision = 0;
     {
         std::lock_guard<std::mutex> Lock(TrackingData.GlobalMap->Mutex);
-        LastSeenMapRevision = TrackingData.GlobalMap->Revision;
+        LastSeenBundleRevision = TrackingData.GlobalMap->BundleRevision;
+        LastSeenStateRevision = TrackingData.GlobalMap->MapStateRevision;
     }
 #endif
 
@@ -1145,45 +1147,40 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             std::scoped_lock Lock(TrackingData.GlobalMap->Mutex, TrackingData.CovisibilityGraph->Mutex);
             // Todo optimize this whole thing, it is very slow, and written by a retard (codex)
             typeKeyFrame& PreviousFrame = TrackingData.PreviousFrameData.PreviousFrame;
-            const bool MapChangedSincePreviousFrame =
-                TrackingData.GlobalMap->Revision != LastSeenMapRevision;
-            bool AdoptedCommittedKeyFrame = false;
-            if(PreviousFrame.MappingGeneration != PANTO_ID_NOT_SET)
-            {
-                for(const typeKeyFrame& GlobalKeyFrame : TrackingData.GlobalMap->KeyFrames)
-                {
-                    if(GlobalKeyFrame.MappingGeneration != PreviousFrame.MappingGeneration)
-                    {
-                        continue;
-                    }
 
-                    PreviousFrame = GlobalKeyFrame;
-                    if(InertialReferenceMappingGeneration == GlobalKeyFrame.MappingGeneration)
-                    {
-                        InertialReferenceKeyFrame = GlobalKeyFrame;
-                        InertialReferenceKFID = GlobalKeyFrame.ID;
-                    }
-                    if(PreviousFrame.PreviousKFID != PANTO_ID_NOT_SET &&
-                       TrackingData.GlobalMap->KeyFrames.contains(
-                           PreviousFrame.PreviousKFID))
-                    {
-                        PreviousFrame.TrackingReferencePose =
-                            TrackingData.GlobalMap->KeyFrames[
-                                PreviousFrame.PreviousKFID].Camera.Pose;
-                        PreviousFrame.TrackingReferenceNavigationState =
-                            TrackingData.GlobalMap->KeyFrames[
-                                PreviousFrame.PreviousKFID].NavigationState;
-                        PreviousFrame.HasTrackingReferenceState = true;
-                    }
-                    PreviousTrajectoryCamera = PreviousFrame.Camera;
-                    UpdatePreviousTrajectory = true;
-                    AdoptedCommittedKeyFrame = true;
-                    LG_Log(LogSeverity::DBG,
-                            "[SLAMAsyncCorrection] Adopted optimized KF %llu for mapping generation %llu\n",
-                            GlobalKeyFrame.ID,
-                            GlobalKeyFrame.MappingGeneration);
-                    break;
+            const bool BundleSinceLastFrame = TrackingData.GlobalMap->BundleRevision != LastSeenBundleRevision;
+            const bool StateRevisionSinceLastFrame = TrackingData.GlobalMap->MapStateRevision != LastSeenStateRevision;
+
+            bool AdoptedCommittedKeyFrame = false;
+
+            if(const typeKeyFrame* Committed = MAP_FindKeyFrameByGeneration(
+                        *TrackingData.GlobalMap, PreviousFrame.MappingGeneration))
+            {
+                PreviousFrame = *Committed;
+
+                if(InertialReferenceMappingGeneration == Committed->MappingGeneration)
+                {
+                    InertialReferenceKeyFrame = *Committed;
+                    InertialReferenceKFID = Committed->ID;
                 }
+                if(PreviousFrame.PreviousKFID != PANTO_ID_NOT_SET &&
+                        TrackingData.GlobalMap->KeyFrames.contains(PreviousFrame.PreviousKFID))
+                {
+                    PreviousFrame.TrackingReferencePose =
+                        TrackingData.GlobalMap->KeyFrames[
+                        PreviousFrame.PreviousKFID].Camera.Pose;
+                    PreviousFrame.TrackingReferenceNavigationState =
+                        TrackingData.GlobalMap->KeyFrames[
+                        PreviousFrame.PreviousKFID].NavigationState;
+                    PreviousFrame.HasTrackingReferenceState = true;
+                }
+                PreviousTrajectoryCamera = PreviousFrame.Camera;
+                UpdatePreviousTrajectory = true;
+                AdoptedCommittedKeyFrame = true;
+                LG_Log(LogSeverity::DBG,
+                        "[SLAMAsyncCorrection] Adopted optimized KF %llu for mapping generation %llu\n",
+                        Committed->ID,
+                        Committed->MappingGeneration);
             }
 
             // Refresh the committed prefix, then propagate that revision
@@ -1193,25 +1190,22 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             bool InertialReferenceResolvedFromMap = false;
             std::size_t LastCommittedReferenceIndex = 0;
             bool PreviousReferenceIsCurrent = false;
+
             for(std::size_t ReferenceIndex = 0; ReferenceIndex < InertialReferenceChain.size(); ReferenceIndex++)
             {
                 typeKeyFrame& Reference = InertialReferenceChain[ReferenceIndex];
                 const typeKeyFrame* CommittedReference = nullptr;
+
                 if(Reference.MappingGeneration != PANTO_ID_NOT_SET)
                 {
-                    for(const typeKeyFrame& GlobalKeyFrame : TrackingData.GlobalMap->KeyFrames)
-                    {
-                        if(GlobalKeyFrame.MappingGeneration == Reference.MappingGeneration)
-                        {
-                            CommittedReference = &GlobalKeyFrame;
-                            break;
-                        }
-                    }
+                    CommittedReference = MAP_FindKeyFrameByGeneration(
+                            *TrackingData.GlobalMap,
+                            Reference.MappingGeneration);
                 }
-                else if(TrackingData.GlobalMap->KeyFrames.contains(
-                            Reference.ID))
+                else if(TrackingData.GlobalMap->KeyFrames.contains(Reference.ID))
                 {
-                    CommittedReference = &TrackingData.GlobalMap->KeyFrames[Reference.ID];
+                    CommittedReference =
+                        &TrackingData.GlobalMap->KeyFrames[Reference.ID];
                 }
 
                 if(CommittedReference != nullptr)
@@ -1222,7 +1216,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                 }
                 else if(ReferenceIndex > 0 && PreviousReferenceIsCurrent)
                 {
-                    if(MapChangedSincePreviousFrame)
+                    if(BundleSinceLastFrame)
                     {
                         SLPriv_ReconstructFrameFromReferenceKF(
                                 Reference, InertialReferenceChain[ReferenceIndex - 1],
@@ -1252,9 +1246,9 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                 InertialReferenceKeyFrame.MappingGeneration;
 
             const bool PreviousFrameIsInertialReference =
-                std::abs(PreviousFrame.Camera.TimeStamp -
-                         InertialReferenceKeyFrame.Camera.TimeStamp) < 1e-9;
-            if(MapChangedSincePreviousFrame &&
+                std::abs(PreviousFrame.Camera.TimeStamp - InertialReferenceKeyFrame.Camera.TimeStamp) < 1e-9;
+
+            if(BundleSinceLastFrame &&
                     !AdoptedCommittedKeyFrame &&
                     InertialReferenceResolvedFromMap)
             {
@@ -1280,27 +1274,21 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                             static_cast<unsigned long long>(
                                 InertialReferenceKeyFrame.ID),
                             static_cast<unsigned long long>(
-                                TrackingData.GlobalMap->Revision));
+                                TrackingData.GlobalMap->BundleRevision));
 
                     PreviousTrajectoryCamera = PreviousFrame.Camera;
                     UpdatePreviousTrajectory = true;
                 }
             }
-            LastSeenMapRevision = TrackingData.GlobalMap->Revision;
+
 
             typeKeyFrame& PreviousPreviousFrame = TrackingData.PreviousFrameData.PreviousPreviousFrame;
-            if(PreviousPreviousFrame.MappingGeneration != PANTO_ID_NOT_SET)
+
+            if(const typeKeyFrame* Committed = MAP_FindKeyFrameByGeneration(
+                        *TrackingData.GlobalMap,
+                        PreviousPreviousFrame.MappingGeneration))
             {
-                for(const typeKeyFrame& GlobalKeyFrame :
-                        TrackingData.GlobalMap->KeyFrames)
-                {
-                    if(GlobalKeyFrame.MappingGeneration ==
-                            PreviousPreviousFrame.MappingGeneration)
-                    {
-                        PreviousPreviousFrame = GlobalKeyFrame;
-                        break;
-                    }
-                }
+                PreviousPreviousFrame = *Committed;
             }
             {
                 typeTrackingScopedTimer Timer(
@@ -1318,10 +1306,14 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                     MAP_GetLastFrameMapPoints(TrackingData.GlobalMap->MapPoints,
                             PreviousFrame);
             }
+
+            LastSeenBundleRevision = TrackingData.GlobalMap->BundleRevision;
+            LastSeenStateRevision = TrackingData.GlobalMap->MapStateRevision;
 #else
             // Local mapping may have culled or optimized points since the
             // previous frame was processed. Match against a fresh snapshot.
             std::lock_guard<std::mutex> Lock(TrackingData.GlobalMap->Mutex);
+            if(StateRevisionSinceLastFrame)
             {
                 typeTrackingScopedTimer Timer(
                         Statistics(typeTrackingTimingStage::
@@ -1329,6 +1321,9 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                 TrackingData.PreviousFrameData.PreviousFrameMapPoints =
                     MAP_GetLastFrameMapPoints(*TrackingData.GlobalMap, TrackingData.PreviousFrameData.PreviousFrame);
             }
+
+            LastSeenBundleRevision = TrackingData.GlobalMap->BundleRevision;
+            LastSeenStateRevision = TrackingData.GlobalMap->MapStateRevision;
 #endif // CONFIG_IMU
         }
 
@@ -2099,6 +2094,8 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
             {
                 LocalMap.RecentMapPointIndexes.erase(MapPointID);
             }
+
+            LocalMap.GlobalMap->MapStateRevision++;
         }
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Created %llu new map points\n", static_cast<u64>(NewPointIndexes.size()));

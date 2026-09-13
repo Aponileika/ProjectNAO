@@ -41,6 +41,7 @@ struct typeKeyFrame
     DBoW3::BowVector BowVector;
     DBoW3::FeatureVector FeatureVector;
     typeCamera Camera;
+
 #if defined(CONFIG_IMU)
     typeNavigationState NavigationState;
     typePreIntegrationData PreIntegrationData;
@@ -59,6 +60,7 @@ struct typeKeyFrame
     bool HasTrackingReferenceState = false;
     std::vector<typeIMUMeasurement> Measurements;
 #endif
+
     // Queue generation assigned when this tracking frame is submitted to
     // local mapping. It lets tracking recognize the optimized global copy
     // without blocking for the mapper.

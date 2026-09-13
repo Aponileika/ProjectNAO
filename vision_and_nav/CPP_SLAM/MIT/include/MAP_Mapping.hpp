@@ -19,7 +19,9 @@ typedef struct
     u64 Age;
     // Incremented while Mutex is held whenever local mapping publishes a new
     // keyframe state or commits optimized state.
-    u64 Revision;
+    u64 BundleRevision;
+    u64 MapStateRevision;
+    std::unordered_map<u64, u64> KeyFrameIDByMappingGeneration;
     std::mutex Mutex;
 }typeGlobalMap;
 
@@ -151,6 +153,7 @@ void MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNa
 // During multithreaded operation their caller must hold the global-map mutex
 // and, where supplied, the covisibility-graph mutex as one transaction.
 u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame);
+static const typeKeyFrame* MAP_FindKeyFrameByGeneration(const typeGlobalMap& GlobalMap, const u64 Generation);
 typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame);
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const u64 LatestKeyFrameID);
 bool MAP_CommitLocalMap(typeGlobalMap* GlobalMap,
