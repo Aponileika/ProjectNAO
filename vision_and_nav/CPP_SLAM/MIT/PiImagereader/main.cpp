@@ -1603,15 +1603,14 @@ static bool PublishDemoPointCloud(
 
 static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
         const cv::Mat& RightLuminance, const cv::Mat& LeftBGR,
-        typeDemoVisualizationRuntime& Visualization,
-        const bool SGBMDoublePass)
+        typeDemoVisualizationRuntime& Visualization, const bool SGBMDoublePass)
 {
-    static constexpr int BlockSize = 7;
-    static constexpr int MinDisparity = -128;
-    static constexpr int NumDisparities = 128;
-    static constexpr int PointSampleStride = 3;
-    static constexpr float MinimumDepthMetres = 0.15F;
-    static constexpr float MaximumDepthMetres = 15.0F;
+    static constexpr int BlockSize = 5;
+    static constexpr int MinDisparity = 0;
+    static constexpr int NumDisparities = 160;
+    static constexpr int PointSampleStride = 1;
+    static constexpr float MinimumDepthMetres = 0.3F;
+    static constexpr float MaximumDepthMetres = 5.0F;
 
     static const cv::Matx33d KLeft(
         583.656905612597, 0.0, 318.246701709208,
@@ -1639,15 +1638,18 @@ static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
         614.558600234117, 0.0, 346.102619171143, 0.0,
         0.0, 614.558600234117, 206.618324279785, 0.0,
         0.0, 0.0, 1.0, 0.0);
+    // The working camera order is swapped to give BDIS/SGBM positive
+    // disparities: physical right is the working left, and physical left is
+    // the working right.
     static const cv::Matx34d PRight(
-        614.558600234117, 0.0, 346.102619171143, 42.563475269922,
+        614.558600234117, 0.0, 346.102619171143, -42.563475269922,
         0.0, 614.558600234117, 206.618324279785, 0.0,
         0.0, 0.0, 1.0, 0.0);
     static const cv::Matx44d Q(
         1.0, 0.0, 0.0, -346.102619171143,
         0.0, 1.0, 0.0, -206.618324279785,
         0.0, 0.0, 0.0, 614.558600234117,
-        0.0, 0.0, -14.438637736623, 0.0);
+        0.0, 0.0, 14.438637736623, 0.0);
 
     struct typeDemoPipeline
     {
@@ -1664,28 +1666,31 @@ static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
             : DoublePass(UseDoublePass)
         {
             const cv::Size ImageSize(FRAME_WIDTH, FRAME_HEIGHT);
-            cv::initUndistortRectifyMap(KLeft, DLeft,
-                RLeftRectification, PLeft, ImageSize, CV_16SC2,
-                LeftMap1, LeftMap2);
             cv::initUndistortRectifyMap(KRight, DRight,
-                RRightRectification, PRight, ImageSize, CV_16SC2,
+                RRightRectification, PLeft, ImageSize, CV_32FC1,
+                LeftMap1, LeftMap2);
+            cv::initUndistortRectifyMap(KLeft, DLeft,
+                RLeftRectification, PRight, ImageSize, CV_32FC1,
                 RightMap1, RightMap2);
 
             Stereo = cv::StereoSGBM::create(
                 MinDisparity, NumDisparities, BlockSize);
+
             Stereo->setP1(8 * BlockSize * BlockSize);
             Stereo->setP2(32 * BlockSize * BlockSize);
-            Stereo->setUniquenessRatio(5);
+
+            Stereo->setPreFilterCap(31);
+            Stereo->setUniquenessRatio(10);
+            Stereo->setDisp12MaxDiff(1);
             Stereo->setSpeckleWindowSize(50);
             Stereo->setSpeckleRange(2);
-            Stereo->setDisp12MaxDiff(1);
             Stereo->setMode(cv::StereoSGBM::MODE_SGBM_3WAY);
 
-            WLS = cv::ximgproc::createDisparityWLSFilterGeneric(DoublePass);
             if(DoublePass)
+            {
                 RightMatcher = cv::ximgproc::createRightMatcher(Stereo);
-            WLS->setLambda(500.0);
-            WLS->setSigmaColor(0.0001);
+                WLS = cv::ximgproc::createDisparityWLSFilter(Stereo);
+            }
         }
     };
     static typeDemoPipeline Pipeline(SGBMDoublePass);
@@ -1696,14 +1701,14 @@ static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
     cv::Mat LeftRectified;
     cv::Mat RightRectified;
     cv::Mat LeftColorRectified;
-    cv::remap(LeftLuminance, LeftRectified,
+    cv::remap(RightLuminance, LeftRectified,
         Pipeline.LeftMap1, Pipeline.LeftMap2, cv::INTER_LINEAR,
         cv::BORDER_CONSTANT);
-    cv::remap(RightLuminance, RightRectified,
+    cv::remap(LeftLuminance, RightRectified,
         Pipeline.RightMap1, Pipeline.RightMap2, cv::INTER_LINEAR,
         cv::BORDER_CONSTANT);
     cv::remap(LeftBGR, LeftColorRectified,
-        Pipeline.LeftMap1, Pipeline.LeftMap2, cv::INTER_LINEAR,
+        Pipeline.RightMap1, Pipeline.RightMap2, cv::INTER_LINEAR,
         cv::BORDER_CONSTANT);
     cv::Mat Disparity16;
     Pipeline.Stereo->compute(LeftRectified, RightRectified, Disparity16);
@@ -1720,19 +1725,17 @@ static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
     }
     else
     {
-        const int InvalidDisparity = (MinDisparity - 1) * 16;
-        cv::Mat WLSInput = Disparity16.clone();
-        WLSInput.setTo(0, Disparity16 <= InvalidDisparity);
-        Pipeline.WLS->filter(
-            WLSInput, LeftRectified, FilteredDisparity16);
+        // The offline comparison uses the raw SGBM result without WLS.
+        FilteredDisparity16 = Disparity16;
     }
     const cv::Mat ValidDisparityMask =
-        (FilteredDisparity16 >= MinDisparity * 16) &
-        (FilteredDisparity16 < 0);
+        (FilteredDisparity16 > MinDisparity * 16) &
+        (FilteredDisparity16 <
+            (MinDisparity + NumDisparities) * 16);
 
     cv::Mat DisparityDisplay;
     FilteredDisparity16.convertTo(DisparityDisplay, CV_8U,
-        -255.0 / (NumDisparities * 16.0), 0.0);
+        255.0 / (NumDisparities * 16.0), 0.0);
     DisparityDisplay.setTo(0, ~ValidDisparityMask);
 
     cv::Mat ColorDisparity;
@@ -1769,13 +1772,25 @@ static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
                 continue;
             }
 
+            // Points are expressed in the physical-right (working-left)
+            // view. The only RGB stream is physical left (working right),
+            // whose corresponding rectified pixel is x_right = x_left - d.
+            const float DisparityPixels =
+                static_cast<float>(FilteredDisparity16.at<int16_t>(Y, X)) /
+                16.0F;
+            const int ColorX = static_cast<int>(
+                std::lround(static_cast<float>(X) - DisparityPixels));
+            if(ColorX < 0 || ColorX >= LeftColorRectified.cols)
+                continue;
+
+            const cv::Vec3b BGR =
+                LeftColorRectified.at<cv::Vec3b>(Y, ColorX);
+
             // OpenCV has Y down and Z forward. Viser has Y up and the
             // initial camera below looks along negative Z.
             Positions.push_back(Point[0]);
             Positions.push_back(-Point[1]);
             Positions.push_back(-Point[2]);
-
-            const cv::Vec3b BGR = LeftColorRectified.at<cv::Vec3b>(Y, X);
             Colors.push_back(BGR[2]);
             Colors.push_back(BGR[1]);
             Colors.push_back(BGR[0]);

@@ -251,10 +251,20 @@ static Eigen::Vector3d SLPriv_GetGroundTruthCameraPosition(
 #endif
 
 #if !defined(DEBUG)
-static void SLPriv_UpdateVisualization(const typeGlobalMap& GlobalMap, typeTimingStatistics& VisualizationUpdateTiming)
+static void SLPriv_UpdateVisualization(typeGlobalMap* GlobalMap, typeTimingStatistics& VisualizationUpdateTiming)
 {
+    typeGlobalMap MapSnapshot{};
+    std::vector<Eigen::Vector3d> TrackingTrajectorySnapshot;
+    {
+        std::scoped_lock Lock(
+                GlobalMap->Mutex, PantoSLAM.TrackingTrajectoryMutex);
+        MapSnapshot.KeyFrames = GlobalMap->KeyFrames;
+        MapSnapshot.MapPoints = GlobalMap->MapPoints;
+        TrackingTrajectorySnapshot = PantoSLAM.TrackingTrajectory;
+    }
+
     const PantoClock::time_point StartTime = PantoClock::now();
-    VIZ_WriteColmap(GlobalMap, PantoSLAM.TrackingTrajectory);
+    VIZ_WriteColmap(MapSnapshot, TrackingTrajectorySnapshot);
     const fp64 UpdateTime = std::chrono::duration<fp64>(
             PantoClock::now() - StartTime).count();
 
@@ -891,7 +901,7 @@ void SL_PantoSLAM(i32 num_loops)
 
 #if !defined(DEBUG)
     SLPriv_UpdateVisualization(
-            *PantoSLAM.GlobalMap,
+            PantoSLAM.GlobalMap,
             VisualizationUpdateTiming);
 #endif
 
@@ -981,7 +991,7 @@ void SL_PantoSLAM(i32 num_loops)
 
 #if !defined(DEBUG)
         SLPriv_UpdateVisualization(
-                *PantoSLAM.GlobalMap,
+                PantoSLAM.GlobalMap,
                 VisualizationUpdateTiming);
 #endif
     }
@@ -1001,7 +1011,7 @@ void SL_PantoSLAM(i32 num_loops)
         // Publish once after both workers have stopped so the viewer receives
         // the final committed map even if no final keyframe caused an update.
         SLPriv_UpdateVisualization(
-                *PantoSLAM.GlobalMap,
+                PantoSLAM.GlobalMap,
                 VisualizationUpdateTiming);
     }
 
@@ -1612,7 +1622,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                     Statistics(typeTrackingTimingStage::IsKeyFrame));
             IsKeyFrame = KEY_IsKeyFrame(KeyFrameInfo);
         }
-        if(((NumProcessedLoops % 5) == 0))
+        if(((NumProcessedLoops % 10) == 0))
         {
 #if defined(CONFIG_IMU)
             // Let the local mapping thread get the KF <-> KF preintegration data.
@@ -1723,10 +1733,8 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                         AppendTrackingTrajectory));
             std::lock_guard<std::mutex> Lock(
                     PantoSLAM.TrackingTrajectoryMutex);
-            PantoSLAM.TrackingTrajectory.push_back(
-                    CM_GetCameraCenter(TrackingData.NewFrame.Camera));
-            PantoSLAM.TrackingTrajectoryTimeStamps.push_back(
-                    TrackingData.NewFrame.Camera.TimeStamp);
+            PantoSLAM.TrackingTrajectory.push_back(CM_GetCameraCenter(TrackingData.NewFrame.Camera));
+            PantoSLAM.TrackingTrajectoryTimeStamps.push_back(TrackingData.NewFrame.Camera.TimeStamp);
         }
 #if !defined(DEBUG) && !PANTO_DATASET_REALTIME_MODE
         typeTimingStatistics Stats;
@@ -1739,8 +1747,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 #endif
     }
     {
-        typeTrackingScopedTimer Timer(
-                Statistics(typeTrackingTimingStage::ShutdownMappingQueue));
+        typeTrackingScopedTimer Timer(Statistics(typeTrackingTimingStage::ShutdownMappingQueue));
         TrackingData.KeyFrameQueue->ShutDown();
     }
 
@@ -2186,7 +2193,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                     Statistics(typeLocalMappingTimingStage::
                         UpdateVisualization));
             SLPriv_UpdateVisualization(
-                    *LocalMap.GlobalMap,
+                    LocalMap.GlobalMap,
                     *LocalMap.VisualizationUpdateTiming);
         }
 #endif

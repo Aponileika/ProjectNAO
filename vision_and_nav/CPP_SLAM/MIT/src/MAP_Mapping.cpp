@@ -65,15 +65,12 @@ u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame)
 {
     const u64 ID = GlobalMap->KeyFrames.push_back(KeyFrame);
     GlobalMap->KeyFrames[ID].ID = ID;
-#if defined(DEBUG)
     if(KeyFrame.MappingGeneration != PANTO_ID_NOT_SET)
     {
-        const auto [It, Inserted] =
-            GlobalMap->KeyFrameIDByMappingGeneration.emplace(KeyFrame.MappingGeneration, ID);
+        const auto [It, Inserted] = GlobalMap->KeyFrameIDByMappingGeneration.emplace(KeyFrame.MappingGeneration, ID);
 
         assert(Inserted); // Each queued generation identifies one keyframe.
     }
-#endif
     GlobalMap->Age++;
     GlobalMap->MapStateRevision++;
     return ID;
