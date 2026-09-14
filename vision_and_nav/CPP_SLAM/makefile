@@ -47,6 +47,10 @@ ifeq ($(CONFIG_IMU),1)
 	CXXFLAGS += -DCONFIG_IMU
 endif
 
+ifeq ($(CONFIG_STEREO),1)
+	CXXFLAGS += -DCONFIG_STEREO
+endif
+
 LDFLAGS := \
   -L$(CERES)/lib \
   -L$(GLOG)/lib \

@@ -166,6 +166,14 @@ using PantoClock = std::chrono::steady_clock;
     -0.0257744366974,  0.00375618835797,  0.999660727178,    0.00981073058949, \
      0.0,               0.0,               0.0,                1.0
 
+// Placeholder cam1 pose. Replace this, and the cam1 pixel calibration below,
+// with the values from cam1/sensor.yaml.
+#define PANTO_T_BS_EUROC_CAM1_PLACEHOLDER \
+     0.0148655429818, -0.999880929698,    0.00414029679422, -0.1316401454975, \
+     0.999557249008,   0.0149672133247,   0.025715529948,   -0.064676986768, \
+    -0.0257744366974,  0.00375618835797,  0.999660727178,    0.00981073058949, \
+     0.0,               0.0,               0.0,                1.0
+
 // fx, fy, s, cx, cy, k1, k2, p1, p2, k3, width, height, rate_hz, T_BS.
 // A zero rate means that the sampling rate has not been configured.
 #define DATASET_INTRINSICS \
@@ -176,6 +184,10 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, 535.4, 539.2, 0.0, 320.1, 247.6, 0.0, 0.0, 0.0, 0.0, 0.0, 640, 480, 30.0, PANTO_T_BS_IDENTITY) \
     X(EUROC_MAV_VICON_ROOM1_EASY, 458.654, 457.296, 0.0, 367.215, 248.375, -0.28340811, 0.07395907, 0.00019359, 1.76187114e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM0) \
     X(WEBCAM_JE, 974.7187409387847, 976.5223334221673, 0.0, 666.3249058750432, 337.4737864029501, 0.06475901025911835, -0.1903655376657792, -0.003666863513699757, 0.002119531347424837, 0.1113497353944944, 640, 480, 0.0, PANTO_T_BS_IDENTITY)
+
+// cam1 pixel calibration and T_BS. These EuRoC values are placeholders.
+#define DATASET_STEREO_INTRINSICS \
+    X(EUROC_MAV_VICON_ROOM1_EASY, 458.654, 457.296, 0.0, 367.215, 248.375, -0.28340811, 0.07395907, 0.00019359, 1.76187114e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM1_PLACEHOLDER)
 
 // rate_hz, T_BS, gyroscope noise density, gyroscope random walk,
 // accelerometer noise density, accelerometer random walk

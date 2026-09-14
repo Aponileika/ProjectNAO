@@ -1,6 +1,0 @@
--   (DONE) Implement multithreading, so two threads, tracking and local mapping, local mapping:
--   (DONE, needs improvement, not used) Add back keyframe culling for VI ie preintegration recalculation between kf needs to be added.
--   (DONE) Add map point fusing, WIP see mapping.cpp:
--   Cool demo with stereo camera, ideas:
-        (YES) Disparity map -> rgb 3d, 3d from images is cool. Just make a point cloud every frame that fully refreshes, if you have time
-        make stationary objects not refresh (probably not).

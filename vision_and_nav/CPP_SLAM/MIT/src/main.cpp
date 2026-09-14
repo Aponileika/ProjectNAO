@@ -30,6 +30,7 @@
 #include "../include/IMU_PreIntegration.hpp"
 #include "../include/GT_ReadGroundTruth.hpp"
 #endif 
+#include "../include/DENSE_DenseMapping.hpp"
 
 #include "LG_Logging.cpp"
 #include "CArenaAlloc.c"
@@ -53,6 +54,7 @@
 #include "IMU_PreIntegration.cpp"
 #endif
 #include "GT_ReadGroundTruth.cpp"
+#include "DENSE_DenseMapping.cpp"
 
 int main(int argc, char* argv[])
 {

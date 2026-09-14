@@ -26,6 +26,9 @@ namespace
     struct typeDecodedDataSetFrame
     {
         cv::Mat Gray;
+#if defined(CONFIG_STEREO)
+        cv::Mat RightGray;
+#endif
         DescRet Descriptors;
         fp64 TimeStamp = PANTO_TIMESTAMP_NOT_SET;
         std::string SourcePath;
@@ -35,8 +38,15 @@ namespace
     {
         std::string ImagePath;
         std::ifstream TimeStampFile;
+#if defined(CONFIG_STEREO)
+        std::string RightImagePath;
+        std::ifstream RightTimeStampFile;
+#endif
         u64 OutputFrameIndex;
         std::string BufferedFramePath;
+#if defined(CONFIG_STEREO)
+        std::string BufferedRightFramePath;
+#endif
         fp64 BufferedTimeStamp;
         bool HasBufferedFrame;
         std::deque<typeDecodedDataSetFrame> PreloadedFrames;
@@ -57,10 +67,18 @@ namespace
 typePantoFrame __FR_GetFrameDataSet();
 cv::Mat __FR_GetFrameWebCam(void);
 static bool FRPriv_BufferNextDataSetFrame(void);
-static bool FRPriv_ReadNextDataSetEntry(std::string& FramePath,
+static bool FRPriv_ReadNextDataSetEntry(
+        std::string& FramePath,
+#if defined(CONFIG_STEREO)
+        std::string& RightFramePath,
+#endif
         fp64& TimeStamp);
 static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(
-        const std::string& FramePath, const fp64 TimeStamp);
+        const std::string& FramePath,
+#if defined(CONFIG_STEREO)
+        const std::string& RightFramePath,
+#endif
+        const fp64 TimeStamp);
 static typePantoFrame FRPriv_FinalizeDataSetFrame( typeDecodedDataSetFrame Frame);
 static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken);
 
@@ -79,10 +97,18 @@ int FR_InitFrameGetter()
             std::string(PANTO_DATASET_BASE_PATH) +
             std::string(panto_dataset_path);
 
+#if defined(CONFIG_STEREO)
+        reader.ImagePath = DatasetPath + "/cam0/data";
+        reader.RightImagePath = DatasetPath + "/cam1/data";
+#else
         reader.ImagePath = DatasetPath + "/" +
             std::string(panto_sequence_path);
+#endif
         reader.OutputFrameIndex = 0;
         reader.BufferedFramePath.clear();
+#if defined(CONFIG_STEREO)
+        reader.BufferedRightFramePath.clear();
+#endif
         reader.BufferedTimeStamp = PANTO_TIMESTAMP_NOT_SET;
         reader.HasBufferedFrame = false;
         {
@@ -93,6 +119,10 @@ int FR_InitFrameGetter()
 
         const std::string TimeStampPath =
             DatasetPath + "/cam0/data.csv";
+#if defined(CONFIG_STEREO)
+        const std::string RightTimeStampPath =
+            DatasetPath + "/cam1/data.csv";
+#endif
 
         if(reader.TimeStampFile.is_open())
         {
@@ -109,10 +139,36 @@ int FR_InitFrameGetter()
             return 1;
         }
 
+#if defined(CONFIG_STEREO)
+        if(reader.RightTimeStampFile.is_open())
+        {
+            reader.RightTimeStampFile.close();
+        }
+
+        reader.RightTimeStampFile.open(RightTimeStampPath);
+
+        if(!reader.RightTimeStampFile.is_open())
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "[FR_InitFrameGetter] Failed to open right timestamp file: %s\n",
+                    RightTimeStampPath.c_str());
+            reader.TimeStampFile.close();
+            return 1;
+        }
+
+        LG_Log(LogSeverity::DBG,
+                "[FR_InitFrameGetter] Stereo dataset left: %s (%s), right: %s (%s)\n",
+                reader.ImagePath.c_str(),
+                TimeStampPath.c_str(),
+                reader.RightImagePath.c_str(),
+                RightTimeStampPath.c_str());
+#else
+
         LG_Log(LogSeverity::DBG,
                 "[FR_InitFrameGetter] Dataset images: %s, timestamps: %s\n",
                 reader.ImagePath.c_str(),
                 TimeStampPath.c_str());
+#endif
 
         if(PANTO_DATASET_REALTIME_MODE)
         {
@@ -122,6 +178,11 @@ int FR_InitFrameGetter()
     }
     else
     {
+#if defined(CONFIG_STEREO)
+        LG_Log(LogSeverity::ERROR,
+                "[FR_InitFrameGetter] CONFIG_STEREO requires a EuRoC-style dataset\n");
+        return 1;
+#else
         if(!cap.cap.open(0))
         {
             std::cerr << "Failed to open camera\n";
@@ -129,6 +190,7 @@ int FR_InitFrameGetter()
         }
         cap.isInit = true;
         cap.FrameIndex = 0;
+#endif
 
     }
     return 0;
@@ -144,11 +206,24 @@ typePantoFrame FR_GetFrame(void)
     }
     else
     {
+#if defined(CONFIG_STEREO)
+        LG_Log(LogSeverity::ERROR,
+                "[FR_GetFrame] CONFIG_STEREO does not support webcam input\n");
+        return
+        {
+            .Frame = cv::Mat{},
+            .RightFrame = cv::Mat{},
+            .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
+            .Path = "",
+            .Descriptors{}
+        };
+#else
         cv::Mat Frame = __FR_GetFrameWebCam();
         const PantoClock::time_point CurrentTime = PantoClock::now();
         const fp64 TimeStamp = std::chrono::duration(CurrentTime - StartTime).count();
         PantoFrame.Frame = Frame; 
         PantoFrame.TimeStamp = TimeStamp;
+#endif
     }
     return PantoFrame;
 }
@@ -226,6 +301,9 @@ fp64 FR_SkipNextFrame(void)
             SkippedTimeStamp);
 
     reader.BufferedFramePath.clear();
+#if defined(CONFIG_STEREO)
+    reader.BufferedRightFramePath.clear();
+#endif
     reader.BufferedTimeStamp = PANTO_TIMESTAMP_NOT_SET;
     reader.HasBufferedFrame = false;
 
@@ -276,6 +354,9 @@ typePantoFrame __FR_GetFrameDataSet()
             return
             {
                 .Frame = cv::Mat{},
+#if defined(CONFIG_STEREO)
+                .RightFrame = cv::Mat{},
+#endif
                 .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
                 .Path = ""
             };
@@ -295,19 +376,33 @@ typePantoFrame __FR_GetFrameDataSet()
         return
         {
             .Frame = cv::Mat{},
+#if defined(CONFIG_STEREO)
+            .RightFrame = cv::Mat{},
+#endif
             .TimeStamp = -1.0,
             .Path = ""
         };
     }
 
     const std::string FramePath = reader.BufferedFramePath;
+#if defined(CONFIG_STEREO)
+    const std::string RightFramePath = reader.BufferedRightFramePath;
+#endif
     const fp64 TimeStamp = reader.BufferedTimeStamp;
 
     reader.BufferedFramePath.clear();
+#if defined(CONFIG_STEREO)
+    reader.BufferedRightFramePath.clear();
+#endif
     reader.BufferedTimeStamp = PANTO_TIMESTAMP_NOT_SET;
     reader.HasBufferedFrame = false;
 
-    return FRPriv_FinalizeDataSetFrame(FRPriv_DecodeDataSetFrame(FramePath, TimeStamp));
+    return FRPriv_FinalizeDataSetFrame(FRPriv_DecodeDataSetFrame(
+            FramePath,
+#if defined(CONFIG_STEREO)
+            RightFramePath,
+#endif
+            TimeStamp));
 }
 
 static bool FRPriv_BufferNextDataSetFrame(void)
@@ -326,16 +421,22 @@ static bool FRPriv_BufferNextDataSetFrame(void)
 
     reader.HasBufferedFrame = FRPriv_ReadNextDataSetEntry(
             reader.BufferedFramePath,
+#if defined(CONFIG_STEREO)
+            reader.BufferedRightFramePath,
+#endif
             reader.BufferedTimeStamp);
     return reader.HasBufferedFrame;
 }
 
-static bool FRPriv_ReadNextDataSetEntry(std::string& FramePath,
-        fp64& TimeStamp)
+static bool FRPriv_ReadDataSetEntry(
+        std::ifstream& TimeStampFile,
+        const std::string& ImagePath,
+        std::string& FramePath,
+        u64& TimeStampNanoseconds)
 {
     std::string Line;
 
-    while(std::getline(reader.TimeStampFile, Line))
+    while(std::getline(TimeStampFile, Line))
     {
         if(Line.empty() || Line[0] == '#')
         {
@@ -357,32 +458,99 @@ static bool FRPriv_ReadNextDataSetEntry(std::string& FramePath,
             continue;
         }
 
-        TimeStamp = static_cast<fp64>(
-                std::stoull(TimeStampToken)) * 1e-9;
-        FramePath = reader.ImagePath + "/" + FileName;
+        TimeStampNanoseconds = std::stoull(TimeStampToken);
+        FramePath = ImagePath + "/" + FileName;
         return true;
     }
 
     return false;
 }
 
-static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(const std::string& FramePath, const fp64 TimeStamp)
+static bool FRPriv_ReadNextDataSetEntry(
+        std::string& FramePath,
+#if defined(CONFIG_STEREO)
+        std::string& RightFramePath,
+#endif
+        fp64& TimeStamp)
+{
+    u64 TimeStampNanoseconds{};
+    const bool HasLeftFrame = FRPriv_ReadDataSetEntry(
+            reader.TimeStampFile,
+            reader.ImagePath,
+            FramePath,
+            TimeStampNanoseconds);
+
+#if defined(CONFIG_STEREO)
+    u64 RightTimeStampNanoseconds{};
+    const bool HasRightFrame = FRPriv_ReadDataSetEntry(
+            reader.RightTimeStampFile,
+            reader.RightImagePath,
+            RightFramePath,
+            RightTimeStampNanoseconds);
+
+    if(HasLeftFrame != HasRightFrame)
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[FRPriv_ReadNextDataSetEntry] cam0 and cam1 have different frame counts\n");
+        return false;
+    }
+
+    if(!HasLeftFrame)
+    {
+        return false;
+    }
+
+    if(TimeStampNanoseconds != RightTimeStampNanoseconds)
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[FRPriv_ReadNextDataSetEntry] Stereo timestamp mismatch: cam0 = %llu, cam1 = %llu\n",
+                static_cast<unsigned long long>(TimeStampNanoseconds),
+                static_cast<unsigned long long>(RightTimeStampNanoseconds));
+        return false;
+    }
+#else
+    if(!HasLeftFrame)
+    {
+        return false;
+    }
+#endif
+
+    TimeStamp = static_cast<fp64>(TimeStampNanoseconds) * 1e-9;
+    return true;
+}
+
+static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(
+        const std::string& FramePath,
+#if defined(CONFIG_STEREO)
+        const std::string& RightFramePath,
+#endif
+        const fp64 TimeStamp)
 {
     typeDecodedDataSetFrame Result{};
     Result.TimeStamp = TimeStamp;
     Result.SourcePath = FramePath;
     Result.Gray = cv::imread(FramePath, cv::IMREAD_GRAYSCALE);
+#if defined(CONFIG_STEREO)
+    Result.RightGray = cv::imread(RightFramePath, cv::IMREAD_GRAYSCALE);
+#endif
     return Result;
 }
 
 static typePantoFrame FRPriv_FinalizeDataSetFrame(
         typeDecodedDataSetFrame Frame)
 {
-    if(Frame.Gray.empty())
+    if(Frame.Gray.empty()
+#if defined(CONFIG_STEREO)
+            || Frame.RightGray.empty()
+#endif
+      )
     {
         return
         {
             .Frame = cv::Mat{},
+#if defined(CONFIG_STEREO)
+            .RightFrame = cv::Mat{},
+#endif
             .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
             .Path = "",
             .Descriptors{}
@@ -416,6 +584,9 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
         return
         {
             .Frame = cv::Mat{},
+#if defined(CONFIG_STEREO)
+            .RightFrame = cv::Mat{},
+#endif
             .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
             .Path = "",
             .Descriptors{}
@@ -425,6 +596,9 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
     return
     {
         .Frame = std::move(Frame.Gray),
+#if defined(CONFIG_STEREO)
+        .RightFrame = std::move(Frame.RightGray),
+#endif
         .TimeStamp = Frame.TimeStamp,
         .Path = WritePath.string(),
         .Descriptors = std::move(Frame.Descriptors)
@@ -436,8 +610,16 @@ static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
     while(!StopToken.stop_requested())
     {
         std::string FramePath;
+#if defined(CONFIG_STEREO)
+        std::string RightFramePath;
+#endif
         fp64 TimeStamp = PANTO_TIMESTAMP_NOT_SET;
-        if(!FRPriv_ReadNextDataSetEntry(FramePath, TimeStamp))
+        if(!FRPriv_ReadNextDataSetEntry(
+                    FramePath,
+#if defined(CONFIG_STEREO)
+                    RightFramePath,
+#endif
+                    TimeStamp))
         {
             std::lock_guard<std::mutex> Lock(reader.PreloadMutex);
             reader.PreloadEndOfStream = true;
@@ -445,9 +627,21 @@ static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
             return;
         }
 
-        typeDecodedDataSetFrame Frame = FRPriv_DecodeDataSetFrame(FramePath, TimeStamp);
+        typeDecodedDataSetFrame Frame = FRPriv_DecodeDataSetFrame(
+                FramePath,
+#if defined(CONFIG_STEREO)
+                RightFramePath,
+#endif
+                TimeStamp);
 
-        Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
+        if(!Frame.Gray.empty()
+#if defined(CONFIG_STEREO)
+                && !Frame.RightGray.empty()
+#endif
+          )
+        {
+            Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
+        }
 
         std::unique_lock<std::mutex> Lock(reader.PreloadMutex);
         if(!reader.PreloadNotFull.wait(

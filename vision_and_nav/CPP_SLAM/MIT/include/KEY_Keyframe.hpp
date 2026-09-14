@@ -66,6 +66,8 @@ struct typeKeyFrame
     // without blocking for the mapper.
     u64 MappingGeneration = PANTO_ID_NOT_SET;
     u64 ID;
+
+    typePantoFrame Frame;
     std::string ImagePath;
 };
 

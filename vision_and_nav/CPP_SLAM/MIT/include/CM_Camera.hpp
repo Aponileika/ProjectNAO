@@ -24,6 +24,20 @@ typedef struct {
   Eigen::Matrix4d T_BS;
 } typeCameraIntrinsics;
 
+#if defined(CONFIG_STEREO)
+struct typeStereoCameraCalibration
+{
+  // Intrinsics of the common rectified image plane returned by stereoRectify.
+  Eigen::Matrix3d K = Eigen::Matrix3d::Zero();
+  Eigen::Matrix4d T_C1_C0 = Eigen::Matrix4d::Identity();
+  fp64 Baseline = 0.0;
+  cv::Mat Map0X;
+  cv::Mat Map0Y;
+  cv::Mat Map1X;
+  cv::Mat Map1Y;
+};
+#endif
+
 class typePose {
 public:
   Eigen::Matrix3d R;
@@ -88,6 +102,10 @@ typedef struct {
 
 void CM_SetIntrinsics();
 typeCameraIntrinsics *CM_GetIntrinsics();
+#if defined(CONFIG_STEREO)
+typeCameraIntrinsics *CM_GetRightIntrinsics();
+const typeStereoCameraCalibration *CM_GetStereoCalibration();
+#endif
 typeCamera CM_CreateCam(Eigen::Matrix3d R, Eigen::Vector3d t, fp64 TimeStamp);
 void CM_SetParametrization(typeCamera *cam);
 void CM_SetRtfromParam(typeCamera *cam);

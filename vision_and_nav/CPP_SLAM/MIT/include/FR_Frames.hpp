@@ -11,9 +11,15 @@
 
 typedef struct
 {
+    // In stereo mode Frame is the left image so existing consumers keep using
+    // the primary camera unchanged.
     cv::Mat Frame;
+#if defined(CONFIG_STEREO)
+    cv::Mat RightFrame;
+#endif
     fp64 TimeStamp;
     std::string Path;
+    // For now only left frame
     DescRet Descriptors;
 }typePantoFrame;
 

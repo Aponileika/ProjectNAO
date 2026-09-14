@@ -95,6 +95,8 @@ typeKeyFrame KEY_CreateKeyFrame(const typeNavigationState& NavState, const typeP
 {
     typeKeyFrame KeyFrame{};
 
+    KeyFrame.Frame = Frame;
+
     const DBoW3::Vocabulary* Vocab = DBOW3_GetVocabulary();
     const typePose BodyToCamera = CM_GetBodyToSensor(CM_GetIntrinsics());
     DescRet Desc = EP_GetDescriptors(Frame.Frame);
@@ -321,8 +323,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 typeKeyFrame KEY_GetKeyFrame(typeCamera& PredictedPose,
         std::vector<typePantoMapPoint>& LastFrameMapPoints)
 #else
-typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
-        std::vector<typePantoMapPoint>& LastFrameMapPoints)
+typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState, std::vector<typePantoMapPoint>& LastFrameMapPoints)
 #endif
 {
     const PantoClock::time_point GetKeyFrameStartTime = PantoClock::now();
@@ -353,6 +354,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
 
     const PantoClock::time_point GetFrameStartTime = PantoClock::now();
     typePantoFrame Frame = FR_GetFrame();
+
     const fp64 GetFrameTime = std::chrono::duration<fp64>(PantoClock::now() - GetFrameStartTime).count();
 
     KEYPriv_AddTimingSample(GetFrameTiming, GetFrameTime);
@@ -372,6 +374,8 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState,
             .NavigationState = PredictedNavigationState,
 #endif
             .ID = PANTO_ID_NOT_SET,
+
+            .Frame = Frame,
             .ImagePath = ""
         };
         const fp64 AssembleKeyFrameTime =

@@ -1,0 +1,5 @@
+This is the overarching plan for dense mapping.
+- 16 sep, read stereo camera feed from dataset, with calibration parameters.
+- 18 sep, produce dense local camera per famera map with stereo.
+- 22 sep, voxel representation of map.
+- 24 sep, rolling dense map.
