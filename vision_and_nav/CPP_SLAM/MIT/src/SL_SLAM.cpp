@@ -1931,8 +1931,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
     {
         bool HasKeyFrame = false;
         {
-            typeLocalMappingScopedTimer Timer(
-                    Statistics(typeLocalMappingTimingStage::QueueWait));
+            typeLocalMappingScopedTimer Timer( Statistics(typeLocalMappingTimingStage::QueueWait));
             HasKeyFrame = LocalMap.KeyFrameQueue->deque(NewKeyFrame);
         }
         if(!HasKeyFrame)

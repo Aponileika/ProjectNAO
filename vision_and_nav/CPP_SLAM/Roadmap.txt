@@ -1,8 +1,0 @@
-IMU -> 
-relocalization (tracking loss  + loop closure) -> 
-essential graph optimization -> 
-multithreading -> 
-add global BA -> 
-stereo ->
-Explore SVO type patch alignment
-

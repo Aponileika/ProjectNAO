@@ -41,6 +41,23 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 #define OPENCV_AKAZETHRESHOLD 0.002
 #define OPENCV_AKAZE_NOCTAVES 2
 #define OPENCV_AKAZE_NOCTAVELAYERS 2
+
+#define OPENCV_SGBM_MODE cv::StereoSGBM::MODE_SGBM_3WAY
+#define OPENCV_SGBM_MIN_DISPARITY 0
+#define OPENCV_SGBM_NUM_DISPARITIES 160
+#define OPENCV_SGBM_BLOCK_SIZE 3
+#define OPENCV_SGBM_P1 8 * OPENCV_SGBM_BLOCK_SIZE * OPENCV_SGBM_BLOCK_SIZE
+#define OPENCV_SGBM_P2 32 * OPENCV_SGBM_BLOCK_SIZE * OPENCV_SGBM_BLOCK_SIZE 
+#define OPENCV_SGBM_PRE_FILTER_CAP 31
+#define OPENCV_SGBM_UNIQUENESS_RATIO 10
+#define OPENCV_SGBM_DISP12_MAX_DIFF 1
+#define OPENCV_SGBM_SPECKLE_WINDOW_SIZE 50
+#define OPENCV_SGBM_SPECKLE_RANGE 2
+
+// TODO these are baseline specific parameters
+#define DENSE_MAP_MIN_DEPTH 0.3 // metres
+#define DENSE_MAP_MAX_DEPTH 5.0 // metres
+
 #define PANTO_DESCRIPTOR_ANMS false
 //Initializes with Ground truth frame data, to avoid having to code monocular IMU initialization
 #if defined(CONFIG_IMU)

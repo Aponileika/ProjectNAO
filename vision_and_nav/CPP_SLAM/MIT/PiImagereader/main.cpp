@@ -1662,8 +1662,7 @@ static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
         cv::Ptr<cv::ximgproc::DisparityWLSFilter> WLS;
         bool DoublePass;
 
-        explicit typeDemoPipeline(const bool UseDoublePass)
-            : DoublePass(UseDoublePass)
+        explicit typeDemoPipeline(const bool UseDoublePass) : DoublePass(UseDoublePass)
         {
             const cv::Size ImageSize(FRAME_WIDTH, FRAME_HEIGHT);
             cv::initUndistortRectifyMap(KRight, DRight,
@@ -1710,7 +1709,9 @@ static void ProcessDemoStereoPair(const cv::Mat& LeftLuminance,
     cv::remap(LeftBGR, LeftColorRectified,
         Pipeline.RightMap1, Pipeline.RightMap2, cv::INTER_LINEAR,
         cv::BORDER_CONSTANT);
+
     cv::Mat Disparity16;
+
     Pipeline.Stereo->compute(LeftRectified, RightRectified, Disparity16);
 
     cv::Mat FilteredDisparity16;
