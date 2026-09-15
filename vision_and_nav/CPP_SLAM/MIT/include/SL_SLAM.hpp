@@ -18,6 +18,9 @@
 #include "PT_PantoImagePoint.hpp"
 #include "PT_PantoMapPoints.hpp"
 #include "PT_Types.hpp"
+#if defined(CONFIG_STEREO)
+#include "DENSE_DenseMapping.hpp"
+#endif
 #include "VIZ_Visualization.hpp"
 #include <DBoW3/DBoW3.h>
 #include <DBoW3/Vocabulary.h>
@@ -126,6 +129,9 @@ typedef struct
     std::unordered_set<u64> RecentMapPointIndexes;
 
     typeTrackingStatisticsQueue* TrackingStatQueue;
+#if defined(CONFIG_STEREO)
+    typeDenseFrameQueue* DenseFrameQueue;
+#endif
     typeKeyFrameQueue *KeyFrameQueue;
     typeGlobalMap *GlobalMap;
     typeCovisibilityGraph *CovisibilityGraph;

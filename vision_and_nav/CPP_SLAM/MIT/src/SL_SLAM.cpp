@@ -1,5 +1,6 @@
 #include "../include/SL_SLAM.hpp"
 #include "Config.hpp"
+#include "DENSE_DenseMapping.hpp"
 #include "GRAPH_PantoGraph.hpp"
 #include "IMU_IMUReader.hpp"
 #include "IMU_PreIntegration.hpp"
@@ -8,6 +9,7 @@
 #include "MAP_Mapping.hpp"
 #include "OP_BA.hpp"
 #include "PANTOVEC_PantoVector.hpp"
+#include "opencv2/highgui.hpp"
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -945,23 +947,65 @@ void SL_PantoSLAM(i32 num_loops)
                 std::ref(NumProcessedLoops),
                 std::ref(NumLateFramesSkipped));
 
+#if defined(CONFIG_STEREO)
+        typeDenseFrameQueue* DenseFrameQueue = new typeDenseFrameQueue();
+#endif
+
         typeLocalMapData LocalMappingData
         {
             .LocalMap = typeLocalMap{},
             .RecentMapPointIndexes = *PantoSLAM.RecentMapPointIndexes,
 
             .TrackingStatQueue = StatQueue,
+#if defined(CONFIG_STEREO)
+            .DenseFrameQueue = DenseFrameQueue,
+#endif
             .KeyFrameQueue = &KeyFrameQueue,
             .GlobalMap = PantoSLAM.GlobalMap,
             .CovisibilityGraph = PantoSLAM.CovisibilityGraph,
             .VisualizationUpdateTiming = &VisualizationUpdateTiming
         };
+
         std::thread LocalMappingThread(
                 SLPriv_LocalMappingThread,
                 std::ref(LocalMappingData));
 
+#if defined(CONFIG_STEREO)
+        typeVizQueue* VizQ = new typeVizQueue();
+
+        typeDenseMapData DenseMap
+        {
+            .KeyFrameMaps = typePantoVector<typeDenseKeyFrameMap>{},
+            .DenseQueue = DenseFrameQueue,
+            .VizQueue = VizQ,
+            .GlobalMap = PantoSLAM.GlobalMap
+                
+        };
+
+        std::thread DenseMappingThread(
+                DENSE_DenseMapping,
+                std::ref(DenseMap));
+#endif
+
+#if defined(CONFIG_STEREO)
+        cv::Mat Disp;
+        while(true)
+        {
+            bool Continue = VizQ->deque(Disp);
+            if(!Continue)
+            {
+                break;
+            }
+            cv::imshow("Disparity", Disp);
+            cv::waitKey(1);
+        }
+#endif
+
         TrackingThread.join();
         LocalMappingThread.join();
+#if defined(CONFIG_STEREO)
+        DenseMappingThread.join();
+#endif
 
         RemainingLoops -= std::min(RemainingLoops, NumProcessedLoops);
         if(!TrackingLost)
@@ -1635,8 +1679,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             {
                 typeTrackingScopedTimer Timer(
                         Statistics(typeTrackingTimingStage::EnqueueKeyFrame));
-                QueuedGeneration = TrackingData.KeyFrameQueue->enque(
-                            TrackingData.NewFrame);
+                QueuedGeneration = TrackingData.KeyFrameQueue->enque(TrackingData.NewFrame);
             }
             TrackingData.NewFrame.MappingGeneration = QueuedGeneration;
             TrackingData.PreviousFrameData.PreviousFrame.MappingGeneration = QueuedGeneration;
@@ -1936,6 +1979,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
         }
         if(!HasKeyFrame)
         {
+            LocalMap.DenseFrameQueue->stop();
             break;
         }
 
@@ -1983,6 +2027,10 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                             AppendKeyFrame));
                 ID = MAP_AppendKeyFrame(LocalMap.GlobalMap, NewKeyFrame);
             }
+
+#if defined(CONFIG_STEREO)
+            LocalMap.DenseFrameQueue->enque({ID, NewKeyFrame.Frame.Frame, NewKeyFrame.Frame.RightFrame});
+#endif
 
             typeKeyFrame& CurrentKeyFrame = LocalMap.GlobalMap->KeyFrames[ID];
 

@@ -426,6 +426,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState, std:
         .NavigationState = PredictedNavigationState,
 #endif
         .ID = PANTO_ID_NOT_SET,
+        .Frame = Frame,
         .ImagePath = std::move(Frame.Path)
     };
     const fp64 AssembleKeyFrameTime = std::chrono::duration<fp64>(PantoClock::now() - AssembleKeyFrameStartTime).count();

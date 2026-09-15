@@ -9,12 +9,16 @@
 #include "opencv2/calib3d.hpp"
 #include "opencv2/core/mat.hpp"
 #include "opencv2/opencv.hpp"
+#include "MAP_Mapping.hpp"
 
 typedef struct
 {
     u64 KeyFrameID;
 
     Eigen::Matrix<fp64, 3, Eigen::Dynamic> CameraPoints; // Points in ccs
+
+    // Temporary for debug
+    cv::Mat DisparityColored;
 }typeDenseKeyFrameMap;
 
 typedef struct 
@@ -32,6 +36,8 @@ class typeDenseFrameQueue
         std::mutex Mutex;
         std::condition_variable QueueCV;
         std::atomic_bool Stop{false};
+
+        typeDenseFrameQueue() = default;
 
         void enque(const typeDenseData& DenseData)
         {
@@ -65,6 +71,63 @@ class typeDenseFrameQueue
 
             return true;
         }
+
+        void stop(void)
+        {
+            Stop.store(true);
+            QueueCV.notify_all();
+        }
+};
+
+class typeVizQueue
+{
+    public:
+
+        std::queue<cv::Mat> Dispvizqueue;
+        std::mutex Mutex;
+        std::condition_variable QueueCV;
+        std::atomic_bool Stop{false};
+
+        typeVizQueue() = default;
+
+        void enque(const cv::Mat& Disp)
+        {
+            {
+                // this makes sense, if for some reason the push fails, tracking continues as normal
+                std::lock_guard<std::mutex> Lock(Mutex);
+                Dispvizqueue.push(std::move(Disp));
+            }
+            QueueCV.notify_one();
+        }
+
+        bool deque(cv::Mat& Disp)
+        {
+            // unique_lock since wait needs to be able to unlock and lock again.
+            std::unique_lock<std::mutex> Lock(Mutex);
+
+            QueueCV.wait(
+                    Lock,
+                    [this]()
+                    {
+                        return !Dispvizqueue.empty() || Stop.load();
+                    });
+
+            if(Dispvizqueue.empty())
+            {
+                return false;
+            }
+
+            Disp = std::move(Dispvizqueue.front());
+            Dispvizqueue.pop();
+
+            return true;
+        }
+
+        void stop(void)
+        {
+            Stop.store(true);
+            QueueCV.notify_all();
+        }
 };
 
 typedef struct
@@ -73,6 +136,11 @@ typedef struct
     typePantoVector<typeDenseKeyFrameMap> KeyFrameMaps;
 
     class typeDenseFrameQueue* DenseQueue;
+    class typeVizQueue* VizQueue;
+    typeGlobalMap* GlobalMap;
 }typeDenseMapData;
+
+void DENSE_DenseMapping(typeDenseMapData& MapData);
+std::vector<Eigen::Vector4d> DENSE_GetDenseMap(const typePantoVector<typeKeyFrame>& GlobalKeyFrames);
 
 #endif // DENSE_DENSEMAPPING_HPP

@@ -1,7 +1,7 @@
 This is the overarching plan for dense mapping.
-- 16 sep, read stereo camera feed from dataset, with calibration parameters.
-- 18 sep, produce dense local camera per camera map with stereo.
-- 22 sep, voxel representation of map.
+- 16 sep, (DONE) read stereo camera feed from dataset, with calibration parameters.
+- 18 sep, (DONE) produce dense local camera per camera map with stereo, right now produces a ply
+- 22 sep, voxel representation of dense map.
 - 24 sep, rolling dense map. !!! This implies sharing keyframe pose with dense mapping.
 - 26 sep, refactor sl slam, split tracking and localmapping into their own files
 

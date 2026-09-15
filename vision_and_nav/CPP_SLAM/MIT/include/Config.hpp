@@ -57,6 +57,7 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 // TODO these are baseline specific parameters
 #define DENSE_MAP_MIN_DEPTH 0.3 // metres
 #define DENSE_MAP_MAX_DEPTH 5.0 // metres
+#define DENSE_MAP_PIXEL_STRIDE 16
 
 #define PANTO_DESCRIPTOR_ANMS false
 //Initializes with Ground truth frame data, to avoid having to code monocular IMU initialization
@@ -185,11 +186,12 @@ using PantoClock = std::chrono::steady_clock;
 
 // Placeholder cam1 pose. Replace this, and the cam1 pixel calibration below,
 // with the values from cam1/sensor.yaml.
-#define PANTO_T_BS_EUROC_CAM1_PLACEHOLDER \
-     0.0148655429818, -0.999880929698,    0.00414029679422, -0.1316401454975, \
-     0.999557249008,   0.0149672133247,   0.025715529948,   -0.064676986768, \
-    -0.0257744366974,  0.00375618835797,  0.999660727178,    0.00981073058949, \
-     0.0,               0.0,               0.0,                1.0
+#define PANTO_T_BS_EUROC_CAM1 \
+     0.0125552670891, -0.999755099723, 0.0182237714554, -0.0198435579556, \
+     0.999598781151, 0.0130119051815, 0.0251588363115, 0.0453689425024, \
+    -0.0253898008918, 0.0179005838253, 0.999517347078, 0.00786212447038, \
+     0.0, 0.0, 0.0, 1.0
+
 
 // fx, fy, s, cx, cy, k1, k2, p1, p2, k3, width, height, rate_hz, T_BS.
 // A zero rate means that the sampling rate has not been configured.
@@ -204,7 +206,7 @@ using PantoClock = std::chrono::steady_clock;
 
 // cam1 pixel calibration and T_BS. These EuRoC values are placeholders.
 #define DATASET_STEREO_INTRINSICS \
-    X(EUROC_MAV_VICON_ROOM1_EASY, 458.654, 457.296, 0.0, 367.215, 248.375, -0.28340811, 0.07395907, 0.00019359, 1.76187114e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM1_PLACEHOLDER)
+    X(EUROC_MAV_VICON_ROOM1_EASY, 457.587, 456.134, 0.0, 379.999, 255.238, -0.28368365, 0.07451284, -0.00010473, -3.55590700e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM1)
 
 // rate_hz, T_BS, gyroscope noise density, gyroscope random walk,
 // accelerometer noise density, accelerometer random walk

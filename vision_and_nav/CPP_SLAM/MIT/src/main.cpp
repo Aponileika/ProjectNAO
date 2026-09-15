@@ -30,7 +30,9 @@
 #include "../include/IMU_PreIntegration.hpp"
 #include "../include/GT_ReadGroundTruth.hpp"
 #endif 
+#if defined(CONFIG_STEREO)
 #include "../include/DENSE_DenseMapping.hpp"
+#endif
 
 #include "LG_Logging.cpp"
 #include "CArenaAlloc.c"
@@ -54,7 +56,9 @@
 #include "IMU_PreIntegration.cpp"
 #endif
 #include "GT_ReadGroundTruth.cpp"
+#if defined(CONFIG_STEREO)
 #include "DENSE_DenseMapping.cpp"
+#endif
 
 int main(int argc, char* argv[])
 {
