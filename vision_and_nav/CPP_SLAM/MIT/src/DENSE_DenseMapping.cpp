@@ -7,6 +7,7 @@
 #include <cmath>
 #include <fstream>
 #include <mutex>
+#include <unordered_map>
 
 std::vector<Eigen::Vector4d> DENSEPriv_GetDenseMap(const typeDenseMapData& DenseData, const typeGlobalMap& GlobalMap);
 typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& DenseData);
@@ -14,9 +15,7 @@ static cv::Ptr<cv::StereoSGBM> DENSEPriv_InitSGBM(void);
 void DENSEPriv_DisplayUpdate(const cv::Mat& Disparity);
 static cv::Mat DENSEPriv_GetDisparityVisualization(const cv::Mat& Disparity16,
     const cv::StereoSGBM& StereoSGBM);
-static bool DENSEPriv_WritePLY(
-        const std::vector<Eigen::Vector4d>& Points,
-        const std::string& Path);
+static bool DENSEPriv_WritePLY(const std::vector<Eigen::Vector4d>& Points, const std::string& Path);
 
 
 void DENSE_DenseMapping(typeDenseMapData& MapData)
@@ -54,7 +53,6 @@ std::vector<Eigen::Vector4d> DENSEPriv_GetDenseMap(const typeDenseMapData& Dense
         {
             const typeCameraPose& Pose = GlobalMap.KeyFrames[KFID].Camera.Pose;
             const Eigen::Index N = DenseMap.CameraPoints.cols();
-
 
             Eigen::Matrix4d Tcw = Eigen::Matrix4d::Identity();
             Tcw.block<3, 3>(0, 0) = Pose.R;
@@ -161,12 +159,10 @@ static cv::Mat DENSEPriv_GetDisparityVisualization(const cv::Mat& Disparity16,
     CV_Assert(Disparity16.type() == CV_16SC1);
 
     const fp32 MinDisparity = static_cast<fp32>(StereoSGBM.getMinDisparity());
-
     const fp32 NumDisparities = static_cast<fp32>(StereoSGBM.getNumDisparities());
 
     cv::Mat Disparity32;
-    Disparity16.convertTo(
-        Disparity32, CV_32FC1, 1.0 / 16.0);
+    Disparity16.convertTo(Disparity32, CV_32FC1, 1.0 / 16.0);
 
     // Reject invalid and zero disparities.
     const cv::Mat ValidMask = Disparity32 > std::max(0.0F, MinDisparity);
@@ -217,11 +213,7 @@ typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& De
     CV_Assert(Disparity16.type() == CV_16SC1);
 
     const fp64 rep16 = 1.0 / 16.0;
-    std::vector<Eigen::Vector3d> ValidCameraPoints;
-    ValidCameraPoints.reserve(
-            static_cast<std::size_t>(
-                (Disparity16.rows / DENSE_MAP_PIXEL_STRIDE + 1) *
-                (Disparity16.cols / DENSE_MAP_PIXEL_STRIDE + 1)));
+    std::unordered_set<typeVoxelKey, typeVoxelHash> ValidCameraPoints;
 
     for(int v = 0; v < Disparity16.rows; v += DENSE_MAP_PIXEL_STRIDE)
     {
@@ -230,7 +222,6 @@ typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& De
         {
             const fp64 Disparity = static_cast<fp64>(row[u]) * rep16;
 
-            // Might be more efficient to filter the disparities first, then this can probably be vectorized easier
             if(Disparity <= 0.0)
             {
                 continue;
@@ -246,21 +237,32 @@ typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& De
 
             const fp64 X = (u - cx) * Z * fxrep;
             const fp64 Y = (v - cy) * Z * fyrep;
-            ValidCameraPoints.emplace_back(X, Y, Z);
+
+            typeVoxelKey Key = DENSE_GetVoxelKey(X, Y, Z);
+
+            ValidCameraPoints.insert(Key);
         }
     }
 
-    Eigen::Matrix<fp64, 3, Eigen::Dynamic> MapPoints(
-            3, static_cast<Eigen::Index>(ValidCameraPoints.size()));
-    for(std::size_t i = 0; i < ValidCameraPoints.size(); i++)
+    Eigen::Matrix<fp32, 3, Eigen::Dynamic> MapPoints;
+    MapPoints.resize(3, static_cast<Eigen::Index>(ValidCameraPoints.size()));
+
+    u64 Col = 0;
+    for(const typeVoxelKey& Key : ValidCameraPoints)
     {
-        MapPoints.col(static_cast<Eigen::Index>(i)) = ValidCameraPoints[i];
+        MapPoints.col(Col) = Eigen::Vector3f
+            {
+                static_cast<fp32>(Key.X),
+                static_cast<fp32>(Key.Y),
+                static_cast<fp32>(Key.Z)
+            };
     }
+
 
     typeDenseKeyFrameMap DenseMap = 
     {
         .KeyFrameID = DenseData.KeyFrameID,
-        .CameraPoints = std::move(MapPoints),
+        .MapPoints = std::move(MapPoints),
         .DisparityColored = DisparityColored
     };
 

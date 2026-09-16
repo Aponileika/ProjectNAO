@@ -1,21 +1,62 @@
 #ifndef DENSE_DENSEMAPPING_HPP
 #define DENSE_DENSEMAPPING_HPP
+#include "Config.hpp"
 #include "FR_Frames.hpp"
 #include "CM_Camera.hpp"
 #include <Eigen/Dense>
 #include <condition_variable>
 #include <mutex>
+#include <unordered_map>
 #include "PANTOVEC_PantoVector.hpp"
 #include "opencv2/calib3d.hpp"
 #include "opencv2/core/mat.hpp"
 #include "opencv2/opencv.hpp"
 #include "MAP_Mapping.hpp"
 
+struct typeVoxelKey
+{
+    i32 X;
+    i32 Y;
+    i32 Z;
+
+    bool operator==(const typeVoxelKey& VoxelKey) const = default;
+};
+
+typedef struct typeVoxelKey typeVoxelKey;
+
+static inline typeVoxelKey DENSE_GetVoxelKey(fp32 X, fp32 Y, fp32 Z)
+{
+    return
+    {
+        static_cast<i32>(std::floor(X / DENSE_VOXEL_SIZE)),
+        static_cast<i32>(std::floor(Y / DENSE_VOXEL_SIZE)),
+        static_cast<i32>(std::floor(Z / DENSE_VOXEL_SIZE))
+    };
+}
+
+class typeVoxelHash
+{
+    public:
+        std::size_t operator()(const typeVoxelKey& VoxelKey) const noexcept
+        {
+            std::size_t Hash = std::hash<i32>{}(VoxelKey.X);
+
+            Hash ^= std::hash<i32>{}(VoxelKey.Y) +
+                0x9e3779b9U + (Hash << 6U) + (Hash >> 2U);
+
+            Hash ^= std::hash<i32>{}(VoxelKey.Z) +
+                0x9e3779b9U + (Hash << 6U) + (Hash >> 2U);
+
+            return Hash;
+        }
+};
+
 typedef struct
 {
     u64 KeyFrameID;
 
-    Eigen::Matrix<fp64, 3, Eigen::Dynamic> CameraPoints; // Points in ccs
+    // Voxel grid in ccs
+    Eigen::Matrix<fp32, 3, Eigen::Dynamic> MapPoints;
 
     // Temporary for debug
     cv::Mat DisparityColored;

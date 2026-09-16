@@ -57,7 +57,8 @@ inline constexpr const char* PANTO_SLAMSTARTMSG =
 // TODO these are baseline specific parameters
 #define DENSE_MAP_MIN_DEPTH 0.3 // metres
 #define DENSE_MAP_MAX_DEPTH 5.0 // metres
-#define DENSE_MAP_PIXEL_STRIDE 16
+#define DENSE_MAP_PIXEL_STRIDE 8
+#define DENSE_VOXEL_SIZE 0.05 // metres
 
 #define PANTO_DESCRIPTOR_ANMS false
 //Initializes with Ground truth frame data, to avoid having to code monocular IMU initialization
@@ -136,7 +137,7 @@ using PantoClock = std::chrono::steady_clock;
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
 #ifndef PANTO_ACTIVE_DATASET
-    #define PANTO_ACTIVE_DATASET EUROC_MAV_VICON_ROOM1_EASY 
+    #define PANTO_ACTIVE_DATASET EUROC_MAV_MACHINE_HALL1_EASY 
 #endif
 
 #define DATASETS \
@@ -145,7 +146,8 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG2_XYZ, "/tum/rgbd_dataset_freiburg2_xyz") \
     X(TUM_FREIBURG2_PIONEER_SLAM, "/tum/rgbd_dataset_freiburg2_pioneer_slam") \
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, "/tum/rgbd_dataset_freiburg3_long_office_household") \
-    X(EUROC_MAV_VICON_ROOM1_EASY, "/EuRoC/vicon_room1/V1_01_easy/mav0")
+    X(EUROC_MAV_VICON_ROOM1_EASY, "/EuRoC/vicon_room1/V1_01_easy/mav0") \
+    X(EUROC_MAV_MACHINE_HALL1_EASY, "/EuRoC/machine_hall/MH_01_easy/mav0")
 
 #define DATASET_SEQUENCES \
     X(TUM_FREIBURG1_XYZ, RGB_ORDERED, "rgb_ordered") \
@@ -153,7 +155,8 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG2_XYZ, RGB_ORDERED, "rgb_ordered") \
     X(TUM_FREIBURG2_PIONEER_SLAM, RGB_ORDERED, "rgb_ordered") \
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, RGB_ORDERED, "rgb_ordered") \
-    X(EUROC_MAV_VICON_ROOM1_EASY, RGB_ORDERED, "/cam0/data")
+    X(EUROC_MAV_VICON_ROOM1_EASY, RGB_ORDERED, "/cam0/data") \
+    X(EUROC_MAV_MACHINE_HALL1_EASY, RGB_ORDERED, "/cam0/data")
 
 #define DATASET_IMUS \
     X(TUM_FREIBURG1_XYZ, IMU_MEASUREMENTS, "") \
@@ -161,7 +164,8 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG2_XYZ, IMU_MEASUREMENTS, "") \
     X(TUM_FREIBURG2_PIONEER_SLAM, IMU_MEASUREMENTS, "") \
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, IMU_MEASUREMENTS, "") \
-    X(EUROC_MAV_VICON_ROOM1_EASY, IMU_MEASUREMENTS, "/imu0")
+    X(EUROC_MAV_VICON_ROOM1_EASY, IMU_MEASUREMENTS, "/imu0") \
+    X(EUROC_MAV_MACHINE_HALL1_EASY, IMU_MEASUREMENTS, "/imu0")
 
 #define DATASET_GT \
     X(TUM_FREIBURG1_XYZ, GT_POSE, "") \
@@ -169,7 +173,8 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG2_XYZ, GT_POSE, "") \
     X(TUM_FREIBURG2_PIONEER_SLAM, GT_POSE, "") \
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, GT_POSE, "") \
-    X(EUROC_MAV_VICON_ROOM1_EASY, GT_POSE, "/state_groundtruth_estimate0")
+    X(EUROC_MAV_VICON_ROOM1_EASY, GT_POSE, "/state_groundtruth_estimate0") \
+    X(EUROC_MAV_MACHINE_HALL1_EASY, GT_POSE, "/state_groundtruth_estimate0")
 
 // Sensor extrinsics are T_BS: sensor frame with respect to the body frame.
 #define PANTO_T_BS_IDENTITY \
@@ -202,11 +207,13 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG2_PIONEER_SLAM, 520.9, 521.0, 0.0, 325.1, 249.7, 0.2312, -0.7849, -0.0033, -0.0001, 0.9172, 640, 480, 30.0, PANTO_T_BS_IDENTITY) \
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, 535.4, 539.2, 0.0, 320.1, 247.6, 0.0, 0.0, 0.0, 0.0, 0.0, 640, 480, 30.0, PANTO_T_BS_IDENTITY) \
     X(EUROC_MAV_VICON_ROOM1_EASY, 458.654, 457.296, 0.0, 367.215, 248.375, -0.28340811, 0.07395907, 0.00019359, 1.76187114e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM0) \
+    X(EUROC_MAV_MACHINE_HALL1_EASY, 458.654, 457.296, 0.0, 367.215, 248.375, -0.28340811, 0.07395907, 0.00019359, 1.76187114e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM0) \
     X(WEBCAM_JE, 974.7187409387847, 976.5223334221673, 0.0, 666.3249058750432, 337.4737864029501, 0.06475901025911835, -0.1903655376657792, -0.003666863513699757, 0.002119531347424837, 0.1113497353944944, 640, 480, 0.0, PANTO_T_BS_IDENTITY)
 
 // cam1 pixel calibration and T_BS. These EuRoC values are placeholders.
 #define DATASET_STEREO_INTRINSICS \
-    X(EUROC_MAV_VICON_ROOM1_EASY, 457.587, 456.134, 0.0, 379.999, 255.238, -0.28368365, 0.07451284, -0.00010473, -3.55590700e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM1)
+    X(EUROC_MAV_VICON_ROOM1_EASY, 457.587, 456.134, 0.0, 379.999, 255.238, -0.28368365, 0.07451284, -0.00010473, -3.55590700e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM1) \
+    X(EUROC_MAV_MACHINE_HALL1_EASY, 457.587, 456.134, 0.0, 379.999, 255.238, -0.28368365, 0.07451284, -0.00010473, -3.55590700e-05, 0.0, 752, 480, 20.0, PANTO_T_BS_EUROC_CAM1)
 
 // rate_hz, T_BS, gyroscope noise density, gyroscope random walk,
 // accelerometer noise density, accelerometer random walk
@@ -217,7 +224,8 @@ using PantoClock = std::chrono::steady_clock;
     X(TUM_FREIBURG2_PIONEER_SLAM, 0.0, PANTO_T_BS_IDENTITY, 0.0, 0.0, 0.0, 0.0) \
     X(TUM_FREIBURG3_LONG_OFFICE_HOUSEHOLD, 0.0, PANTO_T_BS_IDENTITY, 0.0, 0.0, 0.0, 0.0) \
     X(WEBCAM_JE, 0.0, PANTO_T_BS_IDENTITY, 0.0, 0.0, 0.0, 0.0) \
-    X(EUROC_MAV_VICON_ROOM1_EASY, 200.0, PANTO_T_BS_IDENTITY, 1.6968e-04, 1.9393e-05, 2.0000e-3, 3.0000e-3)
+    X(EUROC_MAV_VICON_ROOM1_EASY, 200.0, PANTO_T_BS_IDENTITY, 1.6968e-04, 1.9393e-05, 2.0000e-3, 3.0000e-3) \
+    X(EUROC_MAV_MACHINE_HALL1_EASY, 200.0, PANTO_T_BS_IDENTITY, 1.6968e-04, 1.9393e-05, 2.0000e-3, 3.0000e-3)
 
 enum class Dataset : u8
 {
