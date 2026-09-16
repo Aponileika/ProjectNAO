@@ -183,5 +183,7 @@ typedef struct
 
 void DENSE_DenseMapping(typeDenseMapData& MapData);
 std::vector<Eigen::Vector4d> DENSE_GetDenseMap(const typePantoVector<typeKeyFrame>& GlobalKeyFrames);
+std::vector<Eigen::Vector3f> DENSE_GetDenseMapPoints(void);
+Eigen::Matrix<fp32, 3, Eigen::Dynamic> DENSE_GetDensePoints(void);
 
 #endif // DENSE_DENSEMAPPING_HPP

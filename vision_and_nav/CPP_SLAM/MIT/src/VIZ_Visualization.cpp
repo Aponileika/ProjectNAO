@@ -102,14 +102,16 @@ void VIZ_SignalHandler(int Signal)
 {
     VIZ_StopViewer();
 
-    std::_Exit(
-            128 + Signal);
+    std::_Exit(128 + Signal);
 }
 
+#if defined(CONFIG_STEREO)
+void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3f> DenseMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory)
+#else
 void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory)
+#endif
 {
-    const std::string SnapshotPath =
-        std::string(PANTO_COLMAP_PATH) + "/sparse/snapshots/" + std::to_string(VIZPriv_SnapshotID);
+    const std::string SnapshotPath = std::string(PANTO_COLMAP_PATH) + "/sparse/snapshots/" + std::to_string(VIZPriv_SnapshotID);
 
     std::filesystem::create_directories(SnapshotPath);
 
@@ -118,7 +120,11 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Ve
     VIZPriv_WriteCameras(GlobalMap.KeyFrames, SnapshotPath);
     VIZPriv_WriteDistortion(GlobalMap.KeyFrames, SnapshotPath);
     VIZPriv_WriteImages(GlobalMap.KeyFrames, SnapshotPath);
+#if defined(CONFIG_STEREO)
+    VIZPriv_WritePoints(DenseMap, SnapshotPath);
+#else
     VIZPriv_WritePoints(GlobalMap, SnapshotPath);
+#endif
     VIZPriv_WriteTrackingTrajectory(TrackingTrajectory, SnapshotPath);
 
     LG_Log(LogSeverity::DBG,
@@ -480,6 +486,69 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
             ImagePath.c_str());
 }
 
+#if defined(CONFIG_STEREO)
+void VIZPriv_WritePoints(const std::vector<Eigen::Vector3f>& DensePoints, const std::string& SnapshotPath)
+{
+    const std::string PointPath = SnapshotPath + "/points3D.bin";
+
+    FILE* fp = fopen(PointPath.c_str(), "wb");
+
+    if(fp == nullptr)
+    {
+        LG_Log( LogSeverity::DBG,
+                "[VIZPriv_WritePoints] Failed to open %s\n",
+                PointPath.c_str());
+
+        return;
+    }
+
+    const u64 NumPoints = static_cast<u64>(DensePoints.size());
+
+    fwrite( &NumPoints, sizeof(u64), 1, fp);
+
+    u64 ID = 0;
+    for(const Eigen::Vector3f& MapPoint : DensePoints)
+    {
+        fwrite(&ID, sizeof(u64), 1, fp);
+        ID++;
+
+        Eigen::Vector3d MapPointfp64 = MapPoint.cast<fp64>();
+
+        fwrite(MapPointfp64.data(), sizeof(fp64), 3, fp);
+
+        u8 RGB[3] =
+        {
+            0,
+            0,
+            0 
+        };
+
+        fwrite(RGB, sizeof(u8), 3, fp);
+
+        const fp64 Error = 0.0;
+
+        fwrite(&Error,
+                sizeof(fp64),
+                1,
+                fp);
+
+        u64 TrackLength = 0;
+
+        fwrite(&TrackLength,
+                sizeof(u64),
+                1,
+                fp);
+    }
+
+    fclose(fp);
+
+    LG_Log(LogSeverity::DBG,
+            "[VIZPriv_WritePoints] Wrote %llu points to %s\n",
+            static_cast<unsigned long long>(NumPoints),
+            PointPath.c_str());
+}
+#else
+
 void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& SnapshotPath)
 {
     const std::string PointPath = SnapshotPath + "/points3D.bin";
@@ -596,17 +665,11 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& Snap
             RGB[2] = static_cast<u8>(RGBSum[2] / NumRGBSamples);
         }
 
-        fwrite(
-                RGB,
-                sizeof(u8),
-                3,
-                fp);
+        fwrite(RGB, sizeof(u8), 3, fp);
 
-        const fp64 Error =
-            0.0;
+        const fp64 Error = 0.0;
 
-        fwrite(
-                &Error,
+        fwrite(&Error,
                 sizeof(fp64),
                 1,
                 fp);
@@ -687,14 +750,12 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& Snap
                 static_cast<i32>(
                         ImagePointID);
 
-            fwrite(
-                    &ImageID,
+            fwrite(&ImageID,
                     sizeof(i32),
                     1,
                     fp);
 
-            fwrite(
-                    &Point2DIdx,
+            fwrite(&Point2DIdx,
                     sizeof(i32),
                     1,
                     fp);
@@ -709,6 +770,7 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& Snap
             static_cast<unsigned long long>(NumPoints),
             PointPath.c_str());
 }
+#endif // CONFIG_STEREO
 
 void VIZPriv_PublishSnapshot(const u64& SnapshotID)
 {

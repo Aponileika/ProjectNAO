@@ -256,17 +256,28 @@ static Eigen::Vector3d SLPriv_GetGroundTruthCameraPosition(
 static void SLPriv_UpdateVisualization(typeGlobalMap* GlobalMap, typeTimingStatistics& VisualizationUpdateTiming)
 {
     typeGlobalMap MapSnapshot{};
+
+#if defined(CONFIG_STEREO)
+    std::vector<Eigen::Vector3f> DensePoints = DENSE_GetDenseMapPoints();
+#endif
+
     std::vector<Eigen::Vector3d> TrackingTrajectorySnapshot;
     {
-        std::scoped_lock Lock(
-                GlobalMap->Mutex, PantoSLAM.TrackingTrajectoryMutex);
+        std::scoped_lock Lock( GlobalMap->Mutex, PantoSLAM.TrackingTrajectoryMutex);
         MapSnapshot.KeyFrames = GlobalMap->KeyFrames;
+
+#if !defined(CONFIG_STEREO)
         MapSnapshot.MapPoints = GlobalMap->MapPoints;
+#endif
         TrackingTrajectorySnapshot = PantoSLAM.TrackingTrajectory;
     }
 
     const PantoClock::time_point StartTime = PantoClock::now();
+#if defined(CONFIG_STEREO)
+    VIZ_WriteColmap(MapSnapshot, DensePoints, TrackingTrajectorySnapshot);
+#else
     VIZ_WriteColmap(MapSnapshot, TrackingTrajectorySnapshot);
+#endif
     const fp64 UpdateTime = std::chrono::duration<fp64>(
             PantoClock::now() - StartTime).count();
 

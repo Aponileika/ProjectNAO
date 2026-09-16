@@ -1,9 +1,10 @@
 This is the overarching plan for dense mapping.
 - 16 sep, (DONE) read stereo camera feed from dataset, with calibration parameters.
 - 18 sep, (DONE) produce dense local camera per camera map with stereo, right now produces a ply
-- 22 sep, voxel representation of dense map.
-- 24 sep, rolling dense map. !!! This implies sharing keyframe pose with dense mapping.
-- 26 sep, refactor sl slam, split tracking and localmapping into their own files
+- 22 sep, (DONE) voxel representation of dense map per ccs.
+- 22 sep, global voxel representation of dense map ie in wcs, continous updating of this.
+- 24 sep, Some kind of filtering of the dense map, what is common?
+- 26 sep, Dense map -> usable map for a robot, ie occupancy grid.
 
 TODO:
 Dense has been implemented, as a first test add a visualization of the disparity output for each keyframe and
