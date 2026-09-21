@@ -9,6 +9,7 @@
 #include "MAP_Mapping.hpp"
 #include "OP_BA.hpp"
 #include "PANTOVEC_PantoVector.hpp"
+#include "PANTO_Utils.hpp"
 #include "opencv2/highgui.hpp"
 #include <algorithm>
 #include <cmath>
@@ -959,7 +960,7 @@ void SL_PantoSLAM(i32 num_loops)
                 std::ref(NumLateFramesSkipped));
 
 #if defined(CONFIG_STEREO)
-        typeDenseFrameQueue* DenseFrameQueue = new typeDenseFrameQueue();
+        typeSPSCQueue<typeDenseLocaMapData>* DenseFrameQueue = new typeSPSCQueue<typeDenseLocaMapData>();
 #endif
 
         typeLocalMapData LocalMappingData
@@ -969,7 +970,7 @@ void SL_PantoSLAM(i32 num_loops)
 
             .TrackingStatQueue = StatQueue,
 #if defined(CONFIG_STEREO)
-            .DenseFrameQueue = DenseFrameQueue,
+            .DenseQueue = DenseFrameQueue,
 #endif
             .KeyFrameQueue = &KeyFrameQueue,
             .GlobalMap = PantoSLAM.GlobalMap,
@@ -982,34 +983,18 @@ void SL_PantoSLAM(i32 num_loops)
                 std::ref(LocalMappingData));
 
 #if defined(CONFIG_STEREO)
-        typeVizQueue* VizQ = new typeVizQueue();
+        typeSPSCQueue<cv::Mat>* VizQ = new typeSPSCQueue<cv::Mat>();
 
         typeDenseMapData DenseMap
         {
-            .KeyFrameMaps = typePantoVector<typeDenseKeyFrameMap>{},
-            .DenseQueue = DenseFrameQueue,
+            .KeyFrameMaps = {},
             .VizQueue = VizQ,
-            .GlobalMap = PantoSLAM.GlobalMap
-                
+            .DenseQueue = DenseFrameQueue
         };
 
         std::thread DenseMappingThread(
                 DENSE_DenseMapping,
                 std::ref(DenseMap));
-#endif
-
-#if defined(CONFIG_STEREO)
-        cv::Mat Disp;
-        while(true)
-        {
-            bool Continue = VizQ->deque(Disp);
-            if(!Continue)
-            {
-                break;
-            }
-            cv::imshow("Disparity", Disp);
-            cv::waitKey(1);
-        }
 #endif
 
         TrackingThread.join();
@@ -1990,7 +1975,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
         }
         if(!HasKeyFrame)
         {
-            LocalMap.DenseFrameQueue->stop();
+            LocalMap.DenseQueue->stop();
             break;
         }
 
@@ -2039,9 +2024,6 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                 ID = MAP_AppendKeyFrame(LocalMap.GlobalMap, NewKeyFrame);
             }
 
-#if defined(CONFIG_STEREO)
-            LocalMap.DenseFrameQueue->enque({ID, NewKeyFrame.Frame.Frame, NewKeyFrame.Frame.RightFrame});
-#endif
 
             typeKeyFrame& CurrentKeyFrame = LocalMap.GlobalMap->KeyFrames[ID];
 
@@ -2148,6 +2130,10 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                         *LocalMap.CovisibilityGraph,
                         ID);
             }
+            
+#if defined(CONFIG_STEREO)
+            LocalMap.DenseQueue->enque({{ID, NewKeyFrame.Frame.Frame, NewKeyFrame.Frame.RightFrame}, LocalMap.LocalMap.KeyFrames});
+#endif
 
             {
                 typeLocalMappingScopedTimer Timer(Statistics(typeLocalMappingTimingStage::AdjustRecentMapPoints));

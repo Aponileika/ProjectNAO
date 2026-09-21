@@ -14,7 +14,7 @@
 
 static cv::Ptr<cv::StereoSGBM> DENSEPriv_InitSGBM(void);
 typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& DenseData);
-static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData);
+static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typeDenseLocaMapData& LocalMapData);
 static cv::Mat DENSEPriv_GetDisparityVisualization(const cv::Mat& Disparity16,
     const cv::StereoSGBM& StereoSGBM);
 static bool DENSEPriv_WritePLY(const std::vector<Eigen::Vector4f>& Points, const std::string& Path);
@@ -34,7 +34,7 @@ namespace
 
 void DENSE_DenseMapping(typeDenseMapData& MapData)
 {
-    typeDenseData DenseData;
+    typeDenseLocaMapData DenseData;
     while(true)
     {
         bool DequeRet = MapData.DenseQueue->deque(DenseData);
@@ -44,26 +44,20 @@ void DENSE_DenseMapping(typeDenseMapData& MapData)
             break;
         }
         const auto& StartTimeDense = PantoClock::now();
-        typeDenseKeyFrameMap DenseMap = DENSEPriv_CalculateDenseKeyFrameMap(DenseData);
+        typeDenseKeyFrameMap DenseMap = DENSEPriv_CalculateDenseKeyFrameMap(DenseData.DenseData);
         SumTotalDenseMapCalc += std::chrono::duration<fp64>(PantoClock::now() - StartTimeDense).count();
         MapData.VizQueue->enque(DenseMap.DisparityColored);
 
-        MapData.KeyFrameMaps.push_back(std::move(DenseMap));
-        DENSEPriv_WriteDenseWCS(MapData);
+        const u64 KeyFrameID = DenseMap.KeyFrameID;
+        MapData.KeyFrameMaps.insert_or_assign(KeyFrameID, std::move(DenseMap));
+        DENSEPriv_WriteDenseWCS(MapData, DenseData);
         NumPairsCalculated++;
     }
-    std::vector<Eigen::Vector4f> DensePoints;
-    {
-        std::scoped_lock<std::mutex> Lock(MapData.GlobalMap->Mutex);
-        DensePoints = DENSEPriv_GetDenseMap(MapData, *MapData.GlobalMap);
-    }
-    DENSEPriv_WritePLY(DensePoints, "./PLY_VIZ/dense_map.ply");
     LG_EnableDataSummaryLoggingForCurrentThread(true);
     DENSEPriv_LogTimingData();
 
     MapData.VizQueue->stop();
 }
-
 
 static cv::Ptr<cv::StereoSGBM> DENSEPriv_InitSGBM(void)
 {
@@ -177,50 +171,26 @@ typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& De
 }
 
 
-static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData)
+static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typeDenseLocaMapData& LocalMapData)
 {
-    std::unordered_map<u64, typeCameraPose> PoseByKeyFrameID;
-
-    {
-        std::scoped_lock Lock(DenseData.GlobalMap->Mutex);
-
-        PoseByKeyFrameID.reserve(
-            DenseData.GlobalMap->KeyFrames.active_size());
-
-        for(const typeKeyFrame& KeyFrame :
-                DenseData.GlobalMap->KeyFrames)
-        {
-            PoseByKeyFrameID.emplace(
-                KeyFrame.ID,
-                KeyFrame.Camera.Pose);
-        }
-    }
+    //This assumes no keyframes are culled!
+    const std::vector<typeKeyFrame> LocalMap = LocalMapData.LocalKeyFrames;
 
     std::size_t NumberOfPoints = 0;
-
-    for(const typeDenseKeyFrameMap& DenseMap :
-            DenseData.KeyFrameMaps)
-    {
-        if(PoseByKeyFrameID.contains(DenseMap.KeyFrameID))
-        {
-            NumberOfPoints += static_cast<std::size_t>(
-                DenseMap.MapPoints.cols());
-        }
-    }
 
     std::vector<Eigen::Vector3f> NewWCSMapPoints;
     NewWCSMapPoints.reserve(NumberOfPoints);
 
-    for(const typeDenseKeyFrameMap& DenseMap : DenseData.KeyFrameMaps)
+    for(const typeKeyFrame& KeyFrame: LocalMapData.LocalKeyFrames)
     {
-        const auto PoseIterator = PoseByKeyFrameID.find(DenseMap.KeyFrameID);
-
-        if(PoseIterator == PoseByKeyFrameID.end())
+        const auto DenseMapIterator = DenseData.KeyFrameMaps.find(KeyFrame.ID);
+        if(DenseMapIterator == DenseData.KeyFrameMaps.end())
         {
             continue;
         }
 
-        const typeCameraPose& Pose = PoseIterator->second;
+        const typeCameraPose& Pose = KeyFrame.Camera.Pose;
+        const typeDenseKeyFrameMap& DenseMap = DenseMapIterator->second;
 
         // Assuming Pose is Tcw:
         // p_camera = Rcw * p_world + tcw
@@ -285,12 +255,12 @@ static cv::Mat DENSEPriv_GetDisparityVisualization(const cv::Mat& Disparity16,
 std::vector<Eigen::Vector4f> DENSEPriv_GetDenseMap(const typeDenseMapData& DenseData, const typeGlobalMap& GlobalMap)
 {
     std::vector<Eigen::Vector4f> Ret;
-    for(const typeDenseKeyFrameMap& DenseMap : DenseData.KeyFrameMaps)
+    for(const auto& [KeyFrameID, DenseMap] : DenseData.KeyFrameMaps)
     {
-        const u64 KFID = DenseMap.KeyFrameID;
-        if(GlobalMap.KeyFrames.contains(KFID))
+        if(GlobalMap.KeyFrames.contains(KeyFrameID))
         {
-            const typeCameraPose& Pose = GlobalMap.KeyFrames[KFID].Camera.Pose;
+            const typeCameraPose& Pose =
+                GlobalMap.KeyFrames[KeyFrameID].Camera.Pose;
             const Eigen::Index N = DenseMap.MapPoints.cols();
 
             Eigen::Matrix4f Tcw = Eigen::Matrix4f::Identity();
@@ -386,4 +356,3 @@ static void DENSEPriv_LogTimingData(void)
     LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Remap And Disparity = %lf\n", MeanDisparity);
     LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Disparity To 3D     = %lf\n", MeanDispTo3D);
 }
-

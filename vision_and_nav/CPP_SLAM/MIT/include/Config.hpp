@@ -141,7 +141,7 @@ using PantoClock = std::chrono::steady_clock;
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
 #ifndef PANTO_ACTIVE_DATASET
-#define PANTO_ACTIVE_DATASET EUROC_MAV_VICON_ROOM1_EASY
+#define PANTO_ACTIVE_DATASET EUROC_MAV_MACHINE_HALL1_EASY
 #endif
 
 #define DATASETS                                                               \

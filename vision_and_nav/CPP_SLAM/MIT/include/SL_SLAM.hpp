@@ -129,9 +129,11 @@ typedef struct
     std::unordered_set<u64> RecentMapPointIndexes;
 
     typeTrackingStatisticsQueue* TrackingStatQueue;
+
 #if defined(CONFIG_STEREO)
-    typeDenseFrameQueue* DenseFrameQueue;
+    typeSPSCQueue<typeDenseLocaMapData>* DenseQueue;
 #endif
+
     typeKeyFrameQueue *KeyFrameQueue;
     typeGlobalMap *GlobalMap;
     typeCovisibilityGraph *CovisibilityGraph;

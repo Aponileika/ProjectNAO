@@ -40,6 +40,59 @@ T PANTO_Cv2Eigen(cv::Matx33d cvmat)
     return eigenmat;
 }
 
+//Templated single producer single consumer queue
+template<typename T>
+class typeSPSCQueue 
+{
+    public:
+
+        std::queue<T> DenseDataQueue;
+        std::mutex Mutex;
+        std::condition_variable QueueCV;
+        std::atomic_bool Stop{false};
+
+        typeSPSCQueue() = default;
+
+        void enque(const T& DenseData)
+        {
+            {
+                // this makes sense, if for some reason the push fails, tracking continues as normal
+                std::lock_guard<std::mutex> Lock(Mutex);
+                DenseDataQueue.push(std::move(DenseData));
+            }
+            QueueCV.notify_one();
+        }
+
+        bool deque(T& DenseData)
+        {
+            // unique_lock since wait needs to be able to unlock and lock again.
+            std::unique_lock<std::mutex> Lock(Mutex);
+
+            QueueCV.wait(
+                    Lock,
+                    [this]()
+                    {
+                        return !DenseDataQueue.empty() || Stop.load();
+                    });
+
+            if(DenseDataQueue.empty())
+            {
+                return false;
+            }
+
+            DenseData = std::move(DenseDataQueue.front());
+            DenseDataQueue.pop();
+
+            return true;
+        }
+
+        void stop(void)
+        {
+            Stop.store(true);
+            QueueCV.notify_all();
+        }
+};
+
 u32 PANTO_HammingDistance(const typeDescriptor& a, const typeDescriptor& b);
 u32 PANTO_HammingDistance(typeDescriptor& a, typeDescriptor& b);
 
