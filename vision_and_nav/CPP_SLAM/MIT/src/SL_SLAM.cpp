@@ -2132,7 +2132,9 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
             }
             
 #if defined(CONFIG_STEREO)
-            LocalMap.DenseQueue->enque({{ID, NewKeyFrame.Frame.Frame, NewKeyFrame.Frame.RightFrame}, LocalMap.LocalMap.KeyFrames});
+            std::vector<typeKeyFrame> LocalMapFull = LocalMap.LocalMap.KeyFrames;
+            LocalMapFull.insert(LocalMapFull.end(), LocalMap.LocalMap.FixedKeyFrames.begin(), LocalMap.LocalMap.FixedKeyFrames.end());
+            LocalMap.DenseQueue->enque({{ID, NewKeyFrame.Frame.Frame, NewKeyFrame.Frame.RightFrame}, LocalMapFull});
 #endif
 
             {
