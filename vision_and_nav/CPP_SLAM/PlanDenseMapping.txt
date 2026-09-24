@@ -2,8 +2,8 @@ This is the overarching plan for dense mapping.
 - 16 sep, (DONE) read stereo camera feed from dataset, with calibration parameters.
 - 18 sep, (DONE) produce dense local camera per camera map with stereo, right now produces a ply
 - 22 sep, (DONE) voxel representation of dense map per ccs.
-- 24 sep, Implement a more reasonable "active map" for dense mapping, fix rotation and translation interpolation, SLERP and cubic B-spline for translation.
-- 26 sep, global voxel representation of dense map ie in wcs, continous updating of this.
+- 24 sep, global voxel representation of dense map ie in wcs, continous updating of this.
+- 26 sep, Implement a more reasonable "active map" for dense mapping, I have not reached a conclusion as to what this is.
 - 28 sep, Dense map -> usable map for a robot, ie occupancy grid.
 
 TODO:

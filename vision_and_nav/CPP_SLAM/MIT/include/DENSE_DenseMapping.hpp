@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 #include "PANTOVEC_PantoVector.hpp"
 #include "PANTO_Utils.hpp"
 #include "opencv2/calib3d.hpp"
@@ -63,6 +64,13 @@ typedef struct
     cv::Mat DisparityColored;
 }typeDenseKeyFrameMap;
 
+typedef struct
+{
+    typeVoxelKey OriginKey;
+    std::vector<u64> RollingOccupancy;
+    bool IsInitialized;
+}typeDenseVoxelOccupancyMap;
+
 typedef struct 
 {
     u64 KeyFrameID;
@@ -87,6 +95,7 @@ typedef struct
 void DENSE_DenseMapping(typeDenseMapData& MapData);
 std::vector<Eigen::Vector4d> DENSE_GetDenseMap(const typePantoVector<typeKeyFrame>& GlobalKeyFrames);
 std::vector<Eigen::Vector3f> DENSE_GetDenseMapPoints(void);
+typeDenseVoxelOccupancyMap DENSE_GetRollingVoxelOccupancyMap(void);
 Eigen::Matrix<fp32, 3, Eigen::Dynamic> DENSE_GetDensePoints(void);
 
 #endif // DENSE_DENSEMAPPING_HPP

@@ -54,9 +54,23 @@ inline constexpr const char *PANTO_SLAMSTARTMSG =
 
 // TODO these are baseline specific parameters
 #define DENSE_MAP_MIN_DEPTH 0.3 // metres
-#define DENSE_MAP_MAX_DEPTH 7.0 // metres
+#define DENSE_MAP_MAX_DEPTH 5.0 // metres
 #define DENSE_MAP_PIXEL_STRIDE 16
 #define DENSE_VOXEL_SIZE 0.1 // metres
+
+constexpr fp64 VoxelsPerSideExact = DENSE_MAP_MAX_DEPTH * 2 / DENSE_VOXEL_SIZE;
+
+constexpr u64 VoxelsPerSideTruncated = static_cast<u64>(VoxelsPerSideExact);
+
+constexpr u64 DENSE_VOXELS_PER_SIDE =
+    VoxelsPerSideTruncated + (VoxelsPerSideExact > static_cast<double>(VoxelsPerSideTruncated) ? 1 : 0);
+
+constexpr u64 DENSE_NUM_ROLLING_VOXELS =
+    DENSE_VOXELS_PER_SIDE *
+    DENSE_VOXELS_PER_SIDE *
+    DENSE_VOXELS_PER_SIDE;
+
+constexpr u64 DENSE_OCCUPIED_MIN_OBSERVATIONS = 3;
 
 #define PANTO_DESCRIPTOR_ANMS false
 // Initializes with Ground truth frame data, to avoid having to code monocular

@@ -1,6 +1,8 @@
 #include "VIZ_Visualization.hpp"
 #include "VIZPriv_Visualization.hpp"
 
+#include <cstring>
+
 static std::vector<cv::Mat> VIZPriv_KeyFrameImages;
 static std::vector<Eigen::Vector3d> VIZPriv_IMUTestTrajectory;
 
@@ -106,7 +108,7 @@ void VIZ_SignalHandler(int Signal)
 }
 
 #if defined(CONFIG_STEREO)
-void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3f> DenseMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory)
+void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3f> DenseMap, const typeDenseVoxelOccupancyMap& RollingVoxelMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory)
 #else
 void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory)
 #endif
@@ -121,7 +123,8 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Ve
     VIZPriv_WriteDistortion(GlobalMap.KeyFrames, SnapshotPath);
     VIZPriv_WriteImages(GlobalMap.KeyFrames, SnapshotPath);
 #if defined(CONFIG_STEREO)
-    VIZPriv_WritePoints(DenseMap, SnapshotPath);
+    // VIZPriv_WritePoints(DenseMap, SnapshotPath);
+    // VIZPriv_WriteRollingOccupancyMap(RollingVoxelMap, SnapshotPath);
 #else
     VIZPriv_WritePoints(GlobalMap, SnapshotPath);
 #endif
@@ -135,6 +138,36 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Ve
     VIZPriv_PublishSnapshot(VIZPriv_SnapshotID);
 
     VIZPriv_SnapshotID++;
+}
+
+void VIZPriv_WriteRollingOccupancyMap(const typeDenseVoxelOccupancyMap& VoxelMap, const std::string& SnapshotPath)
+{
+    if(!VoxelMap.IsInitialized)
+    {
+        return;
+    }
+
+    const std::string OccupancyPath = SnapshotPath + "/occupancy.bin";
+    FILE* File = fopen(OccupancyPath.c_str(), "wb");
+    if(File == nullptr)
+    {
+        LG_Log(LogSeverity::ERROR, "[VIZPriv_WriteRollingOccupancyMap] Failed to open %s\n", OccupancyPath.c_str());
+        return;
+    }
+
+    const fp32 VoxelSize = static_cast<fp32>(DENSE_VOXEL_SIZE);
+    const u64 VoxelsPerSide = DENSE_VOXELS_PER_SIDE;
+    const u64 OccupiedObservationThreshold = DENSE_OCCUPIED_MIN_OBSERVATIONS;
+
+    fwrite(&VoxelMap.OriginKey.X, sizeof(i32), 1, File);
+    fwrite(&VoxelMap.OriginKey.Y, sizeof(i32), 1, File);
+    fwrite(&VoxelMap.OriginKey.Z, sizeof(i32), 1, File);
+    fwrite(&VoxelSize, sizeof(fp32), 1, File);
+    fwrite(&VoxelsPerSide, sizeof(u64), 1, File);
+    fwrite(&OccupiedObservationThreshold, sizeof(u64), 1, File);
+    fwrite(VoxelMap.RollingOccupancy.data(), sizeof(u64), VoxelMap.RollingOccupancy.size(), File);
+
+    fclose(File);
 }
 
 static void VIZPriv_WriteIMUTestSnapshot(void)
@@ -401,28 +434,45 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
 
     static_assert(sizeof(u64) == 8);
     static_assert(sizeof(fp64) == 8);
-
-    FILE* fp =
-        fopen(ImagePath.c_str(), "wb");
-
-    if(fp == nullptr)
-    {
-        LG_Log(LogSeverity::DBG,
-                "[VIZPriv_WriteImages] Failed to open %s\n",
-                ImagePath.c_str());
-
-        return;
-    }
+    static_assert(sizeof(i64) == 8);
 
     const u64 NumImages = static_cast<u64>(KeyFrames.active_size());
 
-    fwrite( &NumImages, sizeof(u64), 1, fp);
+    std::size_t EstimatedSize = sizeof(u64);
+
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        const std::string ImageName =
+            std::filesystem::path(KeyFrame.ImagePath).filename().string();
+
+        EstimatedSize +=
+            sizeof(i32) +
+            4 * sizeof(fp64) +
+            3 * sizeof(fp64) +
+            sizeof(i32) +
+            ImageName.size() + 1 +
+            sizeof(u64) +
+            KeyFrame.Points.ImagePoints.active_size() *
+                (2 * sizeof(fp64) + sizeof(i64));
+    }
+
+    std::vector<u8> Buffer;
+    Buffer.reserve(EstimatedSize);
+
+    const auto AppendBytes = [&Buffer](const void* Data, const std::size_t Size)
+    {
+        const std::size_t Offset = Buffer.size();
+        Buffer.resize(Offset + Size);
+        std::memcpy(Buffer.data() + Offset, Data, Size);
+    };
+
+    AppendBytes(&NumImages, sizeof(NumImages));
 
     for(const typeKeyFrame& KeyFrame : KeyFrames)
     {
         const i32 ImageID = static_cast<i32>(KeyFrame.ID + 1);
         const i32 CameraID = static_cast<i32>(KeyFrame.ID + 1);
-        fwrite( &ImageID, sizeof(i32), 1, fp);
+        AppendBytes(&ImageID, sizeof(ImageID));
 
         const Eigen::Matrix3d& Rcw = KeyFrame.Camera.Pose.R;
 
@@ -440,21 +490,21 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
             Quaternion.z()
         };
 
-        fwrite(COLMAPQuaternion, sizeof(fp64), 4, fp);
+        AppendBytes(COLMAPQuaternion, sizeof(COLMAPQuaternion));
 
-        fwrite(tcw.data(), sizeof(fp64), 3, fp);
+        AppendBytes(tcw.data(), 3 * sizeof(fp64));
 
-        fwrite(&CameraID, sizeof(i32), 1, fp);
+        AppendBytes(&CameraID, sizeof(CameraID));
 
         const std::filesystem::path CurrentImagePath(KeyFrame.ImagePath);
 
         const std::string ImageName = CurrentImagePath.filename().string();
 
-        fwrite(ImageName.c_str(), sizeof(char), ImageName.size() + 1, fp);
+        AppendBytes(ImageName.c_str(), ImageName.size() + 1);
 
         const u64 NumImagePoints = static_cast<u64>( KeyFrame.Points.ImagePoints.active_size());
 
-        fwrite( &NumImagePoints, sizeof(u64), 1, fp);
+        AppendBytes(&NumImagePoints, sizeof(NumImagePoints));
 
         for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
@@ -464,7 +514,7 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
                 ImagePoint.Point.y()
             };
 
-            fwrite(Point2D, sizeof(fp64), 2, fp);
+            AppendBytes(Point2D, sizeof(Point2D));
 
             i64 Point3DID = -1;
 
@@ -473,16 +523,42 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
                 Point3DID = static_cast<i64>(ImagePoint.MapPointID + 1);
             }
 
-            fwrite(&Point3DID, sizeof(i64), 1, fp);
+            AppendBytes(&Point3DID, sizeof(Point3DID));
         }
+    }
+
+    assert(Buffer.size() == EstimatedSize);
+
+    FILE* fp = fopen(ImagePath.c_str(), "wb");
+
+    if(fp == nullptr)
+    {
+        LG_Log(LogSeverity::DBG,
+                "[VIZPriv_WriteImages] Failed to open %s\n",
+                ImagePath.c_str());
+
+        return;
+    }
+
+    const std::size_t NumBytesWritten =
+        fwrite(Buffer.data(), sizeof(u8), Buffer.size(), fp);
+
+    if(NumBytesWritten != Buffer.size())
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[VIZPriv_WriteImages] Short write to %s: %zu of %zu bytes\n",
+                ImagePath.c_str(),
+                NumBytesWritten,
+                Buffer.size());
     }
 
     fclose(fp);
 
     LG_Log(
             LogSeverity::DBG,
-            "[VIZPriv_WriteImages] Wrote %llu images to %s\n",
+            "[VIZPriv_WriteImages] Wrote %llu images (%zu bytes) to %s\n",
             static_cast<unsigned long long>(NumImages),
+            NumBytesWritten,
             ImagePath.c_str());
 }
 
@@ -491,30 +567,35 @@ void VIZPriv_WritePoints(const std::vector<Eigen::Vector3f>& DensePoints, const 
 {
     const std::string PointPath = SnapshotPath + "/points3D.bin";
 
-    FILE* fp = fopen(PointPath.c_str(), "wb");
-
-    if(fp == nullptr)
-    {
-        LG_Log( LogSeverity::DBG,
-                "[VIZPriv_WritePoints] Failed to open %s\n",
-                PointPath.c_str());
-
-        return;
-    }
+    static_assert(sizeof(u64) == 8);
+    static_assert(sizeof(fp64) == 8);
 
     const u64 NumPoints = static_cast<u64>(DensePoints.size());
+    constexpr std::size_t BytesPerPoint =
+        sizeof(u64) + 3 * sizeof(fp64) + 3 * sizeof(u8) +
+        sizeof(fp64) + sizeof(u64);
 
-    fwrite( &NumPoints, sizeof(u64), 1, fp);
+    std::vector<u8> Buffer;
+    Buffer.reserve(sizeof(NumPoints) + DensePoints.size() * BytesPerPoint);
+
+    const auto AppendBytes = [&Buffer](const void* Data, const std::size_t Size)
+    {
+        const std::size_t Offset = Buffer.size();
+        Buffer.resize(Offset + Size);
+        std::memcpy(Buffer.data() + Offset, Data, Size);
+    };
+
+    AppendBytes(&NumPoints, sizeof(NumPoints));
 
     u64 ID = 0;
     for(const Eigen::Vector3f& MapPoint : DensePoints)
     {
-        fwrite(&ID, sizeof(u64), 1, fp);
+        AppendBytes(&ID, sizeof(ID));
         ID++;
 
         Eigen::Vector3d MapPointfp64 = MapPoint.cast<fp64>();
 
-        fwrite(MapPointfp64.data(), sizeof(fp64), 3, fp);
+        AppendBytes(MapPointfp64.data(), 3 * sizeof(fp64));
 
         u8 RGB[3] =
         {
@@ -523,35 +604,18 @@ void VIZPriv_WritePoints(const std::vector<Eigen::Vector3f>& DensePoints, const 
             0 
         };
 
-        fwrite(RGB, sizeof(u8), 3, fp);
+        AppendBytes(RGB, sizeof(RGB));
 
         const fp64 Error = 0.0;
 
-        fwrite(&Error,
-                sizeof(fp64),
-                1,
-                fp);
+        AppendBytes(&Error, sizeof(Error));
 
-        u64 TrackLength = 0;
+        const u64 TrackLength = 0;
 
-        fwrite(&TrackLength,
-                sizeof(u64),
-                1,
-                fp);
+        AppendBytes(&TrackLength, sizeof(TrackLength));
     }
 
-    fclose(fp);
-
-    LG_Log(LogSeverity::DBG,
-            "[VIZPriv_WritePoints] Wrote %llu points to %s\n",
-            static_cast<unsigned long long>(NumPoints),
-            PointPath.c_str());
-}
-#else
-
-void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& SnapshotPath)
-{
-    const std::string PointPath = SnapshotPath + "/points3D.bin";
+    assert(Buffer.size() == sizeof(NumPoints) + DensePoints.size() * BytesPerPoint);
 
     FILE* fp = fopen(PointPath.c_str(), "wb");
 
@@ -564,19 +628,70 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& Snap
         return;
     }
 
-    const u64 NumPoints = static_cast<u64>( GlobalMap.MapPoints.active_size());
+    const std::size_t NumBytesWritten =
+        fwrite(Buffer.data(), sizeof(u8), Buffer.size(), fp);
 
-    fwrite( &NumPoints, sizeof(u64), 1, fp);
+    if(NumBytesWritten != Buffer.size())
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[VIZPriv_WritePoints] Short write to %s: %zu of %zu bytes\n",
+                PointPath.c_str(),
+                NumBytesWritten,
+                Buffer.size());
+    }
+
+    fclose(fp);
+
+    LG_Log(LogSeverity::DBG,
+            "[VIZPriv_WritePoints] Wrote %llu points (%zu bytes) to %s\n",
+            static_cast<unsigned long long>(NumPoints),
+            NumBytesWritten,
+            PointPath.c_str());
+}
+#else
+
+void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& SnapshotPath)
+{
+    const std::string PointPath = SnapshotPath + "/points3D.bin";
+
+    static_assert(sizeof(u64) == 8);
+    static_assert(sizeof(fp64) == 8);
+
+    const u64 NumPoints = static_cast<u64>( GlobalMap.MapPoints.active_size());
+    constexpr std::size_t FixedBytesPerPoint =
+        sizeof(u64) + 3 * sizeof(fp64) + 3 * sizeof(u8) +
+        sizeof(fp64) + sizeof(u64);
+
+    std::size_t EstimatedSize =
+        sizeof(NumPoints) + NumPoints * FixedBytesPerPoint;
+
+    for(const typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
+    {
+        EstimatedSize += MapPoint.KeyFrameIDs.active_size() *
+            (2 * sizeof(i32));
+    }
+
+    std::vector<u8> Buffer;
+    Buffer.reserve(EstimatedSize);
+
+    const auto AppendBytes = [&Buffer](const void* Data, const std::size_t Size)
+    {
+        const std::size_t Offset = Buffer.size();
+        Buffer.resize(Offset + Size);
+        std::memcpy(Buffer.data() + Offset, Data, Size);
+    };
+
+    AppendBytes(&NumPoints, sizeof(NumPoints));
 
     for(const typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
     {
         const u64 Point3DID = MapPoint.ID + 1;
 
-        fwrite( &Point3DID, sizeof(u64), 1, fp);
+        AppendBytes(&Point3DID, sizeof(Point3DID));
 
         const Eigen::Vector3d Point = PROJ_Homog2Cart(MapPoint.Point);
 
-        fwrite(Point.data(), sizeof(fp64), 3, fp);
+        AppendBytes(Point.data(), 3 * sizeof(fp64));
 
         u8 RGB[3] =
         {
@@ -665,14 +780,11 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& Snap
             RGB[2] = static_cast<u8>(RGBSum[2] / NumRGBSamples);
         }
 
-        fwrite(RGB, sizeof(u8), 3, fp);
+        AppendBytes(RGB, sizeof(RGB));
 
         const fp64 Error = 0.0;
 
-        fwrite(&Error,
-                sizeof(fp64),
-                1,
-                fp);
+        AppendBytes(&Error, sizeof(Error));
 
         u64 TrackLength = 0;
 
@@ -709,11 +821,7 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& Snap
             TrackLength++;
         }
 
-        fwrite(
-                &TrackLength,
-                sizeof(u64),
-                1,
-                fp);
+        AppendBytes(&TrackLength, sizeof(TrackLength));
 
         for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
         {
@@ -750,24 +858,41 @@ void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& Snap
                 static_cast<i32>(
                         ImagePointID);
 
-            fwrite(&ImageID,
-                    sizeof(i32),
-                    1,
-                    fp);
-
-            fwrite(&Point2DIdx,
-                    sizeof(i32),
-                    1,
-                    fp);
+            AppendBytes(&ImageID, sizeof(ImageID));
+            AppendBytes(&Point2DIdx, sizeof(Point2DIdx));
         }
+    }
+
+    FILE* fp = fopen(PointPath.c_str(), "wb");
+
+    if(fp == nullptr)
+    {
+        LG_Log( LogSeverity::DBG,
+                "[VIZPriv_WritePoints] Failed to open %s\n",
+                PointPath.c_str());
+
+        return;
+    }
+
+    const std::size_t NumBytesWritten =
+        fwrite(Buffer.data(), sizeof(u8), Buffer.size(), fp);
+
+    if(NumBytesWritten != Buffer.size())
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[VIZPriv_WritePoints] Short write to %s: %zu of %zu bytes\n",
+                PointPath.c_str(),
+                NumBytesWritten,
+                Buffer.size());
     }
 
     fclose(fp);
 
     LG_Log(
             LogSeverity::DBG,
-            "[VIZPriv_WritePoints] Wrote %llu points to %s\n",
+            "[VIZPriv_WritePoints] Wrote %llu points (%zu bytes) to %s\n",
             static_cast<unsigned long long>(NumPoints),
+            NumBytesWritten,
             PointPath.c_str());
 }
 #endif // CONFIG_STEREO

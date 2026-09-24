@@ -13,6 +13,7 @@
 #include "PT_Types.hpp"
 #include "MAP_Mapping.hpp"
 #include "CM_Camera.hpp"
+#include "DENSE_DenseMapping.hpp"
 #include "PROJ_ProjectiveUtils.hpp"
 #include "Config.hpp"
 #include "PANTOVEC_PantoVector.hpp"
@@ -22,7 +23,7 @@ void VIZ_ResetMapVisualization(void);
 void VIZ_StopViewer();
 void VIZ_SignalHandler(int Signal);
 #if defined(CONFIG_STEREO)
-void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3f> DenseMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory);
+void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3f> DenseMap, const typeDenseVoxelOccupancyMap& RollingVoxelMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory);
 #else
 void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory);
 #endif

@@ -213,6 +213,50 @@ def read_distortion_binary(path: Path):
     return distortions
 
 
+def read_occupancy_binary(path: Path):
+    if not path.exists():
+        return None
+
+    header_format = "<iiifQQ"
+    header_size = struct.calcsize(header_format)
+
+    with path.open("rb") as f:
+        header_data = f.read(header_size)
+        if len(header_data) != header_size:
+            raise RuntimeError(f"{path} is too short for its header")
+
+        (
+            origin_x,
+            origin_y,
+            origin_z,
+            voxel_size,
+            voxels_per_side,
+            occupied_observation_threshold,
+        ) = struct.unpack(header_format, header_data)
+
+        if voxel_size <= 0.0 or voxels_per_side == 0:
+            raise RuntimeError(f"{path} has an invalid voxel-grid header")
+
+        voxel_count = voxels_per_side ** 3
+        occupancy_data = f.read(voxel_count * 8)
+        if len(occupancy_data) != voxel_count * 8:
+            raise RuntimeError(
+                f"{path} expected {voxel_count} occupancy values, got "
+                f"{len(occupancy_data) // 8}"
+            )
+
+        if f.read(1):
+            raise RuntimeError(f"{path} contains trailing data")
+
+    return {
+        "origin_key": np.array([origin_x, origin_y, origin_z]),
+        "voxel_size": voxel_size,
+        "voxels_per_side": voxels_per_side,
+        "occupied_observation_threshold": occupied_observation_threshold,
+        "counts": np.frombuffer(occupancy_data, dtype="<u8").copy(),
+    }
+
+
 def read_latest_snapshot(root: Path):
     latest_path = root / "sparse" / "latest.txt"
 
@@ -263,6 +307,16 @@ def load_snapshot(root: Path, snapshot_id: int):
         print("[VISER] points3D.bin omitted")
 
     distortions = read_distortion_binary(sparse_path / "distortion.bin")
+    occupancy = read_occupancy_binary(sparse_path / "occupancy.bin")
+
+    if occupancy is None:
+        print("[VISER] occupancy.bin omitted")
+    else:
+        print(
+            "[VISER] occupancy.bin OK: "
+            f"{occupancy['voxels_per_side']}^3 voxels, occupied at "
+            f"{occupancy['occupied_observation_threshold']} observations"
+        )
 
     ground_truth_path = root / "sparse" / "ground_truth.bin"
 
@@ -289,6 +343,104 @@ def load_snapshot(root: Path, snapshot_id: int):
         images,
         points3d,
         distortions,
+        occupancy,
+    )
+
+
+_UNIT_CUBE_VERTICES = np.array(
+    [
+        [-0.5, -0.5, -0.5],
+        [0.5, -0.5, -0.5],
+        [0.5, 0.5, -0.5],
+        [-0.5, 0.5, -0.5],
+        [-0.5, -0.5, 0.5],
+        [0.5, -0.5, 0.5],
+        [0.5, 0.5, 0.5],
+        [-0.5, 0.5, 0.5],
+    ],
+    dtype=np.float32,
+)
+
+_UNIT_CUBE_FACES = np.array(
+    [
+        [0, 2, 1], [0, 3, 2],
+        [4, 5, 6], [4, 6, 7],
+        [0, 1, 5], [0, 5, 4],
+        [1, 2, 6], [1, 6, 5],
+        [2, 3, 7], [2, 7, 6],
+        [3, 0, 4], [3, 4, 7],
+    ],
+    dtype=np.uint32,
+)
+
+
+def make_occupancy_opacities(
+    counts,
+    occupied_observation_threshold,
+    free_alpha,
+    occupied_alpha,
+):
+    opacities = np.full(len(counts), free_alpha, dtype=np.float32)
+    opacities[counts >= occupied_observation_threshold] = occupied_alpha
+    return opacities
+
+
+def add_occupancy_visualization(
+    server,
+    occupancy,
+    visible,
+    free_alpha,
+    occupied_alpha,
+):
+    voxels_per_side = occupancy["voxels_per_side"]
+    voxel_size = occupancy["voxel_size"]
+    counts = occupancy["counts"]
+    origin = occupancy["origin_key"].astype(np.float32) * voxel_size
+
+    indices = np.arange(len(counts), dtype=np.uint64)
+    positions = np.empty((len(counts), 3), dtype=np.float32)
+    positions[:, 0] = (
+        origin[0] + (indices % voxels_per_side + 0.5) * voxel_size
+    )
+    positions[:, 1] = (
+        origin[1]
+        + ((indices // voxels_per_side) % voxels_per_side + 0.5)
+        * voxel_size
+    )
+    positions[:, 2] = (
+        origin[2]
+        + (indices // (voxels_per_side ** 2) + 0.5) * voxel_size
+    )
+
+    colors = np.empty((len(counts), 3), dtype=np.uint8)
+    colors[:] = np.array([40, 210, 80], dtype=np.uint8)
+    colors[
+        counts >= occupancy["occupied_observation_threshold"]
+    ] = np.array([235, 50, 50], dtype=np.uint8)
+
+    rotations = np.zeros((len(counts), 4), dtype=np.float32)
+    rotations[:, 0] = 1.0
+
+    return server.scene.add_batched_meshes_simple(
+        name="/dense/rolling_occupancy",
+        vertices=_UNIT_CUBE_VERTICES,
+        faces=_UNIT_CUBE_FACES,
+        batched_wxyzs=rotations,
+        batched_positions=positions,
+        batched_scales=np.full(
+            len(counts), voxel_size * 0.95, dtype=np.float32
+        ),
+        batched_colors=colors,
+        batched_opacities=make_occupancy_opacities(
+            counts,
+            occupancy["occupied_observation_threshold"],
+            free_alpha,
+            occupied_alpha,
+        ),
+        lod="auto",
+        cast_shadow=False,
+        receive_shadow=False,
+        visible=visible,
     )
 
 
@@ -541,11 +693,15 @@ def update_visualization(
     images,
     points3d,
     distortions,
+    occupancy,
     gui_point_size,
     gui_frustum_scale,
     gui_tracking_thickness,
     gui_show_keyframes,
     gui_show_expected_gt,
+    gui_show_occupancy,
+    gui_free_voxel_alpha,
+    gui_occupied_voxel_alpha,
     gui_follow_track,
     gui_follow_distance,
     gui_follow_height,
@@ -566,6 +722,23 @@ def update_visualization(
     handles["latest_ground_truth"] = ground_truth
     handles["latest_ground_truth_timestamps"] = ground_truth_timestamps
     handles["camera_image_preview"].visible = len(images) > 0
+
+    if handles["occupancy"] is not None:
+        handles["occupancy"].remove()
+        handles["occupancy"] = None
+
+    if occupancy is not None:
+        handles["occupancy_counts"] = occupancy["counts"]
+        handles["occupancy_threshold"] = (
+            occupancy["occupied_observation_threshold"]
+        )
+        handles["occupancy"] = add_occupancy_visualization(
+            server,
+            occupancy,
+            gui_show_occupancy.value,
+            gui_free_voxel_alpha.value,
+            gui_occupied_voxel_alpha.value,
+        )
 
     if len(images) > 0:
         latest_img_id = max(images.keys())
@@ -900,6 +1073,31 @@ def main(root: str):
         ),
     )
 
+    gui_show_occupancy = server.gui.add_checkbox(
+        "Show occupancy map",
+        initial_value=True,
+        hint=(
+            "Green voxels have fewer than three observations; red voxels "
+            "have three or more."
+        ),
+    )
+
+    gui_free_voxel_alpha = server.gui.add_slider(
+        "Free voxel alpha",
+        min=0.0,
+        max=1.0,
+        step=0.001,
+        initial_value=0.15,
+    )
+
+    gui_occupied_voxel_alpha = server.gui.add_slider(
+        "Occupied voxel alpha",
+        min=0.0,
+        max=1.0,
+        step=0.001,
+        initial_value=0.55,
+    )
+
     camera_image_preview = server.gui.add_image(
         np.zeros((2, 2, 3), dtype=np.uint8),
         label="Camera image (latest; click a frustum to inspect)",
@@ -911,6 +1109,12 @@ def main(root: str):
     server.gui.add_markdown(
         "**Image points:** <span style='color:#00d000'>green</span> = "
         "triangulated, <span style='color:#ff2828'>red</span> = 2D only."
+    )
+
+    server.gui.add_markdown(
+        "**Occupancy:** <span style='color:#28d250'>green</span> = "
+        "default traversable, <span style='color:#eb3232'>red</span> = "
+        "three or more observations."
     )
 
     server.gui.add_markdown(
@@ -950,6 +1154,9 @@ def main(root: str):
 
     handles = {
         "point_cloud": None,
+        "occupancy": None,
+        "occupancy_counts": None,
+        "occupancy_threshold": None,
         "tracking_trajectory": None,
         "ground_truth_trajectory": None,
         "ground_truth_size": 0,
@@ -1003,6 +1210,32 @@ def main(root: str):
             gui_show_expected_gt.value,
             handles,
         )
+
+    @gui_show_occupancy.on_update
+    def _(_):
+        if handles["occupancy"] is not None:
+            handles["occupancy"].visible = gui_show_occupancy.value
+
+    def refresh_occupancy_opacities():
+        if handles["occupancy"] is None:
+            return
+
+        handles["occupancy"].batched_opacities = (
+            make_occupancy_opacities(
+                handles["occupancy_counts"],
+                handles["occupancy_threshold"],
+                gui_free_voxel_alpha.value,
+                gui_occupied_voxel_alpha.value,
+            )
+        )
+
+    @gui_free_voxel_alpha.on_update
+    def _(_):
+        refresh_occupancy_opacities()
+
+    @gui_occupied_voxel_alpha.on_update
+    def _(_):
+        refresh_occupancy_opacities()
 
     @gui_tracking_thickness.on_update
     def _(_):
@@ -1071,6 +1304,7 @@ def main(root: str):
                     images,
                     points3d,
                     distortions,
+                    occupancy,
                 ) = load_snapshot(root, snapshot_id)
 
                 update_visualization(
@@ -1083,11 +1317,15 @@ def main(root: str):
                     images,
                     points3d,
                     distortions,
+                    occupancy,
                     gui_point_size,
                     gui_frustum_scale,
                     gui_tracking_thickness,
                     gui_show_keyframes,
                     gui_show_expected_gt,
+                    gui_show_occupancy,
+                    gui_free_voxel_alpha,
+                    gui_occupied_voxel_alpha,
                     gui_follow_track,
                     gui_follow_distance,
                     gui_follow_height,

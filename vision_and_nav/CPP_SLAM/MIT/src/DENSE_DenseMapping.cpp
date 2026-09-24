@@ -6,6 +6,7 @@
 #include "PANTOVEC_PantoVector.hpp"
 #include "opencv2/core.hpp"
 #include "opencv2/highgui.hpp"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -14,45 +15,78 @@
 
 static cv::Ptr<cv::StereoSGBM> DENSEPriv_InitSGBM(void);
 typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& DenseData);
-static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typeDenseLocaMapData& LocalMapData);
-static cv::Mat DENSEPriv_GetDisparityVisualization(const cv::Mat& Disparity16,
-    const cv::StereoSGBM& StereoSGBM);
+static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typeDenseLocaMapData& LocalMapData, typeDenseVoxelOccupancyMap& VoxelMap);
+static cv::Mat DENSEPriv_GetDisparityVisualization(const cv::Mat& Disparity16, const cv::StereoSGBM& StereoSGBM);
 static bool DENSEPriv_WritePLY(const std::vector<Eigen::Vector4f>& Points, const std::string& Path);
 std::vector<Eigen::Vector4f> DENSEPriv_GetDenseMap(const typeDenseMapData& DenseData, const typeGlobalMap& GlobalMap);
 static void DENSEPriv_LogTimingData(void);
 
 static u64 NumPairsCalculated = 0;
+static fp64 SumQueueWait = 0.0;
+static fp64 SumDenseIteration = 0.0;
 static fp64 SumTotalDenseMapCalc = 0.0;
 static fp64 SumRemapAndDisparity = 0.0;
 static fp64 SumDisparityTo3D = 0.0;
+static fp64 SumDisparityVizEnqueue = 0.0;
+static fp64 SumDenseMapStore = 0.0;
+static fp64 SumWriteDenseWCS = 0.0;
+static fp64 SumRollingGridClear = 0.0;
+static fp64 SumWorldProjectionAndOccupancy = 0.0;
+static fp64 SumWCSPointPublish = 0.0;
+static fp64 SumOccupancyPublish = 0.0;
 
 namespace
 {
     std::vector<Eigen::Vector3f> WCSMapPoints;
     std::mutex WCSMapMutex;
+    typeDenseVoxelOccupancyMap RollingVoxelOccupancyMap;
+    std::mutex RollingVoxelOccupancyMapMutex;
 }
 
 void DENSE_DenseMapping(typeDenseMapData& MapData)
 {
     typeDenseLocaMapData DenseData;
+    typeDenseVoxelOccupancyMap OccupancyMap{};
+    OccupancyMap.RollingOccupancy.resize(DENSE_NUM_ROLLING_VOXELS);
     while(true)
     {
+        const PantoClock::time_point QueueWaitStart = PantoClock::now();
         bool DequeRet = MapData.DenseQueue->deque(DenseData);
+        const fp64 QueueWait = std::chrono::duration<fp64>(
+                PantoClock::now() - QueueWaitStart).count();
         // False means stop is signalled.
         if(!DequeRet)
         {
             break;
         }
-        const auto& StartTimeDense = PantoClock::now();
+        SumQueueWait += QueueWait;
+
+        const PantoClock::time_point IterationStart = PantoClock::now();
+        const PantoClock::time_point StartTimeDense = PantoClock::now();
         typeDenseKeyFrameMap DenseMap = DENSEPriv_CalculateDenseKeyFrameMap(DenseData.DenseData);
         SumTotalDenseMapCalc += std::chrono::duration<fp64>(PantoClock::now() - StartTimeDense).count();
-        MapData.VizQueue->enque(DenseMap.DisparityColored);
 
+        const PantoClock::time_point VizEnqueueStart = PantoClock::now();
+        MapData.VizQueue->enque(DenseMap.DisparityColored);
+        SumDisparityVizEnqueue += std::chrono::duration<fp64>(
+                PantoClock::now() - VizEnqueueStart).count();
+
+        const PantoClock::time_point DenseMapStoreStart = PantoClock::now();
         const u64 KeyFrameID = DenseMap.KeyFrameID;
         MapData.KeyFrameMaps.insert_or_assign(KeyFrameID, std::move(DenseMap));
-        DENSEPriv_WriteDenseWCS(MapData, DenseData);
+        SumDenseMapStore += std::chrono::duration<fp64>(
+                PantoClock::now() - DenseMapStoreStart).count();
+
+        const PantoClock::time_point WriteDenseWCSStart = PantoClock::now();
+        DENSEPriv_WriteDenseWCS(MapData, DenseData, OccupancyMap);
+        SumWriteDenseWCS += std::chrono::duration<fp64>(
+                PantoClock::now() - WriteDenseWCSStart).count();
+
+        SumDenseIteration += std::chrono::duration<fp64>(
+                PantoClock::now() - IterationStart).count();
         NumPairsCalculated++;
     }
+
     LG_EnableDataSummaryLoggingForCurrentThread(true);
     DENSEPriv_LogTimingData();
 
@@ -171,7 +205,7 @@ typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& De
 }
 
 
-static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typeDenseLocaMapData& LocalMapData)
+static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typeDenseLocaMapData& LocalMapData, typeDenseVoxelOccupancyMap& VoxelMap)
 {
     //This assumes no keyframes are culled!
     const std::vector<typeKeyFrame> LocalMap = LocalMapData.LocalKeyFrames;
@@ -181,6 +215,22 @@ static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typ
     std::vector<Eigen::Vector3f> NewWCSMapPoints;
     NewWCSMapPoints.reserve(NumberOfPoints);
 
+    const Eigen::Vector3d VectorVoxelCenter = LocalMapData.LocalKeyFrames.front().Camera.Pose.GetCameraCenter();
+
+    typeVoxelKey VoxelOrigin = DENSE_GetVoxelKey(VectorVoxelCenter.x() - DENSE_MAP_MAX_DEPTH,
+            VectorVoxelCenter.y() - DENSE_MAP_MAX_DEPTH,
+            VectorVoxelCenter.z() - DENSE_MAP_MAX_DEPTH);
+    VoxelMap.OriginKey = VoxelOrigin;
+
+    const PantoClock::time_point GridClearStart = PantoClock::now();
+    std::fill(
+            VoxelMap.RollingOccupancy.begin(),
+            VoxelMap.RollingOccupancy.end(),
+            0);
+    SumRollingGridClear += std::chrono::duration<fp64>(
+            PantoClock::now() - GridClearStart).count();
+
+    const PantoClock::time_point ProjectionStart = PantoClock::now();
     for(const typeKeyFrame& KeyFrame: LocalMapData.LocalKeyFrames)
     {
         const auto DenseMapIterator = DenseData.KeyFrameMaps.find(KeyFrame.ID);
@@ -195,29 +245,69 @@ static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typ
         // Assuming Pose is Tcw:
         // p_camera = Rcw * p_world + tcw
         const Eigen::Matrix3f Rwc = Pose.R.transpose().cast<fp32>();
-
         const Eigen::Vector3f twc = -Rwc * Pose.t.cast<fp32>();
 
         Eigen::Matrix<fp32, 3, Eigen::Dynamic> WorldPoints = Rwc * DenseMap.MapPoints;
+
 
         WorldPoints.colwise() += twc;
 
         for(Eigen::Index Column = 0; Column < WorldPoints.cols(); ++Column)
         {
-            NewWCSMapPoints.emplace_back(WorldPoints.col(Column));
+            const Eigen::Vector3f& WorldPoint = WorldPoints.col(Column);
+
+            NewWCSMapPoints.emplace_back(WorldPoint);
+
+            const typeVoxelKey Key = DENSE_GetVoxelKey(WorldPoint.x(), WorldPoint.y(), WorldPoint.z());
+            const i32 x = Key.X - VoxelOrigin.X;
+            const i32 y = Key.Y - VoxelOrigin.Y;
+            const i32 z = Key.Z - VoxelOrigin.Z;
+
+            const i32 n = static_cast<i32>(DENSE_VOXELS_PER_SIDE);
+
+            if (x >= 0 && x < n && y >= 0 && y < n && z >= 0 && z < n)
+            {
+                const std::size_t index =
+                    static_cast<std::size_t>(x) +
+                    static_cast<std::size_t>(n) * (static_cast<std::size_t>(y) +
+                     static_cast<std::size_t>(n) * static_cast<std::size_t>(z));
+
+                ++VoxelMap.RollingOccupancy[index];
+            }
         }
     }
+    SumWorldProjectionAndOccupancy += std::chrono::duration<fp64>(
+            PantoClock::now() - ProjectionStart).count();
 
+    const PantoClock::time_point WCSPointPublishStart = PantoClock::now();
     {
         std::scoped_lock<std::mutex> Lock(WCSMapMutex);
         WCSMapPoints.swap(NewWCSMapPoints);
     }
+    SumWCSPointPublish += std::chrono::duration<fp64>(
+            PantoClock::now() - WCSPointPublishStart).count();
+
+    VoxelMap.IsInitialized = true;
+
+    const PantoClock::time_point OccupancyPublishStart = PantoClock::now();
+    {
+        std::scoped_lock<std::mutex> Lock(RollingVoxelOccupancyMapMutex);
+        RollingVoxelOccupancyMap = VoxelMap;
+    }
+    SumOccupancyPublish += std::chrono::duration<fp64>(
+            PantoClock::now() - OccupancyPublishStart).count();
 }
 
 std::vector<Eigen::Vector3f> DENSE_GetDenseMapPoints()
 {
     std::scoped_lock Lock(WCSMapMutex);
     return WCSMapPoints;
+}
+
+typeDenseVoxelOccupancyMap DENSE_GetRollingVoxelOccupancyMap()
+{
+    std::scoped_lock<std::mutex> Lock(RollingVoxelOccupancyMapMutex);
+    return RollingVoxelOccupancyMap;
 }
 
 
@@ -347,12 +437,38 @@ static bool DENSEPriv_WritePLY(const std::vector<Eigen::Vector4f>& Points, const
 
 static void DENSEPriv_LogTimingData(void)
 {
+    if(NumPairsCalculated == 0)
+    {
+        LG_Log(LogSeverity::DATA,
+                "[DENSE MAPPING] No dense pairs were calculated\n");
+        return;
+    }
+
     const fp64 NumDense = static_cast<fp64>(NumPairsCalculated);
+    const fp64 MeanQueueWait = SumQueueWait / NumDense;
+    const fp64 MeanDenseIteration = SumDenseIteration / NumDense;
     const fp64 MeanTotalDense = SumTotalDenseMapCalc / NumDense;
     const fp64 MeanDisparity  = SumRemapAndDisparity / NumDense;
     const fp64 MeanDispTo3D = SumDisparityTo3D       / NumDense;
+    const fp64 MeanDisparityVizEnqueue = SumDisparityVizEnqueue / NumDense;
+    const fp64 MeanDenseMapStore = SumDenseMapStore / NumDense;
+    const fp64 MeanWriteDenseWCS = SumWriteDenseWCS / NumDense;
+    const fp64 MeanRollingGridClear = SumRollingGridClear / NumDense;
+    const fp64 MeanWorldProjectionAndOccupancy =
+        SumWorldProjectionAndOccupancy / NumDense;
+    const fp64 MeanWCSPointPublish = SumWCSPointPublish / NumDense;
+    const fp64 MeanOccupancyPublish = SumOccupancyPublish / NumDense;
 
+    LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Queue Wait                = %lf\n", MeanQueueWait);
+    LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Complete Iteration        = %lf\n", MeanDenseIteration);
     LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Total Dense Mapping = %lf\n", MeanTotalDense);
     LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Remap And Disparity = %lf\n", MeanDisparity);
     LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Disparity To 3D     = %lf\n", MeanDispTo3D);
+    LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Disparity Viz Enqueue     = %lf\n", MeanDisparityVizEnqueue);
+    LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Dense Map Store           = %lf\n", MeanDenseMapStore);
+    LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean WCS/Occupancy Rebuild     = %lf\n", MeanWriteDenseWCS);
+    LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Rolling Grid Clear        = %lf\n", MeanRollingGridClear);
+    LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Projection And Occupancy  = %lf\n", MeanWorldProjectionAndOccupancy);
+    LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean WCS Point Publish         = %lf\n", MeanWCSPointPublish);
+    LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Occupancy Publish         = %lf\n", MeanOccupancyPublish);
 }

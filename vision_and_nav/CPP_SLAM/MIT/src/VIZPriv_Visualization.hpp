@@ -10,6 +10,7 @@ void VIZPriv_WriteDistortion(const typePantoVector<typeKeyFrame>& KeyFrames, con
 void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath);
 #if defined(CONFIG_STEREO)
 void VIZPriv_WritePoints(const std::vector<Eigen::Vector3f>& DenseMap, const std::string& SnapshotPath);
+void VIZPriv_WriteRollingOccupancyMap(const typeDenseVoxelOccupancyMap& VoxelMap, const std::string& SnapshotPath);
 #else
 void VIZPriv_WritePoints(const typeGlobalMap& GlobalMap, const std::string& SnapshotPath);
 #endif
