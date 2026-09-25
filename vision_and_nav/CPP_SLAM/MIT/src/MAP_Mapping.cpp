@@ -445,6 +445,95 @@ typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisi
     return LocalMap;
 }
 
+typeLocalMap MAP_CreateTemporallyGroundedLocalMap(
+        const typeGlobalMap& GlobalMap,
+        const typeCovisibilityGraph& CovisibilityGraph,
+        const u64 LatestKeyFrameID)
+{
+    assert(GlobalMap.KeyFrames.contains(LatestKeyFrameID));
+
+    const typeKeyFrame& LatestKeyFrame =
+        GlobalMap.KeyFrames[LatestKeyFrameID];
+    const fp64 LatestTimeStamp = LatestKeyFrame.Camera.TimeStamp;
+
+    const auto IsFromFuture =
+        [LatestTimeStamp](const typeKeyFrame& KeyFrame)
+        {
+            return KeyFrame.Camera.TimeStamp > LatestTimeStamp;
+        };
+
+    // Apply the temporal constraint before covisibility ranking so future
+    // keyframes do not consume the normal local-map candidate limit. The
+    // ordinary MAP_CreateLocalMap implementation can then retain its exact
+    // selection and anchoring rules over the temporally valid graph.
+    typeCovisibilityGraph TemporalCovisibilityGraph;
+    TemporalCovisibilityGraph.CovisibilityGraph =
+        CovisibilityGraph.CovisibilityGraph;
+
+    for(u64 KeyFrameID = 0;
+            KeyFrameID < TemporalCovisibilityGraph.CovisibilityGraph.size();
+            KeyFrameID++)
+    {
+        if(!TemporalCovisibilityGraph.CovisibilityGraph.contains(KeyFrameID))
+        {
+            continue;
+        }
+
+        if(!GlobalMap.KeyFrames.contains(KeyFrameID) ||
+           IsFromFuture(GlobalMap.KeyFrames[KeyFrameID]))
+        {
+            TemporalCovisibilityGraph.CovisibilityGraph.remove(KeyFrameID);
+        }
+    }
+
+    for(std::unordered_map<u64, u64>& Connections :
+            TemporalCovisibilityGraph.CovisibilityGraph)
+    {
+        std::erase_if(
+                Connections,
+                [&TemporalCovisibilityGraph](const auto& Connection)
+                {
+                    return !TemporalCovisibilityGraph.CovisibilityGraph.contains(
+                            Connection.first);
+                });
+    }
+
+    typeLocalMap LocalMap = MAP_CreateLocalMap(
+            GlobalMap,
+            TemporalCovisibilityGraph,
+            LatestKeyFrameID);
+
+    std::erase_if(LocalMap.KeyFrames, IsFromFuture);
+    std::erase_if(LocalMap.FixedKeyFrames, IsFromFuture);
+
+    // MAP_CreateLocalMap gathers map points from its optimizable keyframes.
+    // Rebuild that same set after temporal filtering so the returned snapshot
+    // cannot retain points solely because a future keyframe was removed. The
+    // final associations are accepted as-is; map-point creation time is not
+    // checked.
+    LocalMap.MapPoints.clear();
+    std::unordered_set<u64> MapPointInLocalMap;
+
+    for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+
+            if(MapPointID == PANTO_ID_NOT_SET ||
+               !GlobalMap.MapPoints.contains(MapPointID) ||
+               !MapPointInLocalMap.insert(MapPointID).second)
+            {
+                continue;
+            }
+
+            LocalMap.MapPoints.push_back(GlobalMap.MapPoints[MapPointID]);
+        }
+    }
+
+    return LocalMap;
+}
+
 bool MAP_CommitLocalMap(typeGlobalMap* GlobalMap,
         const typeLocalMap& LocalMap)
 {

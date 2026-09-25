@@ -156,6 +156,10 @@ u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame);
 static const typeKeyFrame* MAP_FindKeyFrameByGeneration(const typeGlobalMap& GlobalMap, const u64 Generation);
 typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame);
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const u64 LatestKeyFrameID);
+typeLocalMap MAP_CreateTemporallyGroundedLocalMap(
+        const typeGlobalMap& GlobalMap,
+        const typeCovisibilityGraph& CovisibilityGraph,
+        const u64 LatestKeyFrameID);
 bool MAP_CommitLocalMap(typeGlobalMap* GlobalMap,
         const typeLocalMap& LocalMap);
 void MAP_CommitTrackingStatistics(typeGlobalMap* GlobalMap,

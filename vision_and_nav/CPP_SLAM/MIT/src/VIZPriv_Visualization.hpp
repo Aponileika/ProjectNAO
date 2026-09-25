@@ -7,7 +7,9 @@
 void VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& TrackingTrajectory, const std::string& SnapshotPath);
 void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath);
 void VIZPriv_WriteDistortion(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath);
-void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath);
+void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames,
+        const std::string& SnapshotPath,
+        bool IncludeImagePoints = true);
 #if defined(CONFIG_STEREO)
 void VIZPriv_WritePoints(const std::vector<Eigen::Vector3f>& DenseMap, const std::string& SnapshotPath);
 void VIZPriv_WriteRollingOccupancyMap(const typeDenseVoxelOccupancyMap& VoxelMap, const std::string& SnapshotPath);

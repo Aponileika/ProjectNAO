@@ -55,7 +55,7 @@ inline constexpr const char *PANTO_SLAMSTARTMSG =
 // TODO these are baseline specific parameters
 #define DENSE_MAP_MIN_DEPTH 0.3 // metres
 #define DENSE_MAP_MAX_DEPTH 5.0 // metres
-#define DENSE_MAP_PIXEL_STRIDE 16
+#define DENSE_MAP_PIXEL_STRIDE 4
 #define DENSE_VOXEL_SIZE 0.1 // metres
 
 constexpr fp64 VoxelsPerSideExact = DENSE_MAP_MAX_DEPTH * 2 / DENSE_VOXEL_SIZE;
@@ -70,7 +70,7 @@ constexpr u64 DENSE_NUM_ROLLING_VOXELS =
     DENSE_VOXELS_PER_SIDE *
     DENSE_VOXELS_PER_SIDE;
 
-constexpr u64 DENSE_OCCUPIED_MIN_OBSERVATIONS = 3;
+constexpr u64 DENSE_OCCUPIED_MIN_OBSERVATIONS = 2;
 
 #define PANTO_DESCRIPTOR_ANMS false
 // Initializes with Ground truth frame data, to avoid having to code monocular
@@ -115,6 +115,8 @@ constexpr u64 DENSE_OCCUPIED_MIN_OBSERVATIONS = 3;
 constexpr const char *PANTO_COLMAP_PATH = "./colmap";
 constexpr const char *PANTO_COLMAP_PYTHON_SCRIPT_PATH =
     "./colmap/vis_colmap.py";
+constexpr const char *PANTO_LIVE_PYTHON_SCRIPT_PATH =
+    "./colmap/vis_live.py";
 constexpr const char *PANTO_PATH_TO_PYTHON_INTERPRETER =
     "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/"
     ".venv/bin/python";

@@ -374,15 +374,35 @@ _UNIT_CUBE_FACES = np.array(
 )
 
 
-def make_occupancy_opacities(
-    counts,
-    occupied_observation_threshold,
-    free_alpha,
-    occupied_alpha,
-):
-    opacities = np.full(len(counts), free_alpha, dtype=np.float32)
-    opacities[counts >= occupied_observation_threshold] = occupied_alpha
-    return opacities
+class OccupancyVisualization:
+    def __init__(self, boundary, occupied_voxels, num_occupied):
+        self.boundary = boundary
+        self.occupied_voxels = occupied_voxels
+        self.num_occupied = num_occupied
+
+    @property
+    def visible(self):
+        return self.boundary.visible
+
+    @visible.setter
+    def visible(self, value):
+        self.boundary.visible = value
+        if self.occupied_voxels is not None:
+            self.occupied_voxels.visible = value
+
+    def set_opacities(self, wireframe_alpha, occupied_alpha):
+        self.boundary.opacity = wireframe_alpha
+        if self.occupied_voxels is not None:
+            self.occupied_voxels.batched_opacities = np.full(
+                self.num_occupied,
+                occupied_alpha,
+                dtype=np.float32,
+            )
+
+    def remove(self):
+        if self.occupied_voxels is not None:
+            self.occupied_voxels.remove()
+        self.boundary.remove()
 
 
 def add_occupancy_visualization(
@@ -396,51 +416,98 @@ def add_occupancy_visualization(
     voxel_size = occupancy["voxel_size"]
     counts = occupancy["counts"]
     origin = occupancy["origin_key"].astype(np.float32) * voxel_size
+    threshold = occupancy["occupied_observation_threshold"]
+    if "indices" in occupancy:
+        stored_indices = occupancy["indices"]
+        occupied_indices = stored_indices[counts >= threshold].astype(
+            np.uint64,
+            copy=False,
+        )
+    else:
+        occupied_indices = np.flatnonzero(counts >= threshold).astype(
+            np.uint64,
+            copy=False,
+        )
+    total_grid_cells = voxels_per_side ** 3
 
-    indices = np.arange(len(counts), dtype=np.uint64)
-    positions = np.empty((len(counts), 3), dtype=np.float32)
+    cube_side_length = float(voxels_per_side * voxel_size)
+    boundary = server.scene.add_box(
+        name="/dense/rolling_occupancy_boundary",
+        color=(40, 210, 80),
+        dimensions=(
+            cube_side_length,
+            cube_side_length,
+            cube_side_length,
+        ),
+        wireframe=True,
+        opacity=free_alpha,
+        position=origin + cube_side_length * 0.5,
+        cast_shadow=False,
+        receive_shadow=False,
+        visible=visible,
+    )
+
+    if len(occupied_indices) == 0:
+        print(
+            "[VISER] Occupancy contains no voxels at or above "
+            f"the {threshold}-observation threshold; showing boundary only"
+        )
+        return OccupancyVisualization(boundary, None, 0)
+
+    positions = np.empty((len(occupied_indices), 3), dtype=np.float32)
     positions[:, 0] = (
-        origin[0] + (indices % voxels_per_side + 0.5) * voxel_size
+        origin[0]
+        + (occupied_indices % voxels_per_side + 0.5) * voxel_size
     )
     positions[:, 1] = (
         origin[1]
-        + ((indices // voxels_per_side) % voxels_per_side + 0.5)
+        + (
+            (occupied_indices // voxels_per_side) % voxels_per_side
+            + 0.5
+        )
         * voxel_size
     )
     positions[:, 2] = (
         origin[2]
-        + (indices // (voxels_per_side ** 2) + 0.5) * voxel_size
+        + (occupied_indices // (voxels_per_side ** 2) + 0.5)
+        * voxel_size
     )
 
-    colors = np.empty((len(counts), 3), dtype=np.uint8)
-    colors[:] = np.array([40, 210, 80], dtype=np.uint8)
-    colors[
-        counts >= occupancy["occupied_observation_threshold"]
-    ] = np.array([235, 50, 50], dtype=np.uint8)
+    colors = np.empty((len(occupied_indices), 3), dtype=np.uint8)
+    colors[:] = np.array([235, 50, 50], dtype=np.uint8)
 
-    rotations = np.zeros((len(counts), 4), dtype=np.float32)
+    rotations = np.zeros((len(occupied_indices), 4), dtype=np.float32)
     rotations[:, 0] = 1.0
 
-    return server.scene.add_batched_meshes_simple(
-        name="/dense/rolling_occupancy",
+    occupied_voxels = server.scene.add_batched_meshes_simple(
+        name="/dense/rolling_occupied_voxels",
         vertices=_UNIT_CUBE_VERTICES,
         faces=_UNIT_CUBE_FACES,
         batched_wxyzs=rotations,
         batched_positions=positions,
         batched_scales=np.full(
-            len(counts), voxel_size * 0.95, dtype=np.float32
+            len(occupied_indices), voxel_size * 0.95, dtype=np.float32
         ),
         batched_colors=colors,
-        batched_opacities=make_occupancy_opacities(
-            counts,
-            occupancy["occupied_observation_threshold"],
-            free_alpha,
+        batched_opacities=np.full(
+            len(occupied_indices),
             occupied_alpha,
+            dtype=np.float32,
         ),
         lod="auto",
         cast_shadow=False,
         receive_shadow=False,
         visible=visible,
+    )
+
+    print(
+        f"[VISER] Rendering {len(occupied_indices)} occupied voxels "
+        f"out of {total_grid_cells} grid cells"
+    )
+    return OccupancyVisualization(
+        boundary,
+        occupied_voxels,
+        len(occupied_indices),
     )
 
 
@@ -728,10 +795,6 @@ def update_visualization(
         handles["occupancy"] = None
 
     if occupancy is not None:
-        handles["occupancy_counts"] = occupancy["counts"]
-        handles["occupancy_threshold"] = (
-            occupancy["occupied_observation_threshold"]
-        )
         handles["occupancy"] = add_occupancy_visualization(
             server,
             occupancy,
@@ -1077,13 +1140,13 @@ def main(root: str):
         "Show occupancy map",
         initial_value=True,
         hint=(
-            "Green voxels have fewer than three observations; red voxels "
-            "have three or more."
+            "Show the green rolling-window boundary and red voxels with "
+            "three or more observations."
         ),
     )
 
     gui_free_voxel_alpha = server.gui.add_slider(
-        "Free voxel alpha",
+        "Free-space wireframe alpha",
         min=0.0,
         max=1.0,
         step=0.001,
@@ -1112,9 +1175,10 @@ def main(root: str):
     )
 
     server.gui.add_markdown(
-        "**Occupancy:** <span style='color:#28d250'>green</span> = "
-        "default traversable, <span style='color:#eb3232'>red</span> = "
-        "three or more observations."
+        "**Occupancy:** the <span style='color:#28d250'>green</span> "
+        "wireframe is the rolling map boundary; "
+        "<span style='color:#eb3232'>red</span> voxels have three or more "
+        "observations."
     )
 
     server.gui.add_markdown(
@@ -1155,8 +1219,6 @@ def main(root: str):
     handles = {
         "point_cloud": None,
         "occupancy": None,
-        "occupancy_counts": None,
-        "occupancy_threshold": None,
         "tracking_trajectory": None,
         "ground_truth_trajectory": None,
         "ground_truth_size": 0,
@@ -1220,13 +1282,9 @@ def main(root: str):
         if handles["occupancy"] is None:
             return
 
-        handles["occupancy"].batched_opacities = (
-            make_occupancy_opacities(
-                handles["occupancy_counts"],
-                handles["occupancy_threshold"],
-                gui_free_voxel_alpha.value,
-                gui_occupied_voxel_alpha.value,
-            )
+        handles["occupancy"].set_opacities(
+            gui_free_voxel_alpha.value,
+            gui_occupied_voxel_alpha.value,
         )
 
     @gui_free_voxel_alpha.on_update

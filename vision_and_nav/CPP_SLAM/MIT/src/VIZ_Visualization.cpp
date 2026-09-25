@@ -1,7 +1,13 @@
 #include "VIZ_Visualization.hpp"
 #include "VIZPriv_Visualization.hpp"
 
+#include <algorithm>
+#include <bit>
+#include <ctime>
 #include <cstring>
+#include <iomanip>
+#include <sstream>
+#include <unordered_set>
 
 static std::vector<cv::Mat> VIZPriv_KeyFrameImages;
 static std::vector<Eigen::Vector3d> VIZPriv_IMUTestTrajectory;
@@ -9,6 +15,28 @@ static std::vector<Eigen::Vector3d> VIZPriv_IMUTestTrajectory;
 static pid_t VIZPriv_ViewerPID = -1;
 static u64 VIZPriv_SnapshotID = 0;
 static constexpr u64 VIZPriv_IMUTestPublishStride = 5;
+
+#if defined(CONFIG_STEREO)
+typedef struct
+{
+    u64 KeyFrameID;
+    fp64 TimeStamp;
+    u64 Offset;
+    u64 Size;
+}typeVIZReplayIndexEntry;
+
+typedef struct
+{
+    std::vector<Eigen::Vector3f> DensePoints;
+    typeVoxelKey OccupancyOrigin;
+    std::vector<std::pair<u64, u64>> NonZeroOccupancy;
+}typeVIZReplayDenseData;
+
+static std::vector<typeKeyFrame> VIZPriv_GetReplayLocalKeyFrames( const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph,
+        const typeKeyFrame& CurrentKeyFrame);
+static typeVIZReplayDenseData VIZPriv_BuildReplayDenseData( const typeDenseMapData& DenseMap, const std::vector<typeKeyFrame>& LocalKeyFrames,
+        const typeKeyFrame& CurrentKeyFrame);
+#endif
 
 static void VIZPriv_WriteTrajectoryFile(
         const std::vector<Eigen::Vector3d>& Trajectory,
@@ -55,10 +83,14 @@ void VIZ_InitVisualization(void)
 
     if(PID == 0)
     {
+        const char* ViewerScriptPath = PANTO_DATASET_REALTIME_MODE ?
+            PANTO_LIVE_PYTHON_SCRIPT_PATH :
+            PANTO_COLMAP_PYTHON_SCRIPT_PATH;
+
         execl(
                 PANTO_PATH_TO_PYTHON_INTERPRETER,
                 PANTO_PATH_TO_PYTHON_INTERPRETER,
-                PANTO_COLMAP_PYTHON_SCRIPT_PATH,
+                ViewerScriptPath,
                 PANTO_COLMAP_PATH,
                 static_cast<char*>(nullptr));
 
@@ -70,7 +102,9 @@ void VIZ_InitVisualization(void)
     std::signal(SIGINT, VIZ_SignalHandler);
     std::signal(SIGTERM, VIZ_SignalHandler);
 
-    LG_Log(LogSeverity::DBG, "[VIZ_StartViewer] Started viewer process PID = %d\n",
+    LG_Log(LogSeverity::DBG,
+            "[VIZ_StartViewer] Started %s viewer process PID = %d\n",
+            PANTO_DATASET_REALTIME_MODE ? "live" : "full",
             static_cast<i32>(PID));
 }
 
@@ -106,6 +140,463 @@ void VIZ_SignalHandler(int Signal)
 
     std::_Exit(128 + Signal);
 }
+
+void VIZ_WriteRealtime(
+        const typeGlobalMap& GlobalMap,
+        const std::vector<Eigen::Vector3d>& TrackingTrajectory)
+{
+    const std::string SnapshotPath =
+        std::string(PANTO_COLMAP_PATH) +
+        "/sparse/snapshots/" +
+        std::to_string(VIZPriv_SnapshotID);
+
+    std::filesystem::create_directories(SnapshotPath);
+
+    VIZPriv_WriteCameras(GlobalMap.KeyFrames, SnapshotPath);
+    VIZPriv_WriteImages(GlobalMap.KeyFrames, SnapshotPath, false);
+    VIZPriv_WriteTrackingTrajectory(TrackingTrajectory, SnapshotPath);
+
+    LG_Log(LogSeverity::DBG,
+            "[VIZ_WriteRealtime] Publishing snapshot %llu from path %s\n",
+            static_cast<unsigned long long>(VIZPriv_SnapshotID),
+            SnapshotPath.c_str());
+
+    VIZPriv_PublishSnapshot(VIZPriv_SnapshotID);
+    VIZPriv_SnapshotID++;
+}
+
+#if defined(CONFIG_STEREO)
+static std::vector<typeKeyFrame> VIZPriv_GetReplayLocalKeyFrames(
+        const typeGlobalMap& GlobalMap,
+        const typeCovisibilityGraph& CovisibilityGraph,
+        const typeKeyFrame& CurrentKeyFrame)
+{
+    const typeLocalMap LocalMap = MAP_CreateTemporallyGroundedLocalMap(
+            GlobalMap,
+            CovisibilityGraph,
+            CurrentKeyFrame.ID);
+
+    std::vector<typeKeyFrame> Result;
+    Result.reserve(
+            LocalMap.KeyFrames.size() +
+            LocalMap.FixedKeyFrames.size());
+
+    std::unordered_set<u64> InsertedKeyFrameIDs;
+
+    const auto AppendKeyFrames =
+        [&Result, &InsertedKeyFrameIDs](
+                const std::vector<typeKeyFrame>& KeyFrames)
+        {
+            for(const typeKeyFrame& KeyFrame : KeyFrames)
+            {
+                if(InsertedKeyFrameIDs.insert(KeyFrame.ID).second)
+                {
+                    Result.push_back(KeyFrame);
+                }
+            }
+        };
+
+    AppendKeyFrames(LocalMap.KeyFrames);
+    AppendKeyFrames(LocalMap.FixedKeyFrames);
+
+    return Result;
+}
+
+static typeVIZReplayDenseData VIZPriv_BuildReplayDenseData(
+        const typeDenseMapData& DenseMap,
+        const std::vector<typeKeyFrame>& LocalKeyFrames,
+        const typeKeyFrame& CurrentKeyFrame)
+{
+    typeVIZReplayDenseData Result{};
+
+    std::size_t NumDensePoints = 0;
+    for(const typeKeyFrame& KeyFrame : LocalKeyFrames)
+    {
+        const auto DenseMapIterator = DenseMap.KeyFrameMaps.find(KeyFrame.ID);
+        if(DenseMapIterator != DenseMap.KeyFrameMaps.end())
+        {
+            NumDensePoints += static_cast<std::size_t>(
+                    DenseMapIterator->second.MapPoints.cols());
+        }
+    }
+    Result.DensePoints.reserve(NumDensePoints);
+
+    const Eigen::Vector3d CubeCenter =
+        CurrentKeyFrame.Camera.Pose.GetCameraCenter();
+    Result.OccupancyOrigin = DENSE_GetVoxelKey(
+            static_cast<fp32>(CubeCenter.x() - DENSE_MAP_MAX_DEPTH),
+            static_cast<fp32>(CubeCenter.y() - DENSE_MAP_MAX_DEPTH),
+            static_cast<fp32>(CubeCenter.z() - DENSE_MAP_MAX_DEPTH));
+
+    std::vector<u64> Occupancy(DENSE_NUM_ROLLING_VOXELS, 0);
+    const i32 VoxelsPerSide = static_cast<i32>(DENSE_VOXELS_PER_SIDE);
+
+    for(const typeKeyFrame& KeyFrame : LocalKeyFrames)
+    {
+        const auto DenseMapIterator = DenseMap.KeyFrameMaps.find(KeyFrame.ID);
+        if(DenseMapIterator == DenseMap.KeyFrameMaps.end())
+        {
+            continue;
+        }
+
+        const typeCameraPose& Pose = KeyFrame.Camera.Pose;
+        const typeDenseKeyFrameMap& KeyFrameDenseMap =
+            DenseMapIterator->second;
+        const Eigen::Matrix3f Rwc = Pose.R.transpose().cast<fp32>();
+        const Eigen::Vector3f twc = -Rwc * Pose.t.cast<fp32>();
+
+        for(Eigen::Index Column = 0;
+                Column < KeyFrameDenseMap.MapPoints.cols();
+                Column++)
+        {
+            const Eigen::Vector3f WorldPoint =
+                Rwc * KeyFrameDenseMap.MapPoints.col(Column) + twc;
+
+            Result.DensePoints.push_back(WorldPoint);
+
+            const typeVoxelKey VoxelKey = DENSE_GetVoxelKey(
+                    WorldPoint.x(),
+                    WorldPoint.y(),
+                    WorldPoint.z());
+            const i32 X = VoxelKey.X - Result.OccupancyOrigin.X;
+            const i32 Y = VoxelKey.Y - Result.OccupancyOrigin.Y;
+            const i32 Z = VoxelKey.Z - Result.OccupancyOrigin.Z;
+
+            if(X < 0 || X >= VoxelsPerSide ||
+               Y < 0 || Y >= VoxelsPerSide ||
+               Z < 0 || Z >= VoxelsPerSide)
+            {
+                continue;
+            }
+
+            const u64 Index =
+                static_cast<u64>(X) +
+                DENSE_VOXELS_PER_SIDE *
+                    (static_cast<u64>(Y) +
+                     DENSE_VOXELS_PER_SIDE * static_cast<u64>(Z));
+
+            Occupancy[Index]++;
+        }
+    }
+
+    Result.NonZeroOccupancy.reserve(Result.DensePoints.size());
+    for(u64 Index = 0; Index < Occupancy.size(); Index++)
+    {
+        if(Occupancy[Index] != 0)
+        {
+            Result.NonZeroOccupancy.emplace_back(Index, Occupancy[Index]);
+        }
+    }
+
+    return Result;
+}
+
+bool VIZ_WriteReplay(
+        const typeGlobalMap& GlobalMap,
+        const typeCovisibilityGraph& CovisibilityGraph,
+        const typeDenseMapData& DenseMap,
+        const std::vector<Eigen::Vector3d>& TrackingTrajectory,
+        const std::vector<fp64>& TrackingTrajectoryTimeStamps)
+{
+    static_assert(std::endian::native == std::endian::little);
+    static_assert(sizeof(fp32) == 4);
+    static_assert(sizeof(fp64) == 8);
+    static_assert(sizeof(u64) == 8);
+
+    if(TrackingTrajectory.size() != TrackingTrajectoryTimeStamps.size())
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[VIZ_WriteReplay] Tracking positions and timestamps differ: %zu != %zu\n",
+                TrackingTrajectory.size(),
+                TrackingTrajectoryTimeStamps.size());
+        return false;
+    }
+
+    std::vector<const typeKeyFrame*> ReplayKeyFrames;
+    ReplayKeyFrames.reserve(GlobalMap.KeyFrames.active_size());
+    for(const typeKeyFrame& KeyFrame : GlobalMap.KeyFrames)
+    {
+        ReplayKeyFrames.push_back(&KeyFrame);
+    }
+    std::sort(
+            ReplayKeyFrames.begin(),
+            ReplayKeyFrames.end(),
+            [](const typeKeyFrame* A, const typeKeyFrame* B)
+            {
+                return A->ID < B->ID;
+            });
+
+    const std::string ReplayDirectory =
+        std::string(PANTO_COLMAP_PATH) + "/full_binaries";
+    std::filesystem::create_directories(ReplayDirectory);
+
+    const std::time_t CurrentTime = std::time(nullptr);
+    std::tm LocalTime{};
+    localtime_r(&CurrentTime, &LocalTime);
+    std::ostringstream FileNameStream;
+    FileNameStream << std::put_time(&LocalTime, "%Y-%m-%d_%H-%M");
+
+    std::string ReplayPath =
+        ReplayDirectory + "/" + FileNameStream.str() + ".bin";
+    for(u64 Suffix = 1; std::filesystem::exists(ReplayPath); Suffix++)
+    {
+        ReplayPath = ReplayDirectory + "/" + FileNameStream.str() +
+            "_" + std::to_string(Suffix) + ".bin";
+    }
+    FILE* File = fopen(ReplayPath.c_str(), "wb");
+    if(File == nullptr)
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[VIZ_WriteReplay] Failed to open %s\n",
+                ReplayPath.c_str());
+        return false;
+    }
+
+    const auto WriteBuffer = [&File, &ReplayPath](const std::vector<u8>& Buffer)
+    {
+        const std::size_t NumBytesWritten =
+            fwrite(Buffer.data(), sizeof(u8), Buffer.size(), File);
+        if(NumBytesWritten != Buffer.size())
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "[VIZ_WriteReplay] Short write to %s: %zu of %zu bytes\n",
+                    ReplayPath.c_str(),
+                    NumBytesWritten,
+                    Buffer.size());
+            return false;
+        }
+        return true;
+    };
+
+    // replay.bin v1 is little-endian and consists of:
+    //   file header, independently-sized keyframe blocks, index, footer.
+    // The footer stores the index offset so a reader can seek/reverse without
+    // scanning every block. Occupancy entries store only nonzero counts; all
+    // omitted cells in the declared rolling cube have count zero.
+    std::vector<u8> Header;
+    const auto AppendHeaderBytes = [&Header](const void* Data, const std::size_t Size)
+    {
+        const std::size_t Offset = Header.size();
+        Header.resize(Offset + Size);
+        std::memcpy(Header.data() + Offset, Data, Size);
+    };
+    const char FileMagic[8] = {'P', 'A', 'N', 'T', 'O', 'V', 'I', 'Z'};
+    const u32 Version = 1;
+    const u32 Flags = 0x3U; // bit 0: little-endian, bit 1: sparse occupancy.
+    const u64 NumBlocks = static_cast<u64>(ReplayKeyFrames.size());
+    AppendHeaderBytes(FileMagic, sizeof(FileMagic));
+    AppendHeaderBytes(&Version, sizeof(Version));
+    AppendHeaderBytes(&Flags, sizeof(Flags));
+    AppendHeaderBytes(&NumBlocks, sizeof(NumBlocks));
+
+    if(!WriteBuffer(Header))
+    {
+        fclose(File);
+        return false;
+    }
+
+    u64 CurrentFileOffset = static_cast<u64>(Header.size());
+    std::vector<typeVIZReplayIndexEntry> Index;
+    Index.reserve(ReplayKeyFrames.size());
+    std::size_t TrackingIndex = 0;
+
+    for(std::size_t ReplayIndex = 0;
+            ReplayIndex < ReplayKeyFrames.size();
+            ReplayIndex++)
+    {
+        const typeKeyFrame& KeyFrame = *ReplayKeyFrames[ReplayIndex];
+        const bool IsLastBlock = ReplayIndex + 1 == ReplayKeyFrames.size();
+        const std::size_t FirstTrackingIndex = TrackingIndex;
+
+        while(TrackingIndex < TrackingTrajectory.size() &&
+              (IsLastBlock ||
+               TrackingTrajectoryTimeStamps[TrackingIndex] <=
+                   KeyFrame.Camera.TimeStamp))
+        {
+            TrackingIndex++;
+        }
+
+        const std::vector<typeKeyFrame> LocalKeyFrames =
+            VIZPriv_GetReplayLocalKeyFrames(
+                    GlobalMap,
+                    CovisibilityGraph,
+                    KeyFrame);
+        const typeVIZReplayDenseData ReplayDenseData =
+            VIZPriv_BuildReplayDenseData(
+                    DenseMap,
+                    LocalKeyFrames,
+                    KeyFrame);
+
+        std::vector<u8> Block;
+        const auto AppendBytes = [&Block](const void* Data, const std::size_t Size)
+        {
+            const std::size_t Offset = Block.size();
+            Block.resize(Offset + Size);
+            std::memcpy(Block.data() + Offset, Data, Size);
+        };
+
+        const char BlockMagic[8] = {'P', 'V', 'B', 'L', 'O', 'C', 'K', '1'};
+        AppendBytes(BlockMagic, sizeof(BlockMagic));
+        const std::size_t BlockSizeOffset = Block.size();
+        const u64 PlaceholderBlockSize = 0;
+        AppendBytes(&PlaceholderBlockSize, sizeof(PlaceholderBlockSize));
+
+        const u64 KeyFrameID = KeyFrame.ID;
+        const fp64 KeyFrameTimeStamp = KeyFrame.Camera.TimeStamp;
+        const u64 NumTrackingSamples = static_cast<u64>(
+                TrackingIndex - FirstTrackingIndex);
+        const u64 NumDensePoints = static_cast<u64>(
+                ReplayDenseData.DensePoints.size());
+        const u64 NumNonZeroOccupancy = static_cast<u64>(
+                ReplayDenseData.NonZeroOccupancy.size());
+        AppendBytes(&KeyFrameID, sizeof(KeyFrameID));
+        AppendBytes(&KeyFrameTimeStamp, sizeof(KeyFrameTimeStamp));
+        AppendBytes(&NumTrackingSamples, sizeof(NumTrackingSamples));
+        AppendBytes(&NumDensePoints, sizeof(NumDensePoints));
+        AppendBytes(&ReplayDenseData.OccupancyOrigin.X, sizeof(i32));
+        AppendBytes(&ReplayDenseData.OccupancyOrigin.Y, sizeof(i32));
+        AppendBytes(&ReplayDenseData.OccupancyOrigin.Z, sizeof(i32));
+        const fp32 VoxelSize = static_cast<fp32>(DENSE_VOXEL_SIZE);
+        const u64 VoxelsPerSide = DENSE_VOXELS_PER_SIDE;
+        const u64 OccupiedThreshold = DENSE_OCCUPIED_MIN_OBSERVATIONS;
+        AppendBytes(&VoxelSize, sizeof(VoxelSize));
+        AppendBytes(&VoxelsPerSide, sizeof(VoxelsPerSide));
+        AppendBytes(&OccupiedThreshold, sizeof(OccupiedThreshold));
+        AppendBytes(&NumNonZeroOccupancy, sizeof(NumNonZeroOccupancy));
+
+        const typeCameraIntrinsics* Intrinsics = KeyFrame.Camera.Intrinsics;
+        assert(Intrinsics != nullptr);
+        const i32 CameraModelID = PANTO_CAMERA_MODEL_ID;
+        const u64 ImageWidth = Intrinsics->ImageWidth;
+        const u64 ImageHeight = Intrinsics->ImageHeight;
+        const fp64 CameraParameters[4] =
+        {
+            Intrinsics->K(0, 0),
+            Intrinsics->K(1, 1),
+            Intrinsics->K(0, 2),
+            Intrinsics->K(1, 2)
+        };
+        const fp64 DistortionParameters[6] =
+        {
+            Intrinsics->K(0, 1),
+            Intrinsics->k1,
+            Intrinsics->k2,
+            Intrinsics->p1,
+            Intrinsics->p2,
+            Intrinsics->k3
+        };
+        Eigen::Quaterniond Quaternion(KeyFrame.Camera.Pose.R);
+        Quaternion.normalize();
+        const fp64 QuaternionData[4] =
+        {
+            Quaternion.w(),
+            Quaternion.x(),
+            Quaternion.y(),
+            Quaternion.z()
+        };
+        AppendBytes(&CameraModelID, sizeof(CameraModelID));
+        AppendBytes(&ImageWidth, sizeof(ImageWidth));
+        AppendBytes(&ImageHeight, sizeof(ImageHeight));
+        AppendBytes(CameraParameters, sizeof(CameraParameters));
+        AppendBytes(DistortionParameters, sizeof(DistortionParameters));
+        AppendBytes(QuaternionData, sizeof(QuaternionData));
+        AppendBytes(KeyFrame.Camera.Pose.t.data(), 3 * sizeof(fp64));
+
+        const std::string ImageName =
+            std::filesystem::path(KeyFrame.ImagePath).filename().string();
+        const u64 ImageNameSize = static_cast<u64>(ImageName.size());
+        AppendBytes(&ImageNameSize, sizeof(ImageNameSize));
+        AppendBytes(ImageName.data(), ImageName.size());
+
+        for(std::size_t SampleIndex = FirstTrackingIndex;
+                SampleIndex < TrackingIndex;
+                SampleIndex++)
+        {
+            AppendBytes(
+                    &TrackingTrajectoryTimeStamps[SampleIndex],
+                    sizeof(fp64));
+            AppendBytes(
+                    TrackingTrajectory[SampleIndex].data(),
+                    3 * sizeof(fp64));
+        }
+
+        for(const Eigen::Vector3f& DensePoint : ReplayDenseData.DensePoints)
+        {
+            AppendBytes(DensePoint.data(), 3 * sizeof(fp32));
+        }
+
+        for(const auto& [VoxelIndex, ObservationCount] :
+                ReplayDenseData.NonZeroOccupancy)
+        {
+            AppendBytes(&VoxelIndex, sizeof(VoxelIndex));
+            AppendBytes(&ObservationCount, sizeof(ObservationCount));
+        }
+
+        const u64 BlockSize = static_cast<u64>(Block.size());
+        std::memcpy(
+                Block.data() + BlockSizeOffset,
+                &BlockSize,
+                sizeof(BlockSize));
+
+        Index.push_back(
+        {
+            .KeyFrameID = KeyFrameID,
+            .TimeStamp = KeyFrameTimeStamp,
+            .Offset = CurrentFileOffset,
+            .Size = BlockSize
+        });
+
+        if(!WriteBuffer(Block))
+        {
+            fclose(File);
+            return false;
+        }
+        CurrentFileOffset += BlockSize;
+    }
+
+    const u64 IndexOffset = CurrentFileOffset;
+    std::vector<u8> IndexBuffer;
+    const auto AppendIndexBytes = [&IndexBuffer](const void* Data, const std::size_t Size)
+    {
+        const std::size_t Offset = IndexBuffer.size();
+        IndexBuffer.resize(Offset + Size);
+        std::memcpy(IndexBuffer.data() + Offset, Data, Size);
+    };
+    const char IndexMagic[8] = {'P', 'V', 'I', 'N', 'D', 'E', 'X', '1'};
+    AppendIndexBytes(IndexMagic, sizeof(IndexMagic));
+    AppendIndexBytes(&NumBlocks, sizeof(NumBlocks));
+    for(const typeVIZReplayIndexEntry& Entry : Index)
+    {
+        AppendIndexBytes(&Entry.KeyFrameID, sizeof(Entry.KeyFrameID));
+        AppendIndexBytes(&Entry.TimeStamp, sizeof(Entry.TimeStamp));
+        AppendIndexBytes(&Entry.Offset, sizeof(Entry.Offset));
+        AppendIndexBytes(&Entry.Size, sizeof(Entry.Size));
+    }
+    const char FooterMagic[8] = {'P', 'V', 'E', 'N', 'D', '0', '0', '1'};
+    AppendIndexBytes(FooterMagic, sizeof(FooterMagic));
+    AppendIndexBytes(&IndexOffset, sizeof(IndexOffset));
+
+    if(!WriteBuffer(IndexBuffer))
+    {
+        fclose(File);
+        return false;
+    }
+
+    if(fclose(File) != 0)
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[VIZ_WriteReplay] Failed to close %s\n",
+                ReplayPath.c_str());
+        return false;
+    }
+
+    LG_Log(LogSeverity::DATA,
+            "[VIZ_WriteReplay] Wrote %llu keyframe blocks to %s\n",
+            static_cast<unsigned long long>(NumBlocks),
+            ReplayPath.c_str());
+    return true;
+}
+#endif
 
 #if defined(CONFIG_STEREO)
 void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3f> DenseMap, const typeDenseVoxelOccupancyMap& RollingVoxelMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory)
@@ -428,7 +919,10 @@ void VIZPriv_WriteDistortion(const typePantoVector<typeKeyFrame>& KeyFrames, con
     fclose(fp);
 }
 
-void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
+void VIZPriv_WriteImages(
+        const typePantoVector<typeKeyFrame>& KeyFrames,
+        const std::string& SnapshotPath,
+        const bool IncludeImagePoints)
 {
     const std::string ImagePath = SnapshotPath + "/images.bin";
 
@@ -452,8 +946,10 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
             sizeof(i32) +
             ImageName.size() + 1 +
             sizeof(u64) +
-            KeyFrame.Points.ImagePoints.active_size() *
-                (2 * sizeof(fp64) + sizeof(i64));
+            (IncludeImagePoints ?
+                KeyFrame.Points.ImagePoints.active_size() *
+                    (2 * sizeof(fp64) + sizeof(i64)) :
+                0);
     }
 
     std::vector<u8> Buffer;
@@ -502,9 +998,16 @@ void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames, const s
 
         AppendBytes(ImageName.c_str(), ImageName.size() + 1);
 
-        const u64 NumImagePoints = static_cast<u64>( KeyFrame.Points.ImagePoints.active_size());
+        const u64 NumImagePoints = IncludeImagePoints ?
+            static_cast<u64>(KeyFrame.Points.ImagePoints.active_size()) :
+            0;
 
         AppendBytes(&NumImagePoints, sizeof(NumImagePoints));
+
+        if(!IncludeImagePoints)
+        {
+            continue;
+        }
 
         for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {

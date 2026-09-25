@@ -255,40 +255,35 @@ static void SLPriv_UpdateVisualization(
         typeGlobalMap* GlobalMap,
         typeTimingStatistics& VisualizationUpdateTiming)
 {
+    if(!PANTO_DATASET_REALTIME_MODE)
+    {
+        return;
+    }
+
     typeGlobalMap MapSnapshot{};
+    std::vector<Eigen::Vector3d> TrackingTrajectorySnapshot;
 
-#if defined(CONFIG_STEREO)
-    // std::vector<Eigen::Vector3f> DensePoints = DENSE_GetDenseMapPoints();
-    // typeDenseVoxelOccupancyMap RollingVoxelMap = DENSE_GetRollingVoxelOccupancyMap();
-#endif
+    {
+        std::scoped_lock Lock(GlobalMap->Mutex);
+        MapSnapshot.KeyFrames = GlobalMap->KeyFrames;
+    }
 
-//     std::vector<Eigen::Vector3d> TrackingTrajectorySnapshot;
-//     {
-//         std::scoped_lock Lock(GlobalMap->Mutex);
-//         MapSnapshot.KeyFrames = GlobalMap->KeyFrames;
-//
-// #if !defined(CONFIG_STEREO)
-//         MapSnapshot.MapPoints = GlobalMap->MapPoints;
-// #endif
-//     }
-//     {
-//         std::scoped_lock Lock(PantoSLAM.TrackingTrajectoryMutex);
-//         TrackingTrajectorySnapshot = PantoSLAM.TrackingTrajectory;
-//     }
-//
-//     const PantoClock::time_point StartTime = PantoClock::now();
-// // #if defined(CONFIG_STEREO)
-// //     VIZ_WriteColmap(MapSnapshot, {}, {}, TrackingTrajectorySnapshot);
-// // #else
-// //     VIZ_WriteColmap(MapSnapshot, TrackingTrajectorySnapshot);
-// // #endif
-//     const fp64 UpdateTime = std::chrono::duration<fp64>(
-//             PantoClock::now() - StartTime).count();
-//
-//     SL_AddTimingSample(VisualizationUpdateTiming, UpdateTime);
-//     LG_Log(LogSeverity::DATA,
-//             "[SLAMVisualizationTiming] Update = %.6f s\n",
-//             UpdateTime);
+    {
+        std::scoped_lock Lock(PantoSLAM.TrackingTrajectoryMutex);
+        TrackingTrajectorySnapshot = PantoSLAM.TrackingTrajectory;
+    }
+
+    const PantoClock::time_point StartTime = PantoClock::now();
+
+    VIZ_WriteRealtime(MapSnapshot, TrackingTrajectorySnapshot);
+
+    const fp64 UpdateTime = std::chrono::duration<fp64>(
+            PantoClock::now() - StartTime).count();
+
+    SL_AddTimingSample(VisualizationUpdateTiming, UpdateTime);
+    LG_Log(LogSeverity::DATA,
+            "[SLAMVisualizationTiming] Realtime update = %.6f s\n",
+            UpdateTime);
 }
 #endif
 
@@ -1007,6 +1002,23 @@ void SL_PantoSLAM(i32 num_loops)
         RemainingLoops -= std::min(RemainingLoops, NumProcessedLoops);
         if(!TrackingLost)
         {
+#if defined(CONFIG_STEREO) && !defined(DEBUG)
+            std::vector<Eigen::Vector3d> TrackingTrajectorySnapshot;
+            std::vector<fp64> TrackingTrajectoryTimeStampsSnapshot;
+            {
+                std::scoped_lock Lock(PantoSLAM.TrackingTrajectoryMutex);
+                TrackingTrajectorySnapshot = PantoSLAM.TrackingTrajectory;
+                TrackingTrajectoryTimeStampsSnapshot =
+                    PantoSLAM.TrackingTrajectoryTimeStamps;
+            }
+
+            (void) VIZ_WriteReplay(
+                    *PantoSLAM.GlobalMap,
+                    *PantoSLAM.CovisibilityGraph,
+                    DenseMap,
+                    TrackingTrajectorySnapshot,
+                    TrackingTrajectoryTimeStampsSnapshot);
+#endif
             break;
         }
 

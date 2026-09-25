@@ -22,7 +22,15 @@ void VIZ_InitVisualization(void);
 void VIZ_ResetMapVisualization(void);
 void VIZ_StopViewer();
 void VIZ_SignalHandler(int Signal);
+void VIZ_WriteRealtime(const typeGlobalMap& GlobalMap,
+        const std::vector<Eigen::Vector3d>& TrackingTrajectory);
 #if defined(CONFIG_STEREO)
+bool VIZ_WriteReplay(
+        const typeGlobalMap& GlobalMap,
+        const typeCovisibilityGraph& CovisibilityGraph,
+        const typeDenseMapData& DenseMap,
+        const std::vector<Eigen::Vector3d>& TrackingTrajectory,
+        const std::vector<fp64>& TrackingTrajectoryTimeStamps);
 void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3f> DenseMap, const typeDenseVoxelOccupancyMap& RollingVoxelMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory);
 #else
 void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Vector3d>& TrackingTrajectory);
