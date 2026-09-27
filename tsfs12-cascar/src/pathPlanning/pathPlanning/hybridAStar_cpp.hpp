@@ -22,6 +22,11 @@ class HybridAStar {
             double x;
             double y;
             double theta;
+
+            int gx;
+            int gy;
+            int thetaIndex;
+
             double steering;
 
             std::shared_ptr<Node> parent;
@@ -57,13 +62,13 @@ class HybridAStar {
         std::vector<uint8_t> inflateMap(const std::vector<uint8_t>& grid);
         double wrap_angle(double theta);
         std::array<int, 2> worldToGrid(double const x, double const y);
-        int stateIndex(double const x, double const y, double const theta, double width);
+        int stateIndex(int const gx, int const gy, int const thetaIndex, double width);
         bool isColliding(std::vector<Pose> const& trajectory);
         bool isColliding(std::vector<PathItem> const& path);
         bool isColliding(Pose const& pose);
         double heuristic(Node const& start, Node const& goal);
         std::vector<PathItem> reconstructPath(std::shared_ptr<Node> node);
-        Pose propogate(Node const& node, double const dTheta);
+        std::pair<Pose, std::array<int, 2>> propogate(Node const& node, double const dTheta);
         bool isFinished(Node const& node, Node const& goal);
         std::vector<PathItem> getShortestDubin(
             std::vector<std::vector<PathItem>> const& paths,

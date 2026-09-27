@@ -19,6 +19,11 @@ struct Node {
     double x;
     double y;
     double theta;
+
+    int gx;
+    int gy;
+    int thetaIndex;
+
     double steering;
 
     std::shared_ptr<Node> parent;
@@ -99,11 +104,7 @@ std::array<int, 2> HybridAStar::worldToGrid(double const x, double const y) {
     return {gx, gy};
 };
 
-int HybridAStar::stateIndex(double const x, double const y, double const theta, double width) {
-    std::array<int, 2> gKey {worldToGrid(x, y)};
-    int gx {gKey[0]};
-    int gy {gKey[1]};
-    int thetaIndex {static_cast<int>(std::round(wrap_angle(theta) / theta_resolution))};
+int HybridAStar::stateIndex(int const gx, int const gy, int thetaIndex, double width) {
     thetaIndex %= THETA_BINS;
     if (thetaIndex < 0) {thetaIndex += THETA_BINS;}
 
@@ -163,7 +164,7 @@ std::vector<PathItem> HybridAStar::reconstructPath(std::shared_ptr<Node> node) {
     return path;
 };
 
-Pose HybridAStar::propogate(Node const& node, double const dTheta) {
+std::pair<Pose, std::array<int, 2>> HybridAStar::propogate(Node const& node, double const dTheta) {
     double x {node.x};
     double y {node.y};
     double theta {node.theta};
@@ -185,10 +186,10 @@ Pose HybridAStar::propogate(Node const& node, double const dTheta) {
         gx = gridIndex[0];
         gy = gridIndex[1];
         if (gx < 0 || gx >= width || gy < 0 || gy >= height) {
-            return {-1, -1, -1};
+            return {{-1, -1, -1}, {0,0}};
         }
         if (mapGrid[gy * width + gx]) {
-            return {-1, -1, -1};
+            return {{-1, -1, -1}, {0,0}};
         }
         theta += ds * dTheta;
 
@@ -196,7 +197,7 @@ Pose HybridAStar::propogate(Node const& node, double const dTheta) {
         travelled += ds;
     }
     result = {result[0], result[1], wrap_angle(result[2])};
-    return result;
+    return {result, gridIndex};
 };
 
 bool HybridAStar::isFinished(Node const& node, Node const& goal) {
@@ -389,7 +390,7 @@ std::vector<PathItem> HybridAStar::search(
         auto current {openSet.top().node};
         openSet.pop();
 
-        auto key {stateIndex(current->x, current->y, current->theta, width)};
+        auto key {stateIndex(current->gx, current->gy, current->thetaIndex, width)};
         if (current->g > best_gs[key]) continue;
 
         if (isFinished(*current, goalNode)) {
@@ -411,16 +412,23 @@ std::vector<PathItem> HybridAStar::search(
         }
         
         for(size_t i {0}; i < steeringAngles.size(); ++i) {
-            auto newPoint {propogate(*current, dThetas[i])};
+            auto result {propogate(*current, dThetas[i])};
+            auto newPoint {result.first};
+            auto gKey {result.second};
+            int gx {gKey[0]};
+            int gy {gKey[1]};
+            
             if (newPoint[0] < 0) {continue;}
 
             double newX {newPoint[0]};
             double newY {newPoint[1]};
             double newTheta {newPoint[2]};
+
+            int thetaIndex {static_cast<int>(std::round(newTheta / theta_resolution))};
             
             // Check if this is the cheapest path here yet
             double newg {current->g + propogationDistance * propogationDistance};
-            int key {stateIndex(newX, newY, newTheta, width)};
+            int key {stateIndex(gx, gy, thetaIndex, width)};
             if (newg >= best_gs[key]) {continue;} // Skip if there is a cheaper way
             best_gs[key] = newg;
 
@@ -428,6 +436,9 @@ std::vector<PathItem> HybridAStar::search(
             newNode->x = newX;
             newNode->y = newY;
             newNode->theta = newTheta;
+            newNode->gx = gx;
+            newNode->gy = gy;
+            newNode->thetaIndex = thetaIndex;
             newNode->steering = steeringAngles[i];
             newNode->parent = current;
             newNode->g = newg;
