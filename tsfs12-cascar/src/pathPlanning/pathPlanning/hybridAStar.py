@@ -323,7 +323,7 @@ class HybridAStar():
                 path = self.reconstruct_path(current)
                 for i in range(len(path)):
                     point = path[i]
-                    path[i] = (point[0], point[1], self.wrap_angle(point[2] + np.pi)) #Since the search is backwards, add turn every point around.
+                    path[i] = (point[0], point[1], self.wrap_angle(point[2] + np.pi)) #Since the search is backwards, turn every point around.
 
                 path = self.addDubinPaths(path, goalNode)
                 return path
