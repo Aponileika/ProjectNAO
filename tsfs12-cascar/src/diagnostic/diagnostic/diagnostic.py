@@ -18,6 +18,8 @@ class Diagnostics(Node):
 
         self.get_logger().info("Diagnostics Node started")
 
+        self.goal_publisher = self.create_publisher(Pose2D, "goal", 1)
+
         self.pos_sub = self.create_subscription(
             Pose2D,
             "pose",
@@ -124,6 +126,15 @@ class Diagnostics(Node):
                     packet = json.dumps({"path":path})
                     with self.socketLock:
                         conn.sendall(packet.encode() + b"\n")
+
+                elif command["command"] == "goal":
+                    goal = command["goal"]
+                    msg = Pose2D()
+                    msg.x = float(goal[0])
+                    msg.y = float(goal[1])
+                    msg.theta = float(goal[2])
+
+                    self.goal_publisher.publish(msg)
 
         
 def main():

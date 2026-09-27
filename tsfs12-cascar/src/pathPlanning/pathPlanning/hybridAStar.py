@@ -2,9 +2,9 @@ import numpy as np
 import heapq
 from scipy.ndimage import binary_dilation
 from collections import deque
-from math import sin, cos
+from math import sin, cos, sqrt
 
-import dubinPath
+from .dubinPath import *
 
 
 class Node():
@@ -44,7 +44,7 @@ class HybridAStar():
 
         self.L = 0.285
         self.track = 0.15
-        self.radius = 1.2*max(self.L, self.track)/2
+        self.radius = 1.0*max(self.L, self.track)/2
 
         self.propogationDistance = 0.2
         self.propogationInterval = 0.04
@@ -195,6 +195,29 @@ class HybridAStar():
         return shortestPath
 
 
+    def removeDupes(self, trajectory):
+        i = 0
+        while i < len(trajectory)-1:
+            if trajectory[i] == trajectory[i+1]:
+                trajectory.pop(i+1)
+            else:
+                i += 1
+        return trajectory
+
+
+    def addDistance(self, trajectory):
+        dist = 0
+        trajectory[0] = (trajectory[0][0], trajectory[0][1], trajectory[0][2], dist)
+        for i in range(1, len(trajectory)):
+            curr = trajectory[i]
+            past = trajectory[i-1]
+            dist += sqrt( (curr[0]-past[0])**2 + (curr[1]-past[1])**2 )
+
+            trajectory[i] = (curr[0], curr[1], curr[2], dist)
+
+        return trajectory
+
+
     def addDubinPaths(self, path, goalNode):
         """
         Function that looks for shortcuts in the form of dubin paths.
@@ -221,7 +244,7 @@ class HybridAStar():
             staticPoint = path[upper]
             for i in range(lower, upper - 1):
                 dynamicPoint = path[i]
-                dubins, dubinLengths = dubinPath.dubinsPath(np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], 
+                dubins, dubinLengths = dubinsPath(np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], 
                                              np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], getDistance=False)
                 shortestPath = self.getShortestDubin(dubins, dubinLengths, upper - i)
 
@@ -235,7 +258,7 @@ class HybridAStar():
             staticPoint = path[lower]
             for i in range(upper, lower + 1, -1):
                 dynamicPoint = path[i]
-                dubins, dubinLengths = dubinPath.dubinsPath(np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], 
+                dubins, dubinLengths = dubinsPath(np.array([staticPoint[0], staticPoint[1]]), staticPoint[2], 
                                              np.array([dynamicPoint[0], dynamicPoint[1]]), dynamicPoint[2], getDistance=False)
                 shortestPath = self.getShortestDubin(dubins, dubinLengths, i - lower)
 
@@ -268,7 +291,18 @@ class HybridAStar():
         return path
         
 
-    def search(self, start, goal, map, xlim, ylim):
+    def search(self, start, goal, map=None, xlim=None, ylim=None):
+        if map is None:
+            validPaths, validLengths = dubinsPath( (start[0], start[1]), start[2], (goal[0], goal[1]), goal[2], getDistance=True)
+            shortestPath = None
+            shortestPathLength = np.inf
+            for path, length in zip(validPaths, validLengths):
+                if length < shortestPathLength:
+                    shortestPath = path
+                    shortestPathLength = length
+
+            return shortestPath
+
         minX = xlim[0]
         minY = ylim[0]
 
@@ -326,6 +360,11 @@ class HybridAStar():
                     path[i] = (point[0], point[1], self.wrap_angle(point[2] + np.pi)) #Since the search is backwards, turn every point around.
 
                 path = self.addDubinPaths(path, goalNode)
+                path = self.removeDupes(path)
+                path = self.addDistance(path)
+                for i in range(len(path)):
+                    point = path[i]
+                    path[i] = (point[0]+xlim[0], point[1]+ylim[0], point[2], point[3])
                 return path
 
             for dTheta, steeringAngle in zip(self.dThetas, self.steeringAngles):
@@ -402,8 +441,8 @@ if __name__ == "__main__":
         start = (random.uniform(-4, -1), random.uniform(-4, 4), random.uniform(-np.pi, np.pi))
         goal = (random.uniform(1, 4), random.uniform(-4, 4), random.uniform(-np.pi, np.pi))
 
-        start = (-3, 0, 0)
-        goal = (3, 0, np.pi)
+        #start = (-3, 0, 0)
+        #goal = (3, 0, np.pi)
 
         print("Search started")
         t0 = time.time()

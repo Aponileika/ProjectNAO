@@ -12,7 +12,7 @@ from geometry_msgs.msg import Pose2D
 from std_msgs.msg import String
 
 
-class AutomaticControl(Node):
+class PurePursuit(Node):
     def __init__(self, Ts: float, vmax: float, delta_max:float, kx: float, kix: float, ky: float, ktheta:float):
 
         #Start node
@@ -60,11 +60,12 @@ class AutomaticControl(Node):
         self.ky = ky
         self.ktheta = ktheta
 
-        self.path = None
+        self.path = []
         self.curr_node = 1
 
         self.distanceTraveled = 0
 
+        self.infoCounter = 0
         self.last_time = None
         self.timer = self.create_timer(self.Ts, self.control_loop)
 
@@ -77,14 +78,13 @@ class AutomaticControl(Node):
     
     def path_callback(self, msg):
         recievedPath = json.loads(msg.data)
-        if self.path == None:
+        if not self.path:
             self.path = recievedPath
         
             self.curr_node = 1
             self.distanceTraveled = 0
 
-            self.get_logger().info("PATH RECIEVED")
-            print(self.path)
+            #self.get_logger().info("PATH RECIEVED")
 
         elif recievedPath[0] != self.path[0]:
             self.path = recievedPath
@@ -92,8 +92,7 @@ class AutomaticControl(Node):
             self.curr_node = 1
             self.distanceTraveled = 0
 
-            self.get_logger().info("PATH RECIEVED")
-            print(self.path)
+            #self.get_logger().info("PATH RECIEVED")
 
 
     def control_loop(self):
@@ -104,7 +103,7 @@ class AutomaticControl(Node):
         dt = (now - self.last_time).nanoseconds / 1e9
         self.last_time = now
 
-        if self.path != None:
+        if self.path:
             ed, ey, etheta = self.get_errors()
 
             #Motverka integraluppvridning
@@ -115,7 +114,9 @@ class AutomaticControl(Node):
 
             msg = CarCommand()
             #self.get_logger().info(f"v={self.v:.3f}, delta={self.delta:.3f}")
-            self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}, et={etheta:.3f}, v={self.v:.3f}")
+            if self.infoCounter >= 1/self.Ts:
+                self.get_logger().info(f"Driven={self.distanceTraveled:.3f}, ed={ed:.3f}, ey={ey:.3f}, et={etheta:.3f}, v={self.v:.3f}")
+                self.infoCounter = 0
 
             speed_norm = self.v / self.vmax
             steer_norm = self.delta / self.delta_max
@@ -129,6 +130,8 @@ class AutomaticControl(Node):
             self.car_publisher_.publish(msg)
 
             self.get_next_node()
+
+            self.infoCounter += 1
 
 
     def control_system(self, ed, ey, etheta):
@@ -154,15 +157,15 @@ class AutomaticControl(Node):
     
 
     def get_errors(self):
-        dx  = self.path[self.curr_node]["x"] - self.x 
-        dy  = self.path[self.curr_node]["y"] - self.y
+        dx  = self.path[self.curr_node][0] - self.x 
+        dy  = self.path[self.curr_node][1] - self.y
 
-        ed =  self.path[-1]['distance'] - self.distanceTraveled
+        ed =  self.path[-1][3] - self.distanceTraveled
         #ex =  dx*cos(self.theta) + dy*sin(self.theta)
         ey = -dx*sin(self.theta) + dy*cos(self.theta)
         ey = np.sign(ey) * ((abs(ey) + 1)**2 - 1)
 
-        etheta  = self.path[self.curr_node]["theta"] - self.theta
+        etheta  = self.path[self.curr_node][2] - self.theta
         etheta = atan2(sin(etheta), cos(etheta))
 
         return (ed, ey, etheta)
@@ -172,15 +175,14 @@ class AutomaticControl(Node):
         #Check if the old node is behind the robot
         #PREVENTS BACKWARDS MOVEMENT
         if self.curr_node != len(self.path) - 1:
-            dx  = self.path[self.curr_node]["x"] - self.x 
-            dy  = self.path[self.curr_node]["y"] - self.y
+            dx  = self.path[self.curr_node][0] - self.x 
+            dy  = self.path[self.curr_node][1] - self.y
 
             ex = dx*cos(self.theta) + dy*sin(self.theta)
 
             if ex < 0:
                 self.curr_node += 1
-                self.distanceTraveled = self.path[self.curr_node]['distance']
-
+                self.distanceTraveled = self.path[self.curr_node][3]
 
 
     def value_limit(self, value, max, min):
@@ -190,50 +192,13 @@ class AutomaticControl(Node):
             return value
         else:
             return max
-    
 
-    
-def create_path(type, omega):
-    path = []
-
-    if type == "square":
-        x = 0
-        y = -1
-
-        for i in range(1000):
-            if int(i / omega) % 2 == 0:
-                path.append({"x": i / 200, "y": - 1})
-            else:
-                path.append({"x": i / 200, "y": + 1})
-
-    elif type == "circle":
-        for i in range(180*5):
-            path.append({"x": omega * cos(i * 2*pi / 180), "y": omega * sin(i * 2*pi / 180)})
-
-    else:
-        for i in range(1000):
-            path.append({"x": i / 200, "y": sin(omega * i)})
-
-    distance = 0
-    for i in range(len(path) - 1):
-        start_node = path[i]
-        next_node = path[i+1]
-
-        angle = atan2(next_node["y"] - start_node["y"],
-                      next_node["x"] - start_node["x"])
-        
-        distance += sqrt( (next_node['x'] - start_node['x'])**2 + (next_node['x'] - start_node['x'])**2 )
-        
-        next_node["distance"] = distance
-        next_node["theta"] = angle
-
-    return path
 
 
 def main(args=None):
     rclpy.init(args=args)
 
-    node = AutomaticControl(
+    node = PurePursuit(
         Ts=0.05,
         vmax=1,
         delta_max=pi/4,

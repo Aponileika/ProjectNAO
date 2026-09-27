@@ -107,8 +107,8 @@ class Monitor():
 
             # Planned path
             if self.path:
-                xs = [p['x'] for p in self.path]
-                ys = [p['y'] for p in self.path]
+                xs = [p[0] for p in self.path]
+                ys = [p[1] for p in self.path]
                 self.plan_path.set_data(xs, ys)
 
             # Current positions
@@ -220,7 +220,12 @@ class Monitor():
                 self.pastTrueX = []
                 self.pastTrueY = []
                 self.pastTrueTheta = []
-                
+            elif command.split(" ")[0].lower() == "goal":
+                splitCommand = command.split(" ")
+                goal = (float(splitCommand[1]), float(splitCommand[2]), float(splitCommand[3]) * 3.1415 / 180)
+                print(f"Goal: {goal}")
+                command = {"command": "goal", "goal": goal}
+
             else:
                 command = None
 
