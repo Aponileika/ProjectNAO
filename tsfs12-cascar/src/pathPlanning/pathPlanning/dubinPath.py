@@ -8,7 +8,10 @@ from matplotlib.patches import Circle
 
     
 def dubinsPath(startPos, startAngle, endPos, endAngle, getDistance=True, debug=False):
-    
+    if debug:
+        import time
+        t0 = time.time()
+
     spacing = 0.2 #Distance between each point in path
     L = 0.285
     deltaMax = np.pi/6
@@ -111,6 +114,15 @@ def dubinsPath(startPos, startAngle, endPos, endAngle, getDistance=True, debug=F
         validPaths[i][0] = (validPaths[i][0][0], validPaths[i][0][1], startAngle)
     
     if debug:
+        print(f"{(time.time() - t0)*1e6}us")
+
+        shortestLength = np.inf
+        dubinPath = None
+        for length, path in zip(pathLengths, validPaths):
+            if length < shortestLength:
+                length = shortestLength
+                dubinPath = path
+
         fig, ax = plt.subplots()
         ax.set_aspect('equal')
         ax.set_xlim(-6,6)

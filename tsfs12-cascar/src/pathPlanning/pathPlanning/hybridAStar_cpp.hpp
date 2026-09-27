@@ -59,6 +59,7 @@ class HybridAStar {
         double propogationInterval;
         std::vector<double> dThetas;
 
+        void addDistance(std::vector<PathItem>& path);
         std::vector<uint8_t> inflateMap(const std::vector<uint8_t>& grid);
         double wrap_angle(double theta);
         std::array<int, 2> worldToGrid(double const x, double const y);

@@ -66,6 +66,18 @@ HybridAStar::HybridAStar() {
     }
 }
 
+void HybridAStar::addDistance(std::vector<PathItem>& path) {
+    double dist {0.0};
+    for (int i {1}; i < path.size(); ++i) {
+        double dx {path[i][0] - path[i-1][0]};
+        double dy {path[i][1] - path[i-1][1]};
+
+        dist += std::sqrt(dx*dx + dy*dy);
+
+        path[i][3] = dist;
+    }
+};
+
 std::vector<uint8_t> HybridAStar::inflateMap(const std::vector<uint8_t>& grid) {
     int cells {static_cast<int>(std::ceil(radius / map_resolution)) + 1};
 
@@ -397,8 +409,9 @@ std::vector<PathItem> HybridAStar::search(
             std::cout << "Path found" << std::endl;
             std::vector<PathItem> path {reconstructPath(current)};
 
-            // Find shortcuts using dubin paths
+            // Find shortcuts using dubin paths. Twice for even better results
             path.back() = {goalNode.x, goalNode.y, wrap_angle(goalNode.theta), 0};
+            path = addDubinPaths(path);
             path = addDubinPaths(path);
 
             // Reverse found path, since search is backwards
@@ -408,6 +421,7 @@ std::vector<PathItem> HybridAStar::search(
                 point[1] += minY;
                 point[2] = wrap_angle(point[2] + pi);
             }
+            addDistance(path);
             return path;
         }
         
