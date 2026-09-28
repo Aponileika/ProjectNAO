@@ -51,6 +51,10 @@ ifeq ($(CONFIG_STEREO),1)
 	CXXFLAGS += -DCONFIG_STEREO
 endif
 
+ifeq ($(CONFIG_PLANAR),1)
+	CXXFLAGS += -DCONFIG_PLANAR
+endif
+
 LDFLAGS := \
   -L$(CERES)/lib \
   -L$(GLOG)/lib \

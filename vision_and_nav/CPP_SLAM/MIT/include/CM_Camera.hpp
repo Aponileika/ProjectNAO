@@ -90,7 +90,7 @@ public:
     t = TW2C;
   }
 
-  const Eigen::Vector3d GetCameraCenter(void) const { return tParametrization; }
+  const Eigen::Vector3d GetCameraCenter(void) const {return tParametrization;}
 };
 
 typedef struct {

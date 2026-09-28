@@ -14,6 +14,7 @@
 #include "opencv2/core/mat.hpp"
 #include "opencv2/opencv.hpp"
 #include "MAP_Mapping.hpp"
+#include "IMU_PreIntegration.hpp"
 
 struct typeVoxelKey
 {

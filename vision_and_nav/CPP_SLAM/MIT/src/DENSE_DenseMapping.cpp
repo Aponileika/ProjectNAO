@@ -1,6 +1,7 @@
 #include "DENSE_DenseMapping.hpp"
 #include "CM_Camera.hpp"
 #include "Config.hpp"
+#include "IMU_PreIntegration.hpp"
 #include "LG_Logging.hpp"
 #include "MAP_Mapping.hpp"
 #include "PANTOVEC_PantoVector.hpp"
@@ -171,7 +172,6 @@ typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& De
             const fp64 Y = (v - cy) * Z * fyrep;
 
             typeVoxelKey Key = DENSE_GetVoxelKey(X, Y, Z);
-
             ValidCameraPoints.insert(Key);
         }
     }
@@ -227,10 +227,11 @@ static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typ
             VoxelMap.RollingOccupancy.begin(),
             VoxelMap.RollingOccupancy.end(),
             0);
-    SumRollingGridClear += std::chrono::duration<fp64>(
-            PantoClock::now() - GridClearStart).count();
+
+    SumRollingGridClear += std::chrono::duration<fp64>( PantoClock::now() - GridClearStart).count();
 
     const PantoClock::time_point ProjectionStart = PantoClock::now();
+
     for(const typeKeyFrame& KeyFrame: LocalMapData.LocalKeyFrames)
     {
         const auto DenseMapIterator = DenseData.KeyFrameMaps.find(KeyFrame.ID);
@@ -257,27 +258,43 @@ static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typ
             const Eigen::Vector3f& WorldPoint = WorldPoints.col(Column);
 
             NewWCSMapPoints.emplace_back(WorldPoint);
-
-            const typeVoxelKey Key = DENSE_GetVoxelKey(WorldPoint.x(), WorldPoint.y(), WorldPoint.z());
-            const i32 x = Key.X - VoxelOrigin.X;
-            const i32 y = Key.Y - VoxelOrigin.Y;
-            const i32 z = Key.Z - VoxelOrigin.Z;
-
-            const i32 n = static_cast<i32>(DENSE_VOXELS_PER_SIDE);
-
-            if (x >= 0 && x < n && y >= 0 && y < n && z >= 0 && z < n)
-            {
-                const std::size_t index =
-                    static_cast<std::size_t>(x) +
-                    static_cast<std::size_t>(n) * (static_cast<std::size_t>(y) +
-                     static_cast<std::size_t>(n) * static_cast<std::size_t>(z));
-
-                ++VoxelMap.RollingOccupancy[index];
-            }
         }
     }
-    SumWorldProjectionAndOccupancy += std::chrono::duration<fp64>(
-            PantoClock::now() - ProjectionStart).count();
+
+    // Assuming planar scene
+#if defined(CONFIG_PLANAR)
+    const Eigen::Vector3f FloorNormalTransPose = (-(*IMU_GetGravity()).normalized()).transpose().cast<fp32>();
+    const Eigen::Vector3f LatestCameraCenter = CM_GetCameraCenter(LocalMapData.LocalKeyFrames.front().Camera).cast<fp32>();
+    const fp32 HeightOfCamera = LatestCameraCenter.z();
+#endif // CONFIG_PLANAR
+
+    for(const Eigen::Vector3f& WorldPoint : NewWCSMapPoints)
+    {
+        const typeVoxelKey Key = DENSE_GetVoxelKey(WorldPoint.x(), WorldPoint.y(), WorldPoint.z());
+        const i32 x = Key.X - VoxelOrigin.X;
+        const i32 y = Key.Y - VoxelOrigin.Y;
+        const i32 z = Key.Z - VoxelOrigin.Z;
+
+        const i32 n = static_cast<i32>(DENSE_VOXELS_PER_SIDE);
+
+        if (x >= 0 && x < n && y >= 0 && y < n && z >= 0 && z < n)
+        {
+            const std::size_t index = static_cast<std::size_t>(x) +
+                static_cast<std::size_t>(n) * (static_cast<std::size_t>(y) +
+                        static_cast<std::size_t>(n) * static_cast<std::size_t>(z));
+
+#if defined(CONFIG_PLANAR)
+        if(FloorNormalTransPose * WorldPoint - HeightOfCamera > DENSE_FLOOR_THRESHOLD)
+        {
+            VoxelMap.RollingOccupancy[index] = PANTO_ID_NOT_SET;
+            continue;
+        }
+#endif
+            ++VoxelMap.RollingOccupancy[index];
+        }
+    }
+
+    SumWorldProjectionAndOccupancy += std::chrono::duration<fp64>(PantoClock::now() - ProjectionStart).count();
 
     const PantoClock::time_point WCSPointPublishStart = PantoClock::now();
     {
@@ -472,3 +489,5 @@ static void DENSEPriv_LogTimingData(void)
     LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean WCS Point Publish         = %lf\n", MeanWCSPointPublish);
     LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Occupancy Publish         = %lf\n", MeanOccupancyPublish);
 }
+
+

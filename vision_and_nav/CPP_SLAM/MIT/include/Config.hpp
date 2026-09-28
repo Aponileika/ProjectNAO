@@ -40,7 +40,9 @@ inline constexpr const char *PANTO_SLAMSTARTMSG =
 #define OPENCV_AKAZE_NOCTAVES 2
 #define OPENCV_AKAZE_NOCTAVELAYERS 2
 
-#define OPENCV_SGBM_MODE cv::StereoSGBM::MODE_SGBM_3WAY
+// Single pass, probably dont use hh
+// #define OPENCV_SGBM_MODE cv::StereoSGBM::MODE_SGBM_3WAY
+#define OPENCV_SGBM_MODE cv::StereoSGBM::MODE_SGBM
 #define OPENCV_SGBM_MIN_DISPARITY 0
 #define OPENCV_SGBM_NUM_DISPARITIES 160
 #define OPENCV_SGBM_BLOCK_SIZE 3
@@ -57,6 +59,9 @@ inline constexpr const char *PANTO_SLAMSTARTMSG =
 #define DENSE_MAP_MAX_DEPTH 5.0 // metres
 #define DENSE_MAP_PIXEL_STRIDE 4
 #define DENSE_VOXEL_SIZE 0.1 // metres
+#if defined(CONFIG_PLANAR)
+#define DENSE_FLOOR_THRESHOLD 0.05 //metres
+#endif                                   
 
 constexpr fp64 VoxelsPerSideExact = DENSE_MAP_MAX_DEPTH * 2 / DENSE_VOXEL_SIZE;
 
