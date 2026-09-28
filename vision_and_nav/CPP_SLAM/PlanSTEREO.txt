@@ -1,0 +1,5 @@
+For now keep gt init.
+
+- 30 sep, feature matching with stereo camera (rectified) with some disparity refinment (SAD if matching ORB SLAM).
+- 2 october, disparity constrained bundle adjustment, so add a projection onto the right camera, this does not assume perfect rectification! 
+- 6 october, stereo inertial init Stereo-NEC 
