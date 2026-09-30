@@ -353,6 +353,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState, std:
         PredictedPose.Pose.tParametrization[2]);
 
     const PantoClock::time_point GetFrameStartTime = PantoClock::now();
+
     typePantoFrame Frame = FR_GetFrame();
 
     const fp64 GetFrameTime = std::chrono::duration<fp64>(PantoClock::now() - GetFrameStartTime).count();
@@ -378,15 +379,12 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState, std:
             .Frame = Frame,
             .ImagePath = ""
         };
-        const fp64 AssembleKeyFrameTime =
-            std::chrono::duration<fp64>(PantoClock::now() - AssembleKeyFrameStartTime).count();
+        const fp64 AssembleKeyFrameTime = std::chrono::duration<fp64>(PantoClock::now() - AssembleKeyFrameStartTime).count();
 
         KEYPriv_AddTimingSample(AssembleKeyFrameTiming, AssembleKeyFrameTime);
 
         const fp64 GetKeyFrameTotalTime = std::chrono::duration<fp64>(PantoClock::now() - GetKeyFrameStartTime).count();
-        const fp64 GetKeyFrameOverheadTime = std::max<fp64>(
-                0.0,
-                GetKeyFrameTotalTime - PosePreparationTime - GetFrameTime - AssembleKeyFrameTime);
+        const fp64 GetKeyFrameOverheadTime = std::max<fp64>(0.0, GetKeyFrameTotalTime - PosePreparationTime - GetFrameTime - AssembleKeyFrameTime);
 
         KEYPriv_AddTimingSample(GetKeyFrameTotalTiming, GetKeyFrameTotalTime);
         KEYPriv_AddTimingSample(GetKeyFrameOverheadTiming, GetKeyFrameOverheadTime);
@@ -405,16 +403,15 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState, std:
     PredictedPose.TimeStamp = Frame.TimeStamp;
 
     const DescRet& Descriptors = Frame.Descriptors;
-
     const PantoClock::time_point CreateImagePointsStartTime = PantoClock::now();
     typePantoKeypointFrame ImagePoints = PT_CreatePantoImagePoints(
-            Descriptors.Points, Descriptors.Descriptors,
-            LastFrameMapPoints, PredictedPose);
-    const fp64 CreateImagePointsTime =
-        std::chrono::duration<fp64>(PantoClock::now() - CreateImagePointsStartTime).count();
-
+            Descriptors.Points, Descriptors.Descriptors, LastFrameMapPoints, PredictedPose);
+    const fp64 CreateImagePointsTime = std::chrono::duration<fp64>(PantoClock::now() - CreateImagePointsStartTime).count();
     KEYPriv_AddTimingSample(CreateImagePointsTiming, CreateImagePointsTime);
 
+#if defined(CONFIG_STEREO)
+#endif // CONFIG_STEREO
+       
     const PantoClock::time_point AssembleKeyFrameStartTime = PantoClock::now();
     typeKeyFrame KeyFrame =
     {

@@ -26,10 +26,11 @@ namespace
     struct typeDecodedDataSetFrame
     {
         cv::Mat Gray;
+        DescRet Descriptors;
 #if defined(CONFIG_STEREO)
         cv::Mat RightGray;
+        DescRet RightDescriptors;
 #endif
-        DescRet Descriptors;
         fp64 TimeStamp = PANTO_TIMESTAMP_NOT_SET;
         std::string SourcePath;
     };
@@ -354,8 +355,10 @@ typePantoFrame __FR_GetFrameDataSet()
             return
             {
                 .Frame = cv::Mat{},
+                .Descriptors{},
 #if defined(CONFIG_STEREO)
                 .RightFrame = cv::Mat{},
+                .RightDescriptors{},
 #endif
                 .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
                 .Path = ""
@@ -376,8 +379,10 @@ typePantoFrame __FR_GetFrameDataSet()
         return
         {
             .Frame = cv::Mat{},
+            .Descriptors{},
 #if defined(CONFIG_STEREO)
             .RightFrame = cv::Mat{},
+            .RightDescriptors{},
 #endif
             .TimeStamp = -1.0,
             .Path = ""
@@ -548,12 +553,13 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
         return
         {
             .Frame = cv::Mat{},
+            .Descriptors{},
 #if defined(CONFIG_STEREO)
             .RightFrame = cv::Mat{},
+            .RightDescriptors{},
 #endif
             .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
             .Path = "",
-            .Descriptors{}
                 
         };
     }
@@ -584,29 +590,34 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
         return
         {
             .Frame = cv::Mat{},
+            .Descriptors{},
 #if defined(CONFIG_STEREO)
             .RightFrame = cv::Mat{},
+            .RightDescriptors{},
 #endif
             .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
             .Path = "",
-            .Descriptors{}
         };
     }
 
     return
     {
         .Frame = std::move(Frame.Gray),
+        .Descriptors = std::move(Frame.Descriptors),
 #if defined(CONFIG_STEREO)
         .RightFrame = std::move(Frame.RightGray),
+        .RightDescriptors = std::move(Frame.RightDescriptors),
 #endif
         .TimeStamp = Frame.TimeStamp,
         .Path = WritePath.string(),
-        .Descriptors = std::move(Frame.Descriptors)
     };
 }
 
 static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
 {
+#if defined(CONFIG_STEREO)
+    const static typeStereoCameraCalibration StereoCalib = *CM_GetStereoCalibration();
+#endif //CONFIG_IMU
     while(!StopToken.stop_requested())
     {
         std::string FramePath;
@@ -640,17 +651,36 @@ static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
 #endif
           )
         {
-            Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
-        }
+#if defined(CONFIG_STERO)
+            const cv::Mat& Left = DenseData.LeftImage;
+            const cv::Mat& Right = DenseData.RightImage;
+            cv::Mat RectifiedLeft;
+            cv::Mat RectifiedRight;
 
+            const auto& StartTimeDisparity = PantoClock::now();
+            cv::remap(Frame.Gray, Frame.Gray, StereoCalib.Map0X, StereoCalib.Map0Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
+            cv::remap(Frame.RightGray, Frame.RightGray, StereoCalib.Map1X, StereoCalib.Map1Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
+            std::thread LeftDescriptorsThread([&Frame]
+                    {
+                        Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
+                    });
+            std::thread RightDescriptorsThread([&Frame]
+                    {
+                        Frame.RightDescriptors = EP_GetDescriptors(Frame.RightGray);
+                    });
+            LeftDescriptorsThread.join();
+            RightDescriptorsThread.join();
+#else
+            Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
+#endif // CONFIG_STERO
+        }
         std::unique_lock<std::mutex> Lock(reader.PreloadMutex);
         if(!reader.PreloadNotFull.wait(
                     Lock,
                     StopToken,
                     []()
                     {
-                        return reader.PreloadedFrames.size() <
-                            PANTO_REALTIME_FRAME_QUEUE_CAPACITY;
+                        return reader.PreloadedFrames.size() < PANTO_REALTIME_FRAME_QUEUE_CAPACITY;
                     }))
         {
             return;

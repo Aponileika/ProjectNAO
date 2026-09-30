@@ -15,6 +15,9 @@ typedef struct
     u64 MapPointID;
     u64 ID;
     u64 CellID;
+#if defined(CONFIG_STEREO)
+    Eigen::Vector2d RightCameraMatch;
+#endif
     // TODO add this
     // fp64 DetectionScale;
 }typePantoImagePoint;

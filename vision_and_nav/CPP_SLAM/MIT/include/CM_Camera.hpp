@@ -4,6 +4,7 @@
 #include "Config.hpp"
 #include "LG_Logging.hpp"
 #include "PANTOVEC_PantoVector.hpp"
+#include "PROJ_ProjectiveUtils.hpp"
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <opencv2/core/eigen.hpp>

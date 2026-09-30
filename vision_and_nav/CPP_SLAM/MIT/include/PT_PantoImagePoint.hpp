@@ -10,11 +10,13 @@
 #include <PROJ_ProjectiveUtils.hpp>
 #include <PANTO_Utils.hpp>
 #include "PANTOVEC_PantoVector.hpp"
+#include <algorithm>
 
-typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>& Points, 
-        const cv::Mat& Descriptors,
-        std::vector<typePantoMapPoint>& CandidateMapPoints,
-        const typeCamera& Pose);
+typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>& Points, const cv::Mat& Descriptors,
+        std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose);
 typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Point2d>& Points, const cv::Mat& Descriptors);
+#if defined(CONFIG_STEREO)
+void PT_StereoMatch(typePantoKeypointFrame& KeyPointFrame, std::vector<cv::Point2d> RightKeyPoints, const cv::Mat& RightDescriptors);
+#endif // CONFIG_STEREO
 
 #endif // __PT_PANTO_POINT_HPP_

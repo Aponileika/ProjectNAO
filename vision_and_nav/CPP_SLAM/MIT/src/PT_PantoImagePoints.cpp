@@ -1,5 +1,7 @@
+#include "Config.hpp"
 #include "PT_PantoImagePoint.hpp"
 #include "MAP_Mapping.hpp"
+#include "PT_Types.hpp"
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -45,15 +47,17 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>&
             .Descriptor = Descriptor,
             .MapPointID = PANTO_ID_NOT_SET,
             .ID = static_cast<u64>(i),
-            .CellID = CellIndex
+            .CellID = CellIndex,
+#if defined(CONFIG_STEREO)
+            .RightCameraMatch = Eigen::Vector2d{}
+#endif
         };
 
         ImagePoints.ImagePoints.push_back(std::move(CandidateImagePoint));
         ImagePoints.CellIndexingArray[CellIndex].push_back(i);
     }
 
-    const u64 NumMatchedMapPoints = MAP_MatchMapPointsToKeyFrame(
-            ImagePoints, CandidateMapPoints, Pose, nullptr);
+    const u64 NumMatchedMapPoints = MAP_MatchMapPointsToKeyFrame(ImagePoints, CandidateMapPoints, Pose, nullptr);
     LG_Log(LogSeverity::DBG, "[PT_CreatePantoImagePoints] Matched %llu/%zu map points\n",
         static_cast<unsigned long long>(NumMatchedMapPoints),
         CandidateMapPoints.size());
@@ -87,7 +91,10 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
             .Descriptor = Descriptor,
             .MapPointID = PANTO_ID_NOT_SET,
             .ID = static_cast<u64>(i),
-            .CellID = CellIndex
+            .CellID = CellIndex,
+#if defined(CONFIG_STEREO)
+            .RightCameraMatch = Eigen::Vector2d{}
+#endif
         };
 
         ImagePoints.ImagePoints.push_back(std::move(CandidateImagePoint));
@@ -96,3 +103,23 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
 
     return ImagePoints;
 }
+
+#if defined(CONFIG_STEREO)
+void PT_StereoMatch(typePantoKeypointFrame& KeyPointFrame, std::vector<cv::Point2d>& RightKeyPoints, const cv::Mat& RightDescriptors)
+{
+    std::array<std::array<cv::Point2d, PANTO_IMAGE_WIDTH>, PANTO_IMAGE_HEIGHT> KeyPointMatrix;
+    std::array<std::array<typeDescriptor, PANTO_IMAGE_WIDTH>, PANTO_IMAGE_HEIGHT> DescriptorMatrix;
+    for(std::size_t i{}; i < RightKeyPoints.size(); i++)
+    {
+        const cv::Point2d& RightPoint = RightKeyPoints[i];
+        const u64 x = static_cast<u64>(std::floor(RightPoint.x));
+        const u64 y = static_cast<u64>(std::floor(RightPoint.y));
+        std::memcpy(DescriptorMatrix[x][y].data(), RightDescriptors.ptr<u8>(i), PANTO_DESCRIPTOR_SIZE);
+        KeyPointMatrix[x][y] = RightPoint;
+    }
+
+    for(typePantoImagePoint& LeftImagePoint : KeyPointFrame.ImagePoints)
+    {
+    }
+}
+#endif // CONFIG_STEREO

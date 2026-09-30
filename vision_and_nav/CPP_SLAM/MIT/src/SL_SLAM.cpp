@@ -1075,15 +1075,11 @@ void SL_PantoSLAM(i32 num_loops)
 }
 
 void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
-        typePreIntegration& PreIntegrationBetweenKF,
-        bool& TrackingLost, i32& NumProcessedLoops,
+        typePreIntegration& PreIntegrationBetweenKF, bool& TrackingLost, i32& NumProcessedLoops,
         u64& NumLateFramesSkipped)
 {
-    std::array<typeTimingStatistics,
-        static_cast<std::size_t>(typeTrackingTimingStage::Count)>
-        Timing{};
-    const auto Statistics = [&Timing](const typeTrackingTimingStage Stage)
-        -> typeTimingStatistics&
+    std::array<typeTimingStatistics, static_cast<std::size_t>(typeTrackingTimingStage::Count)> Timing{};
+    const auto Statistics = [&Timing](const typeTrackingTimingStage Stage) -> typeTimingStatistics&
     {
         return Timing[static_cast<std::size_t>(Stage)];
     };
@@ -1137,8 +1133,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         if(PANTO_USE_DATASET)
         {
             {
-                typeTrackingScopedTimer Timer(
-                        Statistics(typeTrackingTimingStage::FrameQueuePeek));
+                typeTrackingScopedTimer Timer(Statistics(typeTrackingTimingStage::FrameQueuePeek));
                 NextFrameTimeStamp = FR_PeekNextFrameTimeStamp();
             }
             if(NextFrameTimeStamp < 0.0)
@@ -1149,19 +1144,15 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             if(PANTO_DATASET_REALTIME_MODE)
             {
                 const PantoClock::time_point TargetWallTime =
-                    ReplayStartWallTime + std::chrono::duration_cast<PantoClock::duration>(
-                            std::chrono::duration<fp64>(NextFrameTimeStamp - ReplayStartTimeStamp));
+                    ReplayStartWallTime + std::chrono::duration_cast<PantoClock::duration>( std::chrono::duration<fp64>(NextFrameTimeStamp - ReplayStartTimeStamp));
                 const PantoClock::time_point CurrentWallTime = PantoClock::now();
 
                 if(CurrentWallTime > TargetWallTime)
                 {
-                    const fp64 Lateness = std::chrono::duration<fp64>(
-                            CurrentWallTime - TargetWallTime).count();
+                    const fp64 Lateness = std::chrono::duration<fp64>(CurrentWallTime - TargetWallTime).count();
                     fp64 SkippedTimeStamp = PANTO_TIMESTAMP_NOT_SET;
                     {
-                        typeTrackingScopedTimer Timer(
-                                Statistics(typeTrackingTimingStage::
-                                    SkipFrame));
+                        typeTrackingScopedTimer Timer(Statistics(typeTrackingTimingStage:: SkipFrame));
                         SkippedTimeStamp = FR_SkipNextFrame();
                     }
                     if(SkippedTimeStamp < 0.0)
@@ -1213,7 +1204,9 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 
             bool AdoptedCommittedKeyFrame = false;
 
-            if(const typeKeyFrame* Committed = MAP_FindKeyFrameByGeneration(*TrackingData.GlobalMap, PreviousFrame.MappingGeneration))
+            const typeKeyFrame* Committed = MAP_FindKeyFrameByGeneration(*TrackingData.GlobalMap, PreviousFrame.MappingGeneration);
+
+            if(Committed != nullptr)
             {
                 PreviousFrame = *Committed;
 
@@ -1340,29 +1333,23 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
                 }
             }
 
-
             typeKeyFrame& PreviousPreviousFrame = TrackingData.PreviousFrameData.PreviousPreviousFrame;
 
-            if(const typeKeyFrame* Committed = MAP_FindKeyFrameByGeneration(
-                        *TrackingData.GlobalMap, PreviousPreviousFrame.MappingGeneration))
+            const typeKeyFrame* PreviousPreviousCommitted = MAP_FindKeyFrameByGeneration(*TrackingData.GlobalMap, PreviousPreviousFrame.MappingGeneration);
+
+            if(PreviousPreviousCommitted != nullptr)
             {
                 PreviousPreviousFrame = *Committed;
             }
             {
-                typeTrackingScopedTimer Timer(
-                        Statistics(typeTrackingTimingStage::
-                            CreateTrackingMap));
+                typeTrackingScopedTimer Timer(Statistics(typeTrackingTimingStage:: CreateTrackingMap));
                 TrackingData.TrackingMap = MAP_CreateLocalMapTracking(
-                        *TrackingData.GlobalMap, *TrackingData.CovisibilityGraph,
-                        PreviousFrame);
+                        *TrackingData.GlobalMap, *TrackingData.CovisibilityGraph, PreviousFrame);
             }
             {
-                typeTrackingScopedTimer Timer(
-                        Statistics(typeTrackingTimingStage::
-                            GetPreviousFrameMapPoints));
+                typeTrackingScopedTimer Timer(Statistics(typeTrackingTimingStage:: GetPreviousFrameMapPoints));
                 TrackingData.PreviousFrameData.PreviousFrameMapPoints =
-                    MAP_GetLastFrameMapPoints(TrackingData.GlobalMap->MapPoints,
-                            PreviousFrame);
+                    MAP_GetLastFrameMapPoints(TrackingData.GlobalMap->MapPoints, PreviousFrame);
             }
 
             LastSeenBundleRevision = TrackingData.GlobalMap->BundleRevision;
@@ -1414,8 +1401,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         }
 
         {
-            typeTrackingScopedTimer Timer(
-                    Statistics(typeTrackingTimingStage::PredictPose));
+            typeTrackingScopedTimer Timer(Statistics(typeTrackingTimingStage::PredictPose));
             TrackingData.PosePrediction.Pose = KEY_PredictPose(TrackingData.PreviousFrameData.PreviousFrame);
         }
 #endif
