@@ -1,4 +1,7 @@
+#include "CM_Camera.hpp"
 #include "Config.hpp"
+#include "PANTO_Utils.hpp"
+#include "PROJ_ProjectiveUtils.hpp"
 #include "PT_PantoImagePoint.hpp"
 #include "MAP_Mapping.hpp"
 #include "PT_Types.hpp"
@@ -107,19 +110,83 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
 #if defined(CONFIG_STEREO)
 void PT_StereoMatch(typePantoKeypointFrame& KeyPointFrame, std::vector<cv::Point2d>& RightKeyPoints, const cv::Mat& RightDescriptors)
 {
-    std::array<std::array<cv::Point2d, PANTO_IMAGE_WIDTH>, PANTO_IMAGE_HEIGHT> KeyPointMatrix;
-    std::array<std::array<typeDescriptor, PANTO_IMAGE_WIDTH>, PANTO_IMAGE_HEIGHT> DescriptorMatrix;
+    const typeStereoCameraCalibration StereoCalib = *CM_GetStereoCalibration();
+    const fp64 MaxDisparity = StereoCalib.K.row(0)[0] * StereoCalib.Baseline / DENSE_MAP_MAX_DEPTH;
+    const fp64 MinDisparity = StereoCalib.K.row(0)[0] * StereoCalib.Baseline / DENSE_MAP_MIN_DEPTH;
+    std::vector<std::vector<std::pair<cv::Point2d, cv::Mat>>> FeaturesByRow;
+    FeaturesByRow.resize(PANTO_IMAGE_HEIGHT);
+
+    std::vector<std::vector<bool>> Inserted;
+    Inserted.resize(PANTO_IMAGE_HEIGHT);
+
     for(std::size_t i{}; i < RightKeyPoints.size(); i++)
     {
         const cv::Point2d& RightPoint = RightKeyPoints[i];
-        const u64 x = static_cast<u64>(std::floor(RightPoint.x));
         const u64 y = static_cast<u64>(std::floor(RightPoint.y));
-        std::memcpy(DescriptorMatrix[x][y].data(), RightDescriptors.ptr<u8>(i), PANTO_DESCRIPTOR_SIZE);
-        KeyPointMatrix[x][y] = RightPoint;
+        FeaturesByRow[y].push_back(std::pair(RightPoint, RightDescriptors.row(i)));
+        Inserted[y].push_back(false);
     }
 
     for(typePantoImagePoint& LeftImagePoint : KeyPointFrame.ImagePoints)
     {
+        const u64 y = static_cast<u64>(std::floor(LeftImagePoint.Point.y()));
+        u64 RowSearchStart = y - PANTO_ROW_SEARCH_STEREO;
+        if(y == 0)
+        {
+            RowSearchStart = 0;
+        }
+        u64 RowSearchEnd = y + PANTO_ROW_SEARCH_STEREO;
+        if(y == PANTO_IMAGE_HEIGHT - 1)
+        {
+            RowSearchEnd = PANTO_IMAGE_HEIGHT - 1;
+        }
+
+        const fp64 LeftX = LeftImagePoint.Point.x();
+
+        u32 BestHamming = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1;
+        u32 SecondBestHamming = PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1;
+        u64 BestRowIdx = RowSearchStart;
+        // Note this is not actually a column
+        u64 BestColIdx = 0;
+
+        cv::Point2d BestPoint = cv::Point2d{};
+
+        for(u64 i = RowSearchStart; i < RowSearchEnd; i++)
+        {
+            for(std::size_t j{}; j < FeaturesByRow[i].size(); j++)
+            {
+                const std::pair<cv::Point2d, cv::Mat>& ImageFeature = FeaturesByRow[i][j];
+                const fp64 Disparity = LeftX - ImageFeature.first.x;
+                if(Disparity <= MinDisparity || Disparity >= MaxDisparity)
+                {
+                    continue;
+                }
+                typeDescriptor Descriptor;
+                std::memcpy(Descriptor.data(), ImageFeature.second.ptr<u8>(0), PANTO_DESCRIPTOR_SIZE);
+                const u32 HammingDistance = PANTO_HammingDistance(LeftImagePoint.Descriptor, Descriptor);
+                if(HammingDistance < BestHamming)
+                {
+                    SecondBestHamming = HammingDistance;
+                    BestHamming = HammingDistance;
+                    BestRowIdx = i;
+                    BestColIdx = j;
+                    BestPoint = ImageFeature.first;
+                }
+                else if(HammingDistance < SecondBestHamming)
+                {
+                    SecondBestHamming = HammingDistance;
+                }
+            }
+        }
+        // Two matches and passes ratio test || besthamming < low_threshold
+        if((static_cast<fp64>(BestHamming) < PANTO_MATCHRATIO * static_cast<fp64>(SecondBestHamming)
+                && SecondBestHamming != PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1)
+                || BestHamming < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW )
+        {
+            LeftImagePoint.RightCameraMatch.x() = BestPoint.x;
+            LeftImagePoint.RightCameraMatch.y() = BestPoint.y;
+            Inserted[BestRowIdx][BestColIdx] = true;
+        }
     }
 }
 #endif // CONFIG_STEREO

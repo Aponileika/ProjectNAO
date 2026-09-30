@@ -1,4 +1,9 @@
 For now keep gt init.
-- 30 sep, feature matching with stereo camera (rectified) with some disparity refinment (SAD if matching ORB SLAM).
+- 1 october, (delayed to 1st october) feature matching with stereo camera (rectified) with some disparity refinment (SAD if matching ORB SLAM).
+this is not finished:
+fp64 PANTO_ZeroMeanSAD(cv::Mat GrayFrameLeft, cv::Mat GrayFrameRight, i64 RowCenterLeft, i64 ColCenterLeft, 
+        i64 RowStartRight, i64 ColStartRight)
+also the indexing into the left and right patch is bugged, it uses image indexes not patch indexes, add a separate index for the patches.
+
 - 2 october, disparity constrained bundle adjustment, so add a projection onto the right camera, this does not assume perfect rectification! 
 - 6 october, stereo inertial init Stereo-NEC 
