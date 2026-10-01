@@ -95,5 +95,9 @@ class typeSPSCQueue
 
 u32 PANTO_HammingDistance(const typeDescriptor& a, const typeDescriptor& b);
 u32 PANTO_HammingDistance(typeDescriptor& a, typeDescriptor& b);
+#if defined(CONFIG_STEREO)
+Eigen::Vector2d PANTO_ZeroMeanSAD(cv::Mat GrayFrameLeft, cv::Mat GrayFrameRight, i64 RowCenterLeft, i64 ColCenterLeft, 
+        i64 RowStartRight, i64 ColStartRight);
+#endif
 
 #endif //__VT_VECUTILS_HPP_

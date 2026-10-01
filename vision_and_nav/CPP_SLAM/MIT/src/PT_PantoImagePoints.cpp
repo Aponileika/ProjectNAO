@@ -108,7 +108,8 @@ typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Po
 }
 
 #if defined(CONFIG_STEREO)
-void PT_StereoMatch(typePantoKeypointFrame& KeyPointFrame, std::vector<cv::Point2d>& RightKeyPoints, const cv::Mat& RightDescriptors)
+void PT_StereoMatch(typePantoKeypointFrame& KeyPointFrame, std::vector<cv::Point2d>& RightKeyPoints, const cv::Mat& RightDescriptors,
+        const cv::Mat& GrayLeft, const cv::Mat& GrayRight)
 {
     const typeStereoCameraCalibration StereoCalib = *CM_GetStereoCalibration();
     const fp64 MaxDisparity = StereoCalib.K.row(0)[0] * StereoCalib.Baseline / DENSE_MAP_MAX_DEPTH;
@@ -183,6 +184,14 @@ void PT_StereoMatch(typePantoKeypointFrame& KeyPointFrame, std::vector<cv::Point
                 && SecondBestHamming != PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD + 1)
                 || BestHamming < PANTO_HAMMING_DISTANCE_MATCH_THRESHOLD_LOW )
         {
+            const i64 RowCenterLeft = static_cast<i64>(std::floor(LeftImagePoint.Point.y()));
+            const i64 ColCenterLeft = static_cast<i64>(std::floor(LeftImagePoint.Point.x()));
+
+            const i64 RowCenterRight = static_cast<i64>(std::floor(BestPoint.y));
+            const i64 ColCenterRight = static_cast<i64>(std::floor(BestPoint.x));
+
+            Eigen::Vector2d SADRefinedPoint = PANTO_ZeroMeanSAD(GrayLeft, GrayRight, RowCenterLeft, ColCenterLeft, RowCenterRight, ColCenterRight);
+
             LeftImagePoint.RightCameraMatch.x() = BestPoint.x;
             LeftImagePoint.RightCameraMatch.y() = BestPoint.y;
             Inserted[BestRowIdx][BestColIdx] = true;
