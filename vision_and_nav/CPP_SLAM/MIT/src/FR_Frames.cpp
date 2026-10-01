@@ -651,15 +651,13 @@ static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
 #endif
           )
         {
-#if defined(CONFIG_STERO)
-            const cv::Mat& Left = DenseData.LeftImage;
-            const cv::Mat& Right = DenseData.RightImage;
+#if defined(CONFIG_STEREO)
             cv::Mat RectifiedLeft;
             cv::Mat RectifiedRight;
-
-            const auto& StartTimeDisparity = PantoClock::now();
-            cv::remap(Frame.Gray, Frame.Gray, StereoCalib.Map0X, StereoCalib.Map0Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
-            cv::remap(Frame.RightGray, Frame.RightGray, StereoCalib.Map1X, StereoCalib.Map1Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
+            cv::remap(Frame.Gray, RectifiedLeft, StereoCalib.Map0X, StereoCalib.Map0Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
+            cv::remap(Frame.RightGray, RectifiedRight, StereoCalib.Map1X, StereoCalib.Map1Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
+            Frame.Gray = std::move(RectifiedLeft);
+            Frame.RightGray = std::move(RectifiedRight);
             std::thread LeftDescriptorsThread([&Frame]
                     {
                         Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
@@ -672,7 +670,7 @@ static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
             RightDescriptorsThread.join();
 #else
             Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
-#endif // CONFIG_STERO
+#endif // CONFIG_STEREO
         }
         std::unique_lock<std::mutex> Lock(reader.PreloadMutex);
         if(!reader.PreloadNotFull.wait(

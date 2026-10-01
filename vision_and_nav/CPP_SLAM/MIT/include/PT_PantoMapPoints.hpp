@@ -20,7 +20,7 @@ inline fp64 PT_GetFoundRatio(const typePantoMapPoint& MapPoint)
 
 inline u64 PT_GetNumObservations(const typePantoMapPoint& MapPoint)
 {
-    return static_cast<u64>(MapPoint.KeyFrameIDs.active_size());
+    return MapPoint.NumObs;
 }
 
 inline typeDescriptor PT_CalculateNewDescriptor(const std::vector<typeDescriptor>& Descriptors, std::vector<i32>& Distances)

@@ -62,12 +62,30 @@ void VIZ_InitVisualization(void)
 
     if(std::filesystem::exists(ImagesPath))
     {
-        std::filesystem::remove_all(ImagesPath);
+        std::error_code Error;
+        const std::uintmax_t Removed = std::filesystem::remove_all("./colmap/images", Error);
+
+        if(Error)
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "remove_all removed %llu entries but failed: %s\n",
+                    static_cast<unsigned long long>(Removed),
+                    Error.message().c_str());
+        }
     }
 
     if(std::filesystem::exists(SparsePath))
     {
-        std::filesystem::remove_all(SparsePath);
+        std::error_code Error;
+        const std::uintmax_t Removed = std::filesystem::remove_all("./colmap/sparse", Error);
+
+        if(Error)
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "remove_all removed %llu entries but failed: %s\n",
+                    static_cast<unsigned long long>(Removed),
+                    Error.message().c_str());
+        }
     }
 
     std::filesystem::create_directories(ImagesPath);

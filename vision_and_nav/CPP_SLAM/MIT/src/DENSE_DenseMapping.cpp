@@ -125,14 +125,9 @@ typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& De
     const static fp64 fyrep = 1 / fy;
     const static fp64 fxtimesB = StereoCalib.Baseline * fx;
 
-    const cv::Mat& Left = DenseData.LeftImage;
-    const cv::Mat& Right = DenseData.RightImage;
-    cv::Mat RectifiedLeft;
-    cv::Mat RectifiedRight;
-
     const auto& StartTimeDisparity = PantoClock::now();
-    cv::remap(Left, RectifiedLeft, StereoCalib.Map0X, StereoCalib.Map0Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
-    cv::remap(Right, RectifiedRight, StereoCalib.Map1X, StereoCalib.Map1Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
+    const cv::Mat& RectifiedLeft = DenseData.LeftImage;
+    const cv::Mat& RectifiedRight = DenseData.RightImage;
 
     cv::Mat Disparity16;
 
@@ -489,5 +484,4 @@ static void DENSEPriv_LogTimingData(void)
     LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean WCS Point Publish         = %lf\n", MeanWCSPointPublish);
     LG_Log(LogSeverity::DATA, "[DENSE MAPPING] Mean Occupancy Publish         = %lf\n", MeanOccupancyPublish);
 }
-
 

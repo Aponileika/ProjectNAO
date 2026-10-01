@@ -13,6 +13,12 @@
 static const struct typeOPCameraIntrinsics OPCameraIntrinsics(CM_GetIntrinsics()->K);
 static const Eigen::Matrix4d* TBS = &CM_GetIntrinsics()->T_BS;
 
+static bool OPPriv_HasTwoImageObservations(const typePantoMapPoint& MapPoint)
+{
+    return MapPoint.KeyFrameIDs.active_size() >= 2 &&
+        MapPoint.ImagePointIDs.active_size() >= 2;
+}
+
 void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem);
 void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
         ceres::Problem& Problem);
@@ -243,7 +249,7 @@ void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
 
     for(typePantoMapPoint& MapPoint : Map.MapPoints)
     {
-        if(PT_GetNumObservations(MapPoint) > 1)
+        if(OPPriv_HasTwoImageObservations(MapPoint))
         {
             Problem.AddParameterBlock(MapPoint.Point.data(), 4);
             Problem.SetManifold(MapPoint.Point.data(),
@@ -265,7 +271,7 @@ void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
 
             typePantoMapPoint& MapPoint =
                 Map.MapPoints[ImagePoint.MapPointID];
-            if(PT_GetNumObservations(MapPoint) <= 1)
+            if(!OPPriv_HasTwoImageObservations(MapPoint))
             {
                 continue;
             }
@@ -331,7 +337,7 @@ void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
 
     for(typePantoMapPoint& MapPoint : Map.MapPoints)
     {
-        if(PT_GetNumObservations(MapPoint) > 1)
+        if(OPPriv_HasTwoImageObservations(MapPoint))
         {
             Problem.AddParameterBlock(MapPoint.Point.data(), 4);
             Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
@@ -347,7 +353,7 @@ void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
             const u64 MapPointID = ImagePoint.MapPointID;
             if(MapPointID != PANTO_ID_NOT_SET)
             {
-                if(PT_GetNumObservations(Map.MapPoints[MapPointID]) <= 1)
+                if(!OPPriv_HasTwoImageObservations(Map.MapPoints[MapPointID]))
                 {
                     continue;
                 }
@@ -484,7 +490,7 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
 
     for(typePantoMapPoint& MapPoint : Map.MapPoints)
     {
-        if(PT_GetNumObservations(MapPoint) > 1)
+        if(OPPriv_HasTwoImageObservations(MapPoint))
         {
             Problem.AddParameterBlock(MapPoint.Point.data(), 4);
             Problem.SetParameterBlockConstant(MapPoint.Point.data());
@@ -506,7 +512,7 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
             const u64 MapPointID = ImagePoint.MapPointID;
             if(MapPointID != PANTO_ID_NOT_SET)
             {
-                if(PT_GetNumObservations(Map.MapPoints[MapPointID]) <= 1)
+                if(!OPPriv_HasTwoImageObservations(Map.MapPoints[MapPointID]))
                 {
                     continue;
                 }
@@ -640,7 +646,9 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
 
     for(const typePantoImagePoint& ImagePoint : KeyFrame->Points.ImagePoints)
     {
-        if(ImagePoint.MapPointID != PANTO_ID_NOT_SET && Map.MapPoints.contains(ImagePoint.MapPointID))
+        if(ImagePoint.MapPointID != PANTO_ID_NOT_SET &&
+           Map.MapPoints.contains(ImagePoint.MapPointID) &&
+           OPPriv_HasTwoImageObservations(Map.MapPoints[ImagePoint.MapPointID]))
         {
             NumAssociatedMapPoints++;
         }
@@ -658,7 +666,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
         {
             typePantoMapPoint& MapPoint = Map.MapPoints[MapPointID];
 
-            if(PT_GetNumObservations(MapPoint) <= 1)
+            if(!OPPriv_HasTwoImageObservations(MapPoint))
             {
                 continue;
             }
@@ -798,7 +806,7 @@ void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
         }
 
         typePantoMapPoint& MapPoint = *MapPointIt->second;
-        if(PT_GetNumObservations(MapPoint) <= 1)
+        if(!OPPriv_HasTwoImageObservations(MapPoint))
         {
             continue;
         }
@@ -1037,7 +1045,7 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
 
     for(typePantoMapPoint& MapPoint : LocalMap.MapPoints)
     {
-        if(PT_GetNumObservations(MapPoint) <= 1)
+        if(!OPPriv_HasTwoImageObservations(MapPoint))
         {
             continue;
         }

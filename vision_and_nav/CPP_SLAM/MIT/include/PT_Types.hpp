@@ -17,6 +17,7 @@ typedef struct
     u64 CellID;
 #if defined(CONFIG_STEREO)
     Eigen::Vector2d RightCameraMatch;
+    bool IsMatched = false;
 #endif
     // TODO add this
     // fp64 DetectionScale;
@@ -29,6 +30,8 @@ typedef struct
     typePantoVector<u64> KeyFrameIDs;
     typePantoVector<u64> ImagePointIDs;
     u64 ID;
+    // Includes stereo right-image observations that have no KeyFrameID entry.
+    u64 NumObs;
     u64 NumVisible;
     u64 NumFound;
     u64 CreationAge;

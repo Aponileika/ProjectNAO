@@ -1,0 +1,19 @@
+Run with highest priority on mac:
+sudo nice -n -10 ./main
+
+create video from sequence, after renaming
+ffmpeg \
+    -framerate 30 \
+    -i rgb_ordered/frame%d.png \
+    -c:v libx264 \
+    -pix_fmt yuv420p \
+    <insertname>.mp4
+
+timestamped:
+ffmpeg \
+    -framerate 30 \
+    -pattern_type glob \
+    -i '<insertdirectoryname>/*.png' \
+    -c:v libx264 \
+    -pix_fmt yuv420p \
+    <insertname>.mp4

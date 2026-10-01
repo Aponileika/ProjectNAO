@@ -1053,6 +1053,9 @@ void SL_PantoSLAM(i32 num_loops)
             static_cast<unsigned long long>(NumLateFramesSkipped));
     KEY_LogKeyFrameTimingStatistics();
     EP_LogGetDescriptorTimingStatistics();
+#if defined(CONFIG_STEREO)
+    PT_LogStereoMatchData();
+#endif
     MAP_LogMappingData();
     LG_EnableDataSummaryLoggingForCurrentThread(false);
 
@@ -1339,7 +1342,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 
             if(PreviousPreviousCommitted != nullptr)
             {
-                PreviousPreviousFrame = *Committed;
+                PreviousPreviousFrame = *PreviousPreviousCommitted;
             }
             {
                 typeTrackingScopedTimer Timer(Statistics(typeTrackingTimingStage:: CreateTrackingMap));
@@ -2078,8 +2081,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
 
             {
                 typeLocalMappingScopedTimer Timer(
-                        Statistics(typeLocalMappingTimingStage::
-                            CreateNewMapPoints));
+                        Statistics(typeLocalMappingTimingStage:: CreateNewMapPoints));
                 NewPointIndexes = MAP_CreateNewMapPoints(
                         LocalMap.GlobalMap,
                         CurrentKeyFrame,

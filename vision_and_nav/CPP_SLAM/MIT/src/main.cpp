@@ -72,10 +72,11 @@ int main(int argc, char* argv[])
     printf("initting logger\n");
     LG_InitLogger();
     LG_Log(LogSeverity::DBG, "Initiating SLAM\n");
-    SL_InitSlam();
     LG_Log(LogSeverity::DBG, "Setting intrinsics\n");
-    LG_Log(LogSeverity::DBG, "[main] OpenCV is using %lld threads \n", cv::getNumThreads());
+    // Calibrate before SL_InitSlam starts the dataset preload thread.
     CM_SetIntrinsics();
+    SL_InitSlam();
+    LG_Log(LogSeverity::DBG, "[main] OpenCV is using %lld threads \n", cv::getNumThreads());
     LG_Log(LogSeverity::DBG, "Initializing visualization\n");
 #if !defined(DEBUG)
     VIZ_InitVisualization();

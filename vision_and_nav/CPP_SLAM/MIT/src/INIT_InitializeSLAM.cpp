@@ -295,6 +295,7 @@ void INIT_ConstructInitialMap(typeInitReconstruction Reconstruction, typeGlobalM
                 .KeyFrameIDs = KeyFrameIDs,
                 .ImagePointIDs = ImagePointIDs,
                 .ID = static_cast<u64>(i),
+                .NumObs = 2,
                 .NumVisible = 1,
                 .NumFound = 1,
                 .CreationAge = KeyFrameIDs[1]

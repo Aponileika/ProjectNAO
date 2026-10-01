@@ -55,7 +55,7 @@ inline constexpr const char *PANTO_SLAMSTARTMSG =
 #define OPENCV_SGBM_SPECKLE_RANGE 2
 
 // TODO these are baseline specific parameters
-#define DENSE_MAP_MIN_DEPTH 0.3 // metres
+#define DENSE_MAP_MIN_DEPTH 0.5 // metres
 #define DENSE_MAP_MAX_DEPTH 5.0 // metres
 #define DENSE_MAP_PIXEL_STRIDE 4
 #define DENSE_VOXEL_SIZE 0.1 // metres
@@ -108,7 +108,12 @@ constexpr u64 DENSE_OCCUPIED_MIN_OBSERVATIONS = 2;
 #define PANTO_VISUAL_ALIGNMENT_WINDOW_FRAMES 30
 // Same as slam orb, baseline > 1% of median depth of local map relative to a
 // keyframe
+#if defined(CONFIG_STEREO)
+// Less triangulation here in stereo, only needed for far away points
 #define PANTO_BASELINE_THRESHOLD 0.01f
+#else
+#define PANTO_BASELINE_THRESHOLD 0.01f
+#endif
 #if defined(CONFIG_STEREO)
 #define PANTO_ROW_SEARCH_STEREO 1
 #endif // CONFIG_STEREO
@@ -165,7 +170,7 @@ using PantoClock = std::chrono::steady_clock;
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
 #ifndef PANTO_ACTIVE_DATASET
-#define PANTO_ACTIVE_DATASET EUROC_MAV_MACHINE_HALL1_EASY
+#define PANTO_ACTIVE_DATASET EUROC_MAV_VICON_ROOM1_EASY
 #endif
 
 #define DATASETS                                                               \

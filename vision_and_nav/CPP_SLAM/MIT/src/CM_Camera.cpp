@@ -165,6 +165,15 @@ static void CMPriv_SetStereoCalibration()
         P0Rect.at<fp64>(0, 0), P0Rect.at<fp64>(0, 1), P0Rect.at<fp64>(0, 2),
         P0Rect.at<fp64>(1, 0), P0Rect.at<fp64>(1, 1), P0Rect.at<fp64>(1, 2),
         P0Rect.at<fp64>(2, 0), P0Rect.at<fp64>(2, 1), P0Rect.at<fp64>(2, 2);
+
+    // The frame loader returns rectified images. Make the SLAM camera model
+    // describe that virtual left camera, including its rotation in the body.
+    Eigen::Matrix3d RRectifiedLeft;
+    cv::cv2eigen(R0Rect, RRectifiedLeft);
+    ci.T_BS.block<3, 3>(0, 0) =
+        (ci.T_BS.block<3, 3>(0, 0) * RRectifiedLeft.transpose()).eval();
+    ci.K = StereoCalibration.K;
+    ci.k1 = ci.k2 = ci.p1 = ci.p2 = ci.k3 = 0.0;
 }
 #endif
 

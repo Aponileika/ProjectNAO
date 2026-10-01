@@ -2,6 +2,7 @@
 #include "Config.hpp"
 #include <cstring>
 #include <bit>
+#include <cmath>
 
 u32 PANTO_HammingDistance(const typeDescriptor& a, const typeDescriptor& b)
 {
@@ -58,51 +59,72 @@ u32 PANTO_HammingDistance(typeDescriptor& a, typeDescriptor& b)
 // the mean sums are recalculated, even though there is no stride between right image patches partial sums are recalculated
 // a better implementation would save a cusum for each element considered in the right frame and use those to calculate
 // the means faster. Same goes for the Sum of absolute differences, use a rolling window!
-Eigen::Vector2d PANTO_ZeroMeanSAD(cv::Mat GrayFrameLeft, cv::Mat GrayFrameRight, i64 RowCenterLeft, i64 ColCenterLeft, 
+// Returns the parabola delta fit
+fp64 PANTO_ZeroMeanSAD(cv::Mat GrayFrameLeft, cv::Mat GrayFrameRight, i64 RowCenterLeft, i64 ColCenterLeft, 
         i64 RowStartRight, i64 ColStartRight)
 {
     // Calculate Left patch
-    std::array<i64, PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT> LeftPatch;
-    i64 TopLeftRowLeft = RowCenterLeft - static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_HALF_SIDE_LENGTH);
-    i64 TopLeftColLeft = ColCenterLeft - static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_HALF_SIDE_LENGTH);
+    const i64 TopLeftRowLeft = RowCenterLeft - static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_HALF_SIDE_LENGTH);
+    const i64 TopLeftColLeft = ColCenterLeft - static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_HALF_SIDE_LENGTH);
+    //Reject left patches too close to the edge of the rectified image
     if(TopLeftRowLeft < 0)
     {
-        TopLeftRowLeft = 0;
+        return NAN;
     } 
     if(TopLeftColLeft < 0)
     {
-        TopLeftColLeft = 0;
+        return NAN;
     } 
 
-    fp64 Sum = 0;
-    for(i64 i = TopLeftRowLeft; i < PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH && i < static_cast<i64>(PANTO_IMAGE_HEIGHT); i++)
+    const i64 RowEndLeft = TopLeftRowLeft + static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH);
+    const i64 ColEndLeft = TopLeftColLeft + static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH);
+
+    if(RowEndLeft >= static_cast<i64>(PANTO_IMAGE_HEIGHT))
     {
-        for(i64 j = TopLeftColLeft; j < PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH && j < static_cast<i64>(PANTO_IMAGE_WIDTH); j++)
+        return NAN;
+    }
+
+    if(ColEndLeft >= static_cast<i64>(PANTO_IMAGE_WIDTH))
+    {
+        return NAN;
+    }
+
+    fp64 Sum = 0;
+    for(i64 i = TopLeftRowLeft; i < RowEndLeft; i++)
+    {
+        for(i64 j = TopLeftColLeft; j < ColEndLeft; j++)
         {
             Sum += GrayFrameLeft.at<u8>(i, j);
         }
     }
 
+    std::array<fp64, PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT> LeftPatch{};
     const fp64 MeanLeftPatch = Sum / static_cast<fp64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT);
-
     {
         i64 PatchRow = 0;
-        for(i64 i = TopLeftRowLeft; i < PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH && i < static_cast<i64>(PANTO_IMAGE_HEIGHT); i++)
+        for(i64 i = TopLeftRowLeft; i < RowEndLeft; i++)
         {
             i64 PatchCol = 0;
-            for(i64 j = TopLeftColLeft; j < PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH && j < static_cast<i64>(PANTO_IMAGE_WIDTH); j++)
+            for(i64 j = TopLeftColLeft; j < ColEndLeft; j++)
             {
-                LeftPatch[PatchRow++ * PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH + PatchCol++] = GrayFrameLeft.at<u8>(i, j) / MeanLeftPatch;
+                LeftPatch[PatchRow * PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH + PatchCol] =
+                    static_cast<fp64>(GrayFrameLeft.at<u8>(i, j)) - MeanLeftPatch;
+                PatchCol++;
             }
+            PatchRow++;
         }
     }
 
-    const i64 ColEnd = PANTO_SAD_REFINMENT_SEARCH_LENGTH;
-
     i64 TopLeftRowRight = RowStartRight - static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_HALF_SIDE_LENGTH);
+    i64 RowStopRight = TopLeftRowRight + static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH);
+
     if(TopLeftRowRight < 0)
     {
-        TopLeftRowRight = 0;
+        return NAN;
+    }
+    if(RowStopRight >= static_cast<i64>(PANTO_IMAGE_HEIGHT))
+    {
+        return NAN;
     }
 
     fp64 MinSAD = std::numeric_limits<fp64>::max();
@@ -110,26 +132,28 @@ Eigen::Vector2d PANTO_ZeroMeanSAD(cv::Mat GrayFrameLeft, cv::Mat GrayFrameRight,
     std::deque<fp64> WindowSAD;
     std::deque<fp64> BestWindowSAD;
     bool EnqueNext = false;
-    for(i64 i = -PANTO_SAD_REFINMENT_SEARCH_LENGTH; i < ColEnd; i++)
+
+    for(i64 i = -PANTO_SAD_REFINMENT_SEARCH_LENGTH; i < PANTO_SAD_REFINMENT_SEARCH_LENGTH; i++)
     {
-        std::array<i64, PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT> RightPatch;
+        std::array<fp64, PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT> RightPatch{};
 
         i64 TopLeftColRight = ColStartRight + i - static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_HALF_SIDE_LENGTH);
+        i64 ColStopRight = TopLeftColRight + static_cast<i64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH);
 
         if(TopLeftColRight < 0)
         {
-            TopLeftColRight = 0;
+            break;
         } 
-        if(TopLeftColRight > static_cast<i64>(PANTO_IMAGE_WIDTH))
+        if(ColStopRight >= static_cast<i64>(PANTO_IMAGE_WIDTH))
         {
-            // limit it
+            break;
         }
 
         fp64 Sum = 0;
 
-        for(i64 j = TopLeftRowRight; j < PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH && j < static_cast<i64>(PANTO_IMAGE_HEIGHT); j++)
+        for(i64 j = TopLeftRowRight; j < RowStopRight; j++)
         {
-            for(i64 k = TopLeftColRight; k < PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH && k < static_cast<i64>(PANTO_IMAGE_WIDTH); k++)
+            for(i64 k = TopLeftColRight; k < ColStopRight; k++)
             {
                 Sum += GrayFrameRight.at<u8>(j, k);
             }
@@ -138,20 +162,25 @@ Eigen::Vector2d PANTO_ZeroMeanSAD(cv::Mat GrayFrameLeft, cv::Mat GrayFrameRight,
         const fp64 MeanRightPatch = Sum / static_cast<fp64>(PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT);
 
         i64 PatchRow = 0;
-        for(i64 j = TopLeftRowRight; i < PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH && j < static_cast<i64>(PANTO_IMAGE_HEIGHT); j++)
+        for(i64 j = TopLeftRowRight; j < RowStopRight; j++)
         {
             i64 PatchCol = 0;
-            for(i64 k = TopLeftColRight; k < PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH && k < static_cast<i64>(PANTO_IMAGE_WIDTH); k++)
+            for(i64 k = TopLeftColRight; k < ColStopRight; k++)
             {
-                RightPatch[PatchRow * PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH + PatchCol] = GrayFrameRight.at<u8>(j, k) / MeanRightPatch;
+                RightPatch[PatchRow * PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT_SIDE_LENGTH + PatchCol] =
+                    static_cast<fp64>(GrayFrameRight.at<u8>(j, k)) - MeanRightPatch;
+                PatchCol++;
             }
+            PatchRow++;
         }
 
         fp64 SAD = 0.0; 
+
         for(i64 j = 0; j < PANTO_PATCH_SIZE_STEREO_SAD_REFINMENT; j++)
         {
             SAD += std::abs((LeftPatch[j] - RightPatch[j]));
         }
+
         if(EnqueNext)
         {
             BestWindowSAD.push_back(SAD);
@@ -160,7 +189,10 @@ Eigen::Vector2d PANTO_ZeroMeanSAD(cv::Mat GrayFrameLeft, cv::Mat GrayFrameRight,
         if(SAD < MinSAD)
         {
             BestWindowSAD.clear();
-            BestWindowSAD.push_back(WindowSAD.back());
+            if(!WindowSAD.empty())
+            {
+                BestWindowSAD.push_back(WindowSAD.back());
+            }
             BestWindowSAD.push_back(SAD);
             EnqueNext = true;
             MinSAD = SAD;
@@ -172,6 +204,26 @@ Eigen::Vector2d PANTO_ZeroMeanSAD(cv::Mat GrayFrameLeft, cv::Mat GrayFrameRight,
             WindowSAD.pop_front();
         }
     }
-    return std::pair(static_cast<u64>(MinSADIndex - ColStartRight), MinSAD);
+
+    if(BestWindowSAD.size() < PANTO_SAD_WINDOW_REFINMENT_LENGTH)
+    {
+        return NAN;
+    }
+
+    fp64 LeftScore = BestWindowSAD.front();
+    BestWindowSAD.pop_front();
+    fp64 MiddleScore = BestWindowSAD.front();
+    BestWindowSAD.pop_front();
+    fp64 RightScore = BestWindowSAD.front();
+    BestWindowSAD.pop_front();
+
+    const fp64 Denominator = 2 * (LeftScore - 2 * MiddleScore + RightScore);
+    if(std::abs(Denominator) < 1e-12)
+    {
+        return NAN;
+    }
+    fp64 ParabolaFit = (LeftScore - RightScore) / Denominator;
+
+    return static_cast<fp64>(MinSADIndex) + ParabolaFit;
 }
 #endif

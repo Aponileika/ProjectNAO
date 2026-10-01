@@ -18,6 +18,7 @@ typeMappingData MappingData =
     .RecentMapPointsCulled = 0,
     .KeyFramesCulled = 0,
     .MapPointsCulled = 0,
+    .MapPointsCreatedFromDisparity = 0,
     .MapPointFusionObservations = 0,
     .MapPointFusions = 0,
 
@@ -819,6 +820,7 @@ void MAP_CullLocalMap(typeGlobalMap* GlobalMap, typeCovisibilityGraph* Covisibil
                 {
                     MapPoint.KeyFrameIDs.remove(i);
                     MapPoint.ImagePointIDs.remove(i);
+                    MapPoint.NumObs--;
                     break;
                 }
             }
@@ -854,7 +856,7 @@ void MAP_CullRecentMapPoints(std::unordered_set<u64>& RecentMapPointIndexes,
 
         typePantoMapPoint& MapPoint = GlobalMap->MapPoints[MapPointID];
         const u64 Age = GlobalMap->Age - MapPoint.CreationAge;
-        const u64 NumObservations = static_cast<u64>(MapPoint.KeyFrameIDs.active_size());
+        const u64 NumObservations = PT_GetNumObservations(MapPoint);
         if(PT_GetFoundRatio(MapPoint) < PANTO_MIN_FOUND_RATIO)
         {
             RemoveRecentIndexes.push_back(MapPointID);
@@ -1049,6 +1051,7 @@ void MAP_CullObservationEdges(typeGlobalMap* GlobalMap, typeCovisibilityGraph* C
             ImagePoint.MapPointID = PANTO_ID_NOT_SET;
             KeyFrameIDs.remove(CulledIndex);
             ImagePointIDs.remove(CulledIndex);
+            MapPoint.NumObs--;
             NumCulledObservationEdges++;
         }
     }
@@ -1109,6 +1112,18 @@ void MAP_CullObservationEdges(typeGlobalMap* GlobalMap, typeCovisibilityGraph* C
 std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& NewKeyFrame, typeCovisibilityGraph* CovisibilityGraph,
         const u64 LatestKeyFrameID)
 {
+#if defined(CONFIG_STEREO)
+    const static typeStereoCameraCalibration StereoCalib = *CM_GetStereoCalibration();
+    const static fp64 fx = StereoCalib.K.row(0)[0];
+    const static fp64 fy = StereoCalib.K.row(1)[1];
+    const static fp64 cx = StereoCalib.K.row(0)[2];
+    const static fp64 cy = StereoCalib.K.row(1)[2];
+
+    const static fp64 fxrep = 1 / fx;
+    const static fp64 fyrep = 1 / fy;
+    const static fp64 fxtimesB = StereoCalib.Baseline * fx;
+#endif // CONFIG_STEREO
+
     std::vector<typeCovisibility> MostCovisible = GRAPH_GetTopNCovisibleFrames(*CovisibilityGraph, LatestKeyFrameID, PANTO_TOP_N_KF_FOR_LOCAL_MAP);
     std::vector<typeKeyFrame> LocalMapKeyFrames;
 
@@ -1147,6 +1162,8 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& 
     std::vector<u64> NewPointIDs;
     NewPointIDs.reserve(PANTO_NEW_MAPPOINT_RESERVE * LocalMapKeyFrames.size());
 
+    // Triangulate new mappoints from local map, this is still done as a formed of deferred triangulation in the case
+    // of only far away features in stereo
     for(const typeKeyFrame& KeyFrameLocal : LocalMapKeyFrames)
     {
         // Ignore new keyframe
@@ -1189,7 +1206,7 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& 
                 assert(ImagePoint2.MapPointID == PANTO_ID_NOT_SET);
 #endif
 
-                const u64 MapPointID = GlobalMap->MapPoints.push_back(MapPoint);
+                const u64 MapPointID = GlobalMap->MapPoints.push_back(std::move(MapPoint));
                 GlobalMap->MapPoints[MapPointID].ID = MapPointID;
                 ImagePoint1.MapPointID = MapPointID;
                 ImagePoint2.MapPointID = MapPointID;
@@ -1199,6 +1216,56 @@ std::vector<u64> MAP_CreateNewMapPoints(typeGlobalMap* GlobalMap, typeKeyFrame& 
     }
 
     GRAPH_UpdateCovisibility(CovisibilityGraph, GlobalMap->MapPoints, LatestKeyFrameID, NewPointIDs);
+
+#if defined(CONFIG_STEREO)
+    // Create new mappoints from disparity
+    for(typePantoImagePoint& ImagePoint : NewKeyFrame.Points.ImagePoints)
+    {
+        if(ImagePoint.IsMatched && ImagePoint.MapPointID == PANTO_ID_NOT_SET)
+        {
+            fp64 Disparity = ImagePoint.Point.x() - ImagePoint.RightCameraMatch.x();
+            const fp64 Z = fxtimesB / Disparity;
+            if(!std::isfinite(Z) || Z < DENSE_MAP_MIN_DEPTH || Z > DENSE_MAP_MAX_DEPTH)
+            {
+                continue;
+            }
+
+            const fp64 u = ImagePoint.Point.x();
+            const fp64 v = ImagePoint.Point.y();
+
+            const fp64 X = (u - cx) * Z * fxrep;
+            const fp64 Y = (v - cy) * Z * fyrep;
+            const Eigen::Vector3d PointCamera(X, Y, Z);
+            const Eigen::Vector3d PointWorld =
+                NewKeyFrame.Camera.Pose.R.transpose() *
+                (PointCamera - NewKeyFrame.Camera.Pose.t);
+            if(!PointWorld.allFinite())
+            {
+                continue;
+            }
+
+            typePantoMapPoint MapPoint =
+            {
+                .Point = PROJ_NormalizeToSpherical(Eigen::Vector4d(
+                            PointWorld.x(), PointWorld.y(), PointWorld.z(), 1.0)),
+                .Descriptor = ImagePoint.Descriptor,
+                .KeyFrameIDs = typePantoVector<u64>{NewKeyFrame.ID},
+                .ImagePointIDs = typePantoVector<u64>{ImagePoint.ID},
+                .ID = PANTO_ID_NOT_SET,
+                .NumObs = 2,
+                .NumVisible = 2,
+                .NumFound = 2,
+                .CreationAge = GlobalMap->Age
+            };
+
+            const u64 MapID = GlobalMap->MapPoints.push_back(std::move(MapPoint));
+            GlobalMap->MapPoints[MapID].ID = MapID;
+            ImagePoint.MapPointID = MapID;
+            NewPointIDs.push_back(MapID);
+            MappingData.MapPointsCreatedFromDisparity++;
+        }
+    }
+#endif // CONFIG_STEREO
 
     return NewPointIDs;
 }
@@ -1366,14 +1433,16 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                             continue;
                         }
 
-                        const u64 NumVisibleLatest = static_cast<u64>(MapPoint.KeyFrameIDs.active_size());
-                        const u64 NumVisibleHistoric = static_cast<u64>(GlobalMap->MapPoints[AssociatedMapPointID].KeyFrameIDs.active_size());
-                        if(NumVisibleLatest > NumVisibleHistoric)
+                        const u64 NumObsLatest = PT_GetNumObservations(MapPoint);
+                        const u64 NumObsHistoric = PT_GetNumObservations(GlobalMap->MapPoints[AssociatedMapPointID]);
+                        if(NumObsLatest > NumObsHistoric)
                         {
                             // Fuse historic into latest
                             typePantoMapPoint& MapPointMutable = GlobalMap->MapPoints[MapPoint.ID];
                             const typePantoMapPoint& HistoricMapPoint = GlobalMap->MapPoints[AssociatedMapPointID];
                             GRAPH_DecrementAll(CovisibilityGraph, HistoricMapPoint.KeyFrameIDs);
+                            assert(HistoricMapPoint.NumObs >= HistoricMapPoint.KeyFrameIDs.active_size());
+                            MapPointMutable.NumObs += HistoricMapPoint.NumObs - HistoricMapPoint.KeyFrameIDs.active_size();
                             for(std::size_t i{}; i < HistoricMapPoint.KeyFrameIDs.size(); i++)
                             {
                                 if(HistoricMapPoint.KeyFrameIDs.contains(i))
@@ -1395,6 +1464,7 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                                     }
                                     MapPointMutable.KeyFrameIDs.push_back(KeyFrameID);
                                     MapPointMutable.ImagePointIDs.push_back(ImagePointID);
+                                    MapPointMutable.NumObs++;
                                     GlobalMap->KeyFrames[KeyFrameID].Points.ImagePoints[ImagePointID].MapPointID = MapPointMutable.ID;
                                 }
                             }
@@ -1411,6 +1481,8 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                             const typePantoMapPoint& MapPointNonMutable = GlobalMap->MapPoints[MapPoint.ID];
                             typePantoMapPoint& HistoricMapPoint = GlobalMap->MapPoints[AssociatedMapPointID];
                             GRAPH_DecrementAll(CovisibilityGraph, MapPointNonMutable.KeyFrameIDs);
+                            assert(MapPointNonMutable.NumObs >= MapPointNonMutable.KeyFrameIDs.active_size());
+                            HistoricMapPoint.NumObs += MapPointNonMutable.NumObs - MapPointNonMutable.KeyFrameIDs.active_size();
                             for(std::size_t i{}; i < MapPointNonMutable.KeyFrameIDs.size(); i++)
                             {
                                 if(MapPointNonMutable.KeyFrameIDs.contains(i))
@@ -1434,6 +1506,7 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                                     }
                                     HistoricMapPoint.KeyFrameIDs.push_back(KeyFrameID);
                                     HistoricMapPoint.ImagePointIDs.push_back(ImagePointID);
+                                    HistoricMapPoint.NumObs++;
                                     GlobalMap->KeyFrames[KeyFrameID].Points.ImagePoints[ImagePointID].MapPointID = HistoricMapPoint.ID;
                                 }
                             }
@@ -1457,6 +1530,7 @@ std::vector<u64> MAP_FuseMapPoints(typeGlobalMap* GlobalMap, typeCovisibilityGra
                         }
                         MapPointMutable.KeyFrameIDs.push_back(NeighbourKeyFrame.ID);
                         MapPointMutable.ImagePointIDs.push_back(ClosestPointIndex);
+                        MapPointMutable.NumObs++;
                         MapPointMutable.NumFound++;
                         MapPointMutable.NumVisible++;
                         MappingData.MapPointFusionObservations++;
@@ -1840,6 +1914,7 @@ void MAP_AssertMapPointObservations( const typeGlobalMap& GlobalMap)
     for(const typePantoMapPoint& MapPoint : GlobalMap.MapPoints)
     {
         assert( MapPoint.KeyFrameIDs.size() == MapPoint.ImagePointIDs.size());
+        assert( MapPoint.NumObs >= MapPoint.KeyFrameIDs.active_size());
 
         for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
         {
@@ -2152,9 +2227,10 @@ void MAP_LogGlobalMap(const typeGlobalMap& GlobalMap)
 
         LG_Log(
                 LogSeverity::DBG,
-                "[MAP_LogGlobalMap] MP slot %zu: ID = %llu, observations = %zu, visible = %llu, found = %llu\n",
+                "[MAP_LogGlobalMap] MP slot %zu: ID = %llu, observations = %llu, keyframe observations = %zu, visible = %llu, found = %llu\n",
                 i,
                 MapPoint.ID,
+                MapPoint.NumObs,
                 MapPoint.KeyFrameIDs.active_size(),
                 MapPoint.NumVisible,
                 MapPoint.NumFound);
@@ -2348,6 +2424,9 @@ void MAP_LogMappingData(void)
         LogSeverity::DATA,
         "\n"
         "======================= MAPPING DATA =======================\n"
+        " Map-point creation\n"
+        "   New map points from disparity    : %llu\n"
+        "\n"
         " Culling\n"
         "   Recent map points culled          : %llu\n"
         "   Keyframes culled                  : %llu\n"
@@ -2367,6 +2446,9 @@ void MAP_LogMappingData(void)
         "   Pixel-error variance              : %.6f px^2\n"
         "   Pixel-error standard deviation    : %.6f px\n"
         "============================================================\n",
+        static_cast<unsigned long long>(
+            MappingData.MapPointsCreatedFromDisparity
+        ),
         static_cast<unsigned long long>(
             MappingData.RecentMapPointsCulled
         ),

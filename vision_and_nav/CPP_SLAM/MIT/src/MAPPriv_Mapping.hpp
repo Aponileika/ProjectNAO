@@ -9,6 +9,7 @@ typedef struct
     u64 KeyFramesCulled;
 
     u64 MapPointsCulled;
+    u64 MapPointsCreatedFromDisparity;
 
     u64 MapPointFusionObservations;
     u64 MapPointFusions;

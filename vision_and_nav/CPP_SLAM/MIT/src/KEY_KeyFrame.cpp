@@ -3,6 +3,7 @@
 #include "IMU_IMUReader.hpp"
 #include "IMU_PreIntegration.hpp"
 #include "KEY_KeyFramePriv.hpp"
+#include "PT_PantoImagePoint.hpp"
 #include "PT_PantoMapPoints.hpp"
 #include "opencv2/opencv.hpp"
 
@@ -296,6 +297,7 @@ typeKeyFrame KEY_GetThirdKeyFrame(typeKeyFrame& LastKeyFrame, typePantoVector<ty
 
                         GlobalMapPoints[BestMatch.MapPointID].KeyFrameIDs.push_back(2);
                         GlobalMapPoints[BestMatch.MapPointID].ImagePointIDs.push_back(ImagePoint1.ID);
+                        GlobalMapPoints[BestMatch.MapPointID].NumObs++;
                         GlobalMapPoints[BestMatch.MapPointID].NumFound++;
                         NumMatches++;
                     }
@@ -410,6 +412,7 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState, std:
     KEYPriv_AddTimingSample(CreateImagePointsTiming, CreateImagePointsTime);
 
 #if defined(CONFIG_STEREO)
+    PT_StereoMatch(ImagePoints, Frame.RightDescriptors.Points, Frame.RightDescriptors.Descriptors, Frame.Frame, Frame.RightFrame);
 #endif // CONFIG_STEREO
        
     const PantoClock::time_point AssembleKeyFrameStartTime = PantoClock::now();
@@ -421,6 +424,11 @@ typeKeyFrame KEY_GetKeyFrame(typeNavigationState& PredictedNavigationState, std:
         .Camera = PredictedPose,
 #if defined(CONFIG_IMU)
         .NavigationState = PredictedNavigationState,
+        .PreIntegrationData = {},
+        .TrackingReferencePose = {},
+        .TrackingReferenceNavigationState = {},
+        .TrackingReferencePreIntegrationData = {},
+        .Measurements = {},
 #endif
         .ID = PANTO_ID_NOT_SET,
         .Frame = Frame,
@@ -625,6 +633,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
 
         MapPoint.ImagePointIDs.push_back(ImagePointID);
         MapPoint.KeyFrameIDs.push_back(ID);
+        MapPoint.NumObs++;
 
         Descriptors.clear();
         Descriptors.reserve(MapPoint.KeyFrameIDs.size());

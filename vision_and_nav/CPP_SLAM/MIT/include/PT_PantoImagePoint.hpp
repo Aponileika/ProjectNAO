@@ -16,7 +16,9 @@ typePantoKeypointFrame PT_CreatePantoImagePoints(const std::vector<cv::Point2d>&
         std::vector<typePantoMapPoint>& CandidateMapPoints, const typeCamera& Pose);
 typePantoKeypointFrame PT_CreatePantoImagePointsNoMatch(const std::vector<cv::Point2d>& Points, const cv::Mat& Descriptors);
 #if defined(CONFIG_STEREO)
-void PT_StereoMatch(typePantoKeypointFrame& KeyPointFrame, std::vector<cv::Point2d> RightKeyPoints, const cv::Mat& RightDescriptors);
+void PT_StereoMatch(typePantoKeypointFrame& KeyPointFrame, std::vector<cv::Point2d>& RightKeyPoints, const cv::Mat& RightDescriptors,
+        const cv::Mat& GrayLeft, const cv::Mat& GrayRight);
+void PT_LogStereoMatchData(void);
 #endif // CONFIG_STEREO
 
 #endif // __PT_PANTO_POINT_HPP_

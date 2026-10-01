@@ -18,6 +18,7 @@ typePantoMapPoint PT_CreatePantoMapPoint(const Eigen::Vector4d& Point, const typ
         .KeyFrameIDs = VecKeyFrameIDs,
         .ImagePointIDs = VecImagePointIDs,
         .ID = ID,
+        .NumObs = 2,
         .NumVisible = 1,
         .NumFound = 1,
         .CreationAge = Age
@@ -35,5 +36,4 @@ bool PT_IsInfront(const Eigen::Vector4d& Point, const typeCamera& Camera)
     PointCart = R * PointCart + t;
     return(PointCart.z() > 0.0f);
 }
-
 
