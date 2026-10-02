@@ -1,4 +1,5 @@
 #include "../include/OP_BA.hpp"
+#include "CM_Camera.hpp"
 #include "Config.hpp"
 #include "LG_Logging.hpp"
 
@@ -10,14 +11,11 @@
  * */
 
 //read only intrinsics for residual calculation
+#if defined(CONFIG_STEREO)
+static const struct typeOPStereoIntrinsics OPStereoIntrinsics(*CM_GetStereoCalibration());
+#endif
 static const struct typeOPCameraIntrinsics OPCameraIntrinsics(CM_GetIntrinsics()->K);
 static const Eigen::Matrix4d* TBS = &CM_GetIntrinsics()->T_BS;
-
-static bool OPPriv_HasTwoImageObservations(const typePantoMapPoint& MapPoint)
-{
-    return MapPoint.KeyFrameIDs.active_size() >= 2 &&
-        MapPoint.ImagePointIDs.active_size() >= 2;
-}
 
 void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem);
 void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
@@ -249,19 +247,15 @@ void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
 
     for(typePantoMapPoint& MapPoint : Map.MapPoints)
     {
-        if(OPPriv_HasTwoImageObservations(MapPoint))
-        {
-            Problem.AddParameterBlock(MapPoint.Point.data(), 4);
-            Problem.SetManifold(MapPoint.Point.data(),
-                    new ceres::SphereManifold<4>());
-        }
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        Problem.SetManifold(MapPoint.Point.data(),
+                new ceres::SphereManifold<4>());
     }
 
     for(typeKeyFrame& KeyFrame : Map.KeyFrames)
     {
         typeCameraPose& Camera = KeyFrame.Camera.Pose;
-        for(const typePantoImagePoint& ImagePoint :
-                KeyFrame.Points.ImagePoints)
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
         {
             if(ImagePoint.MapPointID == PANTO_ID_NOT_SET ||
                !Map.MapPoints.contains(ImagePoint.MapPointID))
@@ -271,11 +265,35 @@ void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
 
             typePantoMapPoint& MapPoint =
                 Map.MapPoints[ImagePoint.MapPointID];
-            if(!OPPriv_HasTwoImageObservations(MapPoint))
-            {
-                continue;
-            }
 
+#if defined(CONFIG_STEREO)
+            if(ImagePoint.IsMatched)
+            {
+                Problem.AddResidualBlock(
+                        OP_StereoReprojectionError::Create(
+                            ImagePoint.Point.x(),
+                            ImagePoint.Point.y(),
+                            ImagePoint.RightCameraMatch.x(),
+                            ImagePoint.RightCameraMatch.y(),
+                            &OPStereoIntrinsics),
+                        new ceres::HuberLoss(CERES_HUBER_THRESHOLD),
+                        Camera.Quaternion.coeffs().data(),
+                        Camera.tParametrization.data(),
+                        MapPoint.Point.data());
+            }
+            else
+            {
+                Problem.AddResidualBlock(
+                        OP_ReprojectionError::Create(
+                            ImagePoint.Point.x(),
+                            ImagePoint.Point.y(),
+                            &OPCameraIntrinsics),
+                        new ceres::HuberLoss(CERES_HUBER_THRESHOLD),
+                        Camera.Quaternion.coeffs().data(),
+                        Camera.tParametrization.data(),
+                        MapPoint.Point.data());
+            }
+#else
             Problem.AddResidualBlock(
                     OP_ReprojectionError::Create(
                         ImagePoint.Point.x(),
@@ -285,6 +303,7 @@ void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
                     Camera.Quaternion.coeffs().data(),
                     Camera.tParametrization.data(),
                     MapPoint.Point.data());
+#endif // CONFIG_STEREO
         }
     }
 }
@@ -337,11 +356,8 @@ void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
 
     for(typePantoMapPoint& MapPoint : Map.MapPoints)
     {
-        if(OPPriv_HasTwoImageObservations(MapPoint))
-        {
-            Problem.AddParameterBlock(MapPoint.Point.data(), 4);
-            Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
-        }
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
     }
 
     for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
@@ -353,16 +369,23 @@ void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
             const u64 MapPointID = ImagePoint.MapPointID;
             if(MapPointID != PANTO_ID_NOT_SET)
             {
-                if(!OPPriv_HasTwoImageObservations(Map.MapPoints[MapPointID]))
-                {
-                    continue;
-                }
-
                 const fp64 PointX = ImagePoint.Point.x();
                 const fp64 PointY = ImagePoint.Point.y();
 
-                ceres::CostFunction* costfunc =
-                    OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
 
                 ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
 
@@ -490,11 +513,8 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
 
     for(typePantoMapPoint& MapPoint : Map.MapPoints)
     {
-        if(OPPriv_HasTwoImageObservations(MapPoint))
-        {
-            Problem.AddParameterBlock(MapPoint.Point.data(), 4);
-            Problem.SetParameterBlockConstant(MapPoint.Point.data());
-        }
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        Problem.SetParameterBlockConstant(MapPoint.Point.data());
     }
 
     // Add the parameters for IMU, velocity, and biases, pose is shared.
@@ -512,16 +532,23 @@ void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
             const u64 MapPointID = ImagePoint.MapPointID;
             if(MapPointID != PANTO_ID_NOT_SET)
             {
-                if(!OPPriv_HasTwoImageObservations(Map.MapPoints[MapPointID]))
-                {
-                    continue;
-                }
-
                 const fp64 PointX = ImagePoint.Point.x();
                 const fp64 PointY = ImagePoint.Point.y();
 
-                ceres::CostFunction* costfunc =
-                    OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
 
                 Problem.AddResidualBlock(costfunc,
                                           lossfunc,
@@ -647,8 +674,7 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
     for(const typePantoImagePoint& ImagePoint : KeyFrame->Points.ImagePoints)
     {
         if(ImagePoint.MapPointID != PANTO_ID_NOT_SET &&
-           Map.MapPoints.contains(ImagePoint.MapPointID) &&
-           OPPriv_HasTwoImageObservations(Map.MapPoints[ImagePoint.MapPointID]))
+           Map.MapPoints.contains(ImagePoint.MapPointID))
         {
             NumAssociatedMapPoints++;
         }
@@ -666,10 +692,6 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
         {
             typePantoMapPoint& MapPoint = Map.MapPoints[MapPointID];
 
-            if(!OPPriv_HasTwoImageObservations(MapPoint))
-            {
-                continue;
-            }
             Problem.AddParameterBlock(MapPoint.Point.data(), 4);
             if(CERES_EXPLICIT_ORDERING)
             {
@@ -677,11 +699,31 @@ void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
             }
             Problem.SetParameterBlockConstant(MapPoint.Point.data());
 
+#if defined(CONFIG_STEREO)
+            ceres::CostFunction* CostFunc;
+            if(ImagePoint.IsMatched)
+            {
+                CostFunc = OP_StereoReprojectionError::Create(
+                            ImagePoint.Point.x(),
+                            ImagePoint.Point.y(),
+                            ImagePoint.RightCameraMatch.x(),
+                            ImagePoint.RightCameraMatch.y(),
+                            &OPStereoIntrinsics);
+            }
+            else
+            {
+                CostFunc = OP_ReprojectionError::Create(
+                            ImagePoint.Point.x(),
+                            ImagePoint.Point.y(),
+                            &OPCameraIntrinsics);
+            }
+#else
             ceres::CostFunction* CostFunc =
                 OP_ReprojectionError::Create(
                         ImagePoint.Point.x(),
                         ImagePoint.Point.y(),
                         &OPCameraIntrinsics);
+#endif
 
             Problem.AddResidualBlock(
                     CostFunc,
@@ -806,10 +848,6 @@ void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
         }
 
         typePantoMapPoint& MapPoint = *MapPointIt->second;
-        if(!OPPriv_HasTwoImageObservations(MapPoint))
-        {
-            continue;
-        }
 
         NumAssociatedMapPoints++;
         Problem.AddParameterBlock(MapPoint.Point.data(), 4);
@@ -818,10 +856,27 @@ void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
             Ordering.AddElementToGroup(MapPoint.Point.data(), CERES_3D_POINT_GROUP);
         }
         Problem.SetParameterBlockConstant(MapPoint.Point.data());
-
+#if defined(CONFIG_STEREO)
+        ceres::CostFunction* CostFunc;
+        if(ImagePoint.IsMatched)
+        {
+            CostFunc = OP_StereoReprojectionError::Create(
+                    ImagePoint.Point.x(), ImagePoint.Point.y(),
+                    ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(),
+                    &OPStereoIntrinsics);
+        }
+        else
+        {
+            CostFunc = OP_ReprojectionError::Create(
+                    ImagePoint.Point.x(), ImagePoint.Point.y(),
+                    &OPCameraIntrinsics);
+        }
+#else
         ceres::CostFunction* CostFunc = OP_ReprojectionError::Create(
                 ImagePoint.Point.x(), ImagePoint.Point.y(),
                 &OPCameraIntrinsics);
+#endif
+
         Problem.AddResidualBlock(
                 CostFunc, LossFunc,
                 CameraParameters.Quaternion.coeffs().data(),
@@ -1045,10 +1100,6 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
 
     for(typePantoMapPoint& MapPoint : LocalMap.MapPoints)
     {
-        if(!OPPriv_HasTwoImageObservations(MapPoint))
-        {
-            continue;
-        }
 
         Problem.AddParameterBlock(MapPoint.Point.data(), 4);
         Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
@@ -1081,8 +1132,20 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
                 const fp64 PointX = ImagePoint.Point.x();
                 const fp64 PointY = ImagePoint.Point.y();
 
-                ceres::CostFunction* costfunc = OP_ReprojectionError::Create( PointX, PointY,
-                            &OPCameraIntrinsics);
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
 
 
                 Problem.AddResidualBlock(costfunc, lossfunc,
@@ -1160,8 +1223,20 @@ void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
 
                 const fp64 PointY = ImagePoint.Point.y();
 
-                ceres::CostFunction* costfunc = OP_ReprojectionError::Create( PointX, PointY,
-                            &OPCameraIntrinsics);
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
 
                 Problem.AddResidualBlock(costfunc, lossfunc,
                         CameraParameters.Quaternion.coeffs().data(),

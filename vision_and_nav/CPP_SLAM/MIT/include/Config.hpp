@@ -42,7 +42,7 @@ inline constexpr const char *PANTO_SLAMSTARTMSG =
 
 // Single pass, probably dont use hh
 // #define OPENCV_SGBM_MODE cv::StereoSGBM::MODE_SGBM_3WAY
-#define OPENCV_SGBM_MODE cv::StereoSGBM::MODE_SGBM
+#define OPENCV_SGBM_MODE cv::StereoSGBM::MODE_HH
 #define OPENCV_SGBM_MIN_DISPARITY 0
 #define OPENCV_SGBM_NUM_DISPARITIES 160
 #define OPENCV_SGBM_BLOCK_SIZE 3
@@ -110,7 +110,7 @@ constexpr u64 DENSE_OCCUPIED_MIN_OBSERVATIONS = 2;
 // keyframe
 #if defined(CONFIG_STEREO)
 // Less triangulation here in stereo, only needed for far away points
-#define PANTO_BASELINE_THRESHOLD 0.01f
+#define PANTO_BASELINE_THRESHOLD 0.1f
 #else
 #define PANTO_BASELINE_THRESHOLD 0.01f
 #endif
@@ -170,7 +170,7 @@ using PantoClock = std::chrono::steady_clock;
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
 #ifndef PANTO_ACTIVE_DATASET
-#define PANTO_ACTIVE_DATASET EUROC_MAV_VICON_ROOM1_EASY
+#define PANTO_ACTIVE_DATASET EUROC_MAV_MACHINE_HALL1_EASY
 #endif
 
 #define DATASETS                                                               \

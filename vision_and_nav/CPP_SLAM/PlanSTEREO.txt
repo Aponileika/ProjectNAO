@@ -1,5 +1,5 @@
 For now keep gt init.
-- 1 october, (DONE, not tested) feature matching with stereo camera (rectified) with some disparity refinment (SAD if matching ORB SLAM).
-- 1 october, (Might delay this) 3d points from disparity in localmapping.
-- 2 october, disparity constrained bundle adjustment, so add a projection onto the right camera, this does not assume perfect rectification! 
+- 1 october, (DONE) feature matching with stereo camera (rectified) with some disparity refinment (SAD if matching ORB SLAM).
+- 1 october, (DONE) 3d points from disparity in localmapping.
+- 2 october, (DONE) disparity constrained bundle adjustment, so add a projection onto the right camera, this does not assume perfect rectification! 
 - 6 october, stereo inertial init Stereo-NEC 
