@@ -276,15 +276,22 @@ void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
         for (int i {static_cast<int>(lower)}; i<upper-1; ++i) {
             PathItem dynamicPoint {path[i]};
             if (upperDir != dynamicPoint[3]) continue;
-
-            std::pair result {dubinsPath({dynamicPoint[0], dynamicPoint[1], dynamicPoint[2]}, 
-                                         {staticPoint[0], staticPoint[1], staticPoint[2]}, false)};
+            std::pair<std::vector<std::vector<Pose>>, std::vector<double>> result {};
+            if (upperDir == 1){
+                result = dubinsPath({dynamicPoint[0], dynamicPoint[1], dynamicPoint[2]}, 
+                                    {staticPoint[0], staticPoint[1], staticPoint[2]}, false);
+            }
+            else {
+                result = dubinsPath({staticPoint[0], staticPoint[1], staticPoint[2]}, 
+                                    {dynamicPoint[0], dynamicPoint[1], dynamicPoint[2]}, false);
+            }
             std::vector<std::vector<Pose>> dubins {result.first};
             std::vector<double> dubinLengths {result.second};
 
             size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, path[upper][4] - path[i][4])};
             if (bestPathIndex != 1024) {
                 upperDubin = dubins[bestPathIndex];
+                if (upperDir == -1) std::reverse(upperDubin.begin(), upperDubin.end());
                 upperShortcutLength = (path[upper][4] - path[i][4]) - dubinLengths[bestPathIndex];
                 upperIndex = i;
                 break;
@@ -300,15 +307,22 @@ void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
         for (int i {static_cast<int>(upper)}; i>lower+1; --i) {
             PathItem dynamicPoint {path[i]};
             if (lowerDir != dynamicPoint[3]) continue;
-
-            std::pair result {dubinsPath({staticPoint[0], staticPoint[1], staticPoint[2]}, 
-                                         {dynamicPoint[0], dynamicPoint[1], dynamicPoint[2]}, false)};
+            std::pair<std::vector<std::vector<Pose>>, std::vector<double>> result {};
+            if (lowerDir == 1) {
+                result = dubinsPath({staticPoint[0], staticPoint[1], staticPoint[2]}, 
+                                            {dynamicPoint[0], dynamicPoint[1], dynamicPoint[2]}, false);
+            }
+            else {
+               result = dubinsPath({dynamicPoint[0], dynamicPoint[1], dynamicPoint[2]}, 
+                                             {staticPoint[0], staticPoint[1], staticPoint[2]}, false);
+            }
             std::vector<std::vector<Pose>> dubins {result.first};
             std::vector<double> dubinLengths {result.second};
 
             size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, path[i][4] - path[lower][4])};
             if (bestPathIndex != 1024) {
                 lowerDubin = dubins[bestPathIndex];
+                if (lowerDir == -1) std::reverse(lowerDubin.begin(), lowerDubin.end());
                 lowerShortcutLength = (path[i][4]-path[lower][4]) - dubinLengths[bestPathIndex];
                 lowerIndex = i;
                 break;
