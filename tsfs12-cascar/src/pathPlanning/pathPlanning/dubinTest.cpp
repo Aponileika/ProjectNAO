@@ -48,7 +48,7 @@ void addRectangleObstacle(
     }
 }
 
-void savePath(const std::vector<std::array<double, 4>>& path,
+void savePath(const std::vector<std::array<double, 5>>& path,
               const std::array<double,3>& start,
               const std::array<double,3>& goal)
 {
@@ -60,7 +60,7 @@ void savePath(const std::vector<std::array<double, 4>>& path,
     file << "  \"path\": [\n";
 
     for (size_t i = 0; i < path.size(); ++i) {
-        file << "    [" << path[i][0] << "," << path[i][1] << "," << path[i][2] << "]";
+        file << "    [" << path[i][0] << "," << path[i][1] << "," << path[i][2] << "," << path[i][3] << "," << path[i][4] << "]";
         if (i + 1 < path.size())
             file << ",";
         file << "\n";
@@ -100,8 +100,14 @@ int main(){
     std::array<double, 3> start {dist(gen)*3-4, dist(gen)*8-4, dist(gen)*2*3.1415};
     std::array<double, 3> goal  {dist(gen)*3+1, dist(gen)*8-4, dist(gen)*2*3.1415};
 
-    start = {-3, 0, 0};
-    goal = {3, 0, -3.141592};
+    // start = {-1, 0, 0};
+    // goal = {1, 0, 0};
+
+    // start = {-3, 0, 0};
+    // goal = {3, 0, 3.141592};
+
+    start = {-1.93024,1.09003,2.19552};
+    goal = {1.51265,2.85664,2.5605};
 
     auto t0 {std::chrono::high_resolution_clock::now()};
     auto result = planner.search(start, goal, map, xlim, ylim);
@@ -109,6 +115,7 @@ int main(){
     auto duration {std::chrono::duration_cast<std::chrono::microseconds>(t1-t0)};
     std::cout << "Search finished" << std::endl;
     std::cout << "Runtime: " << duration.count()/1000.0 << "ms" << std::endl;
+    std::cout << "Pathlength: " << result.back()[4] << std::endl;
 
     savePath(result, start, goal);
 

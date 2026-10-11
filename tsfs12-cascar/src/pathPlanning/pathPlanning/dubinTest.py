@@ -51,7 +51,8 @@ for x_min, x_max, y_min, y_max in obstacles:
     )
 
 # Path
-ax.plot(path[:, 0], path[:, 1], "-o", markersize=3)
+if len(path) != 0:
+    ax.plot(path[:, 0], path[:, 1], "-o", markersize=3)
 
 # Heading arrows
 ax.quiver(start[0], start[1], np.cos(start[2]), np.sin(start[2]),
@@ -62,13 +63,6 @@ ax.quiver(goal[0], goal[1], np.cos(goal[2]), np.sin(goal[2]),
 
 # Make x/y have identical physical scale
 ax.set_aspect("equal", adjustable="box")
-
-# Determine plot limits from the data
-all_x = np.concatenate([path[:, 0], [start[0], goal[0]]])
-all_y = np.concatenate([path[:, 1], [start[1], goal[1]]])
-
-xmin, xmax = all_x.min(), all_x.max()
-ymin, ymax = all_y.min(), all_y.max()
 xlim = [-5,5]
 ylim = [-5,5]
 

@@ -91,8 +91,7 @@ void sampleArc(
         double circleAngle {startAngle + dir*i*dTheta};
         sampledPath.push_back( {center[0] + R*std::cos(circleAngle),
                                 center[1] + R*std::sin(circleAngle),
-                                mod2pi(circleAngle + dir*pi/2),
-                                0.0 });
+                                mod2pi(circleAngle + dir*pi/2)});
     }
 
 }
@@ -113,8 +112,7 @@ void sampleTangent(
     for (int i {1}; i <= sampleCount; ++i){
         sampledPath.push_back( {config.startTang[0] + dx*i,
                                 config.startTang[1] + dy*i,
-                                theta,
-                                0.0});
+                                theta});
     }
 }
 
@@ -153,10 +151,6 @@ pathObj createPath(
     endAngle = std::atan2(config.endPos[1]-config.endCircle[1],
                                 config.endPos[0]-config.endCircle[0]);
     sampleArc(sampledPath, startAngle, endAngle, config.endDir, R, config.endCircle, spacing);
-    
-    if (getDistance) {
-        getPathDistance(sampledPath);
-    }
 
     return sampledPath;
 }

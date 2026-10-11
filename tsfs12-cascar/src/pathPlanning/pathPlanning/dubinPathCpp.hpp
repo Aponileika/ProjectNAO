@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <utility>
 
-using pathObj = std::vector<std::array<double, 4>>;
+using pathObj = std::vector<std::array<double, 3>>;
 using pathsObj = std::vector<pathObj>;
 using Vec2 = std::array<double,2>;
 

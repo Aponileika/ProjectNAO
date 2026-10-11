@@ -13,7 +13,7 @@ constexpr int THETA_BINS {12}; //IF THE THETA RESOLUTION IS EVER CHANGED; CHANGE
 
 double const pi {3.14159265359};
 using Pose = std::array<double, 3>;
-using PathItem = std::array<double, 4>;
+using PathItem = std::array<double, 5>;
 
 struct Node {
     double x;
@@ -24,6 +24,7 @@ struct Node {
     int gy;
     int thetaIndex;
 
+    double dir;
     double steering;
 
     std::shared_ptr<Node> parent;
@@ -39,6 +40,7 @@ HybridAStar::HybridAStar() {
     Vmax = 1;
     deltaMax = pi/6;
     N = 5;
+    dirs = {-1, 1};
 
     steeringAngles.resize(N);
     for (int i {0}; i < N; ++i) {
@@ -74,7 +76,7 @@ void HybridAStar::addDistance(std::vector<PathItem>& path) {
 
         dist += std::sqrt(dx*dx + dy*dy);
 
-        path[i][3] = dist;
+        path[i][4] = dist;
     }
 };
 
@@ -168,7 +170,7 @@ std::vector<PathItem> HybridAStar::reconstructPath(std::shared_ptr<Node> node) {
     std::vector<PathItem> path;
 
     while (node) {
-        path.push_back({node->x, node->y, node->theta, 0});
+        path.push_back({node->x, node->y, node->theta, node->dir, 0.0});
         node = node -> parent;
     }
 
@@ -176,7 +178,7 @@ std::vector<PathItem> HybridAStar::reconstructPath(std::shared_ptr<Node> node) {
     return path;
 };
 
-std::pair<Pose, std::array<int, 2>> HybridAStar::propogate(Node const& node, double const dTheta) {
+std::pair<Pose, std::array<int, 2>> HybridAStar::propogate(Node const& node, double const dTheta, int const dir) {
     double x {node.x};
     double y {node.y};
     double theta {node.theta};
@@ -185,12 +187,10 @@ std::pair<Pose, std::array<int, 2>> HybridAStar::propogate(Node const& node, dou
     int gx {};
     int gy {};
 
-    int dir {1};   //-1 = Backwards search
-
     Pose result {{x, y, theta}};
     double travelled {0};
-    while(std::abs(travelled) < propogationDistance) {
-        double ds {dir * std::min(propogationDistance - travelled, dir * propogationInterval)};
+    while(travelled < propogationDistance) {
+        double ds {dir * std::min(propogationDistance - travelled, propogationInterval)};
         x += ds * std::cos(theta);
         y += ds * std::sin(theta);
 
@@ -206,7 +206,7 @@ std::pair<Pose, std::array<int, 2>> HybridAStar::propogate(Node const& node, dou
         theta += ds * dTheta;
 
         result = {x, y, theta};
-        travelled += ds;
+        travelled += std::abs(ds);
     }
     result = {result[0], result[1], wrap_angle(result[2])};
     return {result, gridIndex};
@@ -224,12 +224,12 @@ bool HybridAStar::isFinished(Node const& node, Node const& goal) {
 };
 
 size_t HybridAStar::getShortestDubin(
-    std::vector<std::vector<PathItem>> const& paths,
+    std::vector<std::vector<Pose>> const& dubinPaths,
     std::vector<double> const& pathLengths, double maximumLength) {
 
    size_t bestPathIndex {1024};
-    for (std::size_t i {0}; i < paths.size(); ++i) {
-        if (pathLengths[i] < maximumLength && !isColliding(paths[i])) {
+    for (std::size_t i {0}; i < dubinPaths.size(); ++i) {
+        if (pathLengths[i] < maximumLength && !isColliding(dubinPaths[i])) {
             bestPathIndex = i;
             maximumLength = pathLengths[i];
         }
@@ -243,6 +243,15 @@ void HybridAStar::insertPath(std::vector<PathItem>& path, std::vector<PathItem> 
     newPath.insert(newPath.end(), shortcut.begin(), shortcut.end() - 1);
     newPath.insert(newPath.end(), path.begin() + upperCut, path.end());
     path = std::move(newPath);
+}
+
+std::vector<PathItem> HybridAStar::poseToPath(std::vector<Pose> const& poseVect, double const dir) {
+    std::vector<PathItem> result {};
+    result.reserve(poseVect.size());
+    for (Pose const& pose : poseVect) {
+        result.push_back({pose[0], pose[1], pose[2], dir, 0});
+    }
+    return result;
 }
 
 void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
@@ -260,20 +269,23 @@ void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
         }
         // Calculate upper path
         double upperShortcutLength {0};
-        std::vector<PathItem> upperDubin {};
+        std::vector<Pose> upperDubin {};
         PathItem staticPoint {path[upper]};
+        double upperDir {staticPoint[3]};
         int upperIndex {};
         for (int i {static_cast<int>(lower)}; i<upper-1; ++i) {
             PathItem dynamicPoint {path[i]};
+            if (upperDir != dynamicPoint[3]) continue;
+
             std::pair result {dubinsPath({dynamicPoint[0], dynamicPoint[1], dynamicPoint[2]}, 
                                          {staticPoint[0], staticPoint[1], staticPoint[2]}, false)};
-            std::vector<std::vector<PathItem>> dubins {result.first};
+            std::vector<std::vector<Pose>> dubins {result.first};
             std::vector<double> dubinLengths {result.second};
 
-            size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, path[upper][3] - path[i][3])};
+            size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, path[upper][4] - path[i][4])};
             if (bestPathIndex != 1024) {
                 upperDubin = dubins[bestPathIndex];
-                upperShortcutLength = (path[upper][3] - path[i][3]) - dubinLengths[bestPathIndex];
+                upperShortcutLength = (path[upper][4] - path[i][4]) - dubinLengths[bestPathIndex];
                 upperIndex = i;
                 break;
             }
@@ -281,20 +293,23 @@ void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
 
         // Calculate lower path
         double lowerShortcutLength {0};
-        std::vector<PathItem> lowerDubin {};
+        std::vector<Pose> lowerDubin {};
         staticPoint = path[lower];
+        double lowerDir {staticPoint[3]};
         int lowerIndex {};
         for (int i {static_cast<int>(upper)}; i>lower+1; --i) {
             PathItem dynamicPoint {path[i]};
+            if (lowerDir != dynamicPoint[3]) continue;
+
             std::pair result {dubinsPath({staticPoint[0], staticPoint[1], staticPoint[2]}, 
                                          {dynamicPoint[0], dynamicPoint[1], dynamicPoint[2]}, false)};
-            std::vector<std::vector<PathItem>> dubins {result.first};
+            std::vector<std::vector<Pose>> dubins {result.first};
             std::vector<double> dubinLengths {result.second};
 
-            size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, path[i][3] - path[lower][3])};
+            size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, path[i][4] - path[lower][4])};
             if (bestPathIndex != 1024) {
                 lowerDubin = dubins[bestPathIndex];
-                lowerShortcutLength = (path[i][3]-path[lower][3]) - dubinLengths[bestPathIndex];
+                lowerShortcutLength = (path[i][4]-path[lower][4]) - dubinLengths[bestPathIndex];
                 lowerIndex = i;
                 break;
             }
@@ -304,11 +319,13 @@ void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
         // Add the largest shortcut
         if (upperShortcutLength > 0 || lowerShortcutLength > 0){
             if (upperShortcutLength >= lowerShortcutLength) {
-                insertPath(path, upperDubin, upperIndex, upper);
+                std::vector<PathItem> upperDubinPath {poseToPath(upperDubin, upperDir)};
+                insertPath(path, upperDubinPath, upperIndex, upper);
                 upper = upperIndex;
             }
             else {
-                insertPath(path, lowerDubin, lower, lowerIndex);
+                std::vector<PathItem> lowerDubinPath {poseToPath(lowerDubin, lowerDir)};
+                insertPath(path, lowerDubinPath, lower, lowerIndex);
                 lower += static_cast<int>(lowerDubin.size()) - 1;
                 upper += static_cast<int>(lowerDubin.size()) - lowerIndex - 1;
             }
@@ -329,6 +346,7 @@ std::vector<PathItem> HybridAStar::search(
     startNode.x = goal[0] - minX;
     startNode.y = goal[1] - minY;
     startNode.theta = wrap_angle(goal[2] + pi);
+    startNode.dir = 1;
 
     Node goalNode {};
     goalNode.x = start[0] - minX;
@@ -398,7 +416,7 @@ std::vector<PathItem> HybridAStar::search(
             addDistance(path);
 
             // Find shortcuts using dubin paths. Twice for even better results
-            path.back() = {goalNode.x, goalNode.y, wrap_angle(goalNode.theta), 0};
+            path.back() = {goalNode.x, goalNode.y, wrap_angle(goalNode.theta), 0, 0};
             addDubinPaths(path);
             addDubinPaths(path);
             addDubinPaths(path);
@@ -410,43 +428,49 @@ std::vector<PathItem> HybridAStar::search(
                 point[1] += minY;
                 point[2] = wrap_angle(point[2] + pi);
             }
+            addDistance(path);
             return path;
         }
         
-        for(size_t i {0}; i < steeringAngles.size(); ++i) {
-            auto result {propogate(*current, dThetas[i])};
-            auto newPoint {result.first};
-            auto gKey {result.second};
-            int gx {gKey[0]};
-            int gy {gKey[1]};
-            
-            if (newPoint[0] < 0) {continue;}
+        for(int dir : dirs) {
+            for(size_t i {0}; i < steeringAngles.size(); ++i) {
+                auto result {propogate(*current, dThetas[i], dir)};
+                auto newPoint {result.first};
+                auto gKey {result.second};
+                int gx {gKey[0]};
+                int gy {gKey[1]};
+                
+                if (newPoint[0] < 0) {continue;}
 
-            double newX {newPoint[0]};
-            double newY {newPoint[1]};
-            double newTheta {newPoint[2]};
+                double newX {newPoint[0]};
+                double newY {newPoint[1]};
+                double newTheta {newPoint[2]};
 
-            int thetaIndex {static_cast<int>(std::round(newTheta / theta_resolution))};
-            
-            // Check if this is the cheapest path here yet
-            double newg {current->g + propogationDistance * propogationDistance};
-            int key {stateIndex(gx, gy, thetaIndex, width)};
-            if (newg >= best_gs[key]) {continue;} // Skip if there is a cheaper way
-            best_gs[key] = newg;
+                int thetaIndex {static_cast<int>(std::round(newTheta / theta_resolution))};
+                
+                // Check if this is the cheapest path here yet
+                double newg {current->g + propogationDistance};
+                if (dir == -1) newg += propogationDistance; // punish going backwards
+                if (current->dir != dir) newg += propogationDistance; //Punish switching direction
+                int key {stateIndex(gx, gy, thetaIndex, width)};
+                if (newg >= best_gs[key]) {continue;} // Skip if there is a cheaper way
+                best_gs[key] = newg;
 
-            auto newNode {std::make_shared<Node>()};
-            newNode->x = newX;
-            newNode->y = newY;
-            newNode->theta = newTheta;
-            newNode->gx = gx;
-            newNode->gy = gy;
-            newNode->thetaIndex = thetaIndex;
-            newNode->steering = steeringAngles[i];
-            newNode->parent = current;
-            newNode->g = newg;
-            newNode->h = heuristic(*newNode, goalNode);
-            
-            openSet.push(QueueEntry{newNode->g + newNode->h, counter++, newNode});
+                auto newNode {std::make_shared<Node>()};
+                newNode->x = newX;
+                newNode->y = newY;
+                newNode->theta = newTheta;
+                newNode->gx = gx;
+                newNode->gy = gy;
+                newNode->thetaIndex = thetaIndex;
+                newNode->dir = dir;
+                newNode->steering = steeringAngles[i];
+                newNode->parent = current;
+                newNode->g = newg;
+                newNode->h = heuristic(*newNode, goalNode);
+                
+                openSet.push(QueueEntry{newNode->g + newNode->h, counter++, newNode});
+            }
         }
     }
     std::cout << "No path found" << std::endl;

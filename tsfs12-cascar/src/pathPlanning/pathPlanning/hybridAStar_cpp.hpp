@@ -10,7 +10,7 @@ class HybridAStar {
         HybridAStar();
 
         using Pose = std::array<double, 3>;
-        using PathItem = std::array<double, 4>;
+        using PathItem = std::array<double, 5>;
 
         std::vector<PathItem> search(
             Pose const& start, Pose const& goal, std::vector<std::vector<double>> const& map,
@@ -27,6 +27,7 @@ class HybridAStar {
             int gy;
             int thetaIndex;
 
+            double dir;
             double steering;
 
             std::shared_ptr<Node> parent;
@@ -39,6 +40,7 @@ class HybridAStar {
         double Vmax;
         double deltaMax;
         int N;
+        std::vector<double> dirs;
         std::vector<double> steeringAngles;
 
         std::vector<uint8_t> mapGrid;
@@ -69,12 +71,13 @@ class HybridAStar {
         bool isColliding(Pose const& pose);
         double heuristic(Node const& start, Node const& goal);
         std::vector<PathItem> reconstructPath(std::shared_ptr<Node> node);
-        std::pair<Pose, std::array<int, 2>> propogate(Node const& node, double const dTheta);
+        std::pair<Pose, std::array<int, 2>> propogate(Node const& node, double const dTheta, int const dir);
         bool isFinished(Node const& node, Node const& goal);
         size_t getShortestDubin(
-            std::vector<std::vector<PathItem>> const& paths,
+            std::vector<std::vector<Pose>> const& dubinPaths,
             std::vector<double> const& pathLengths, double maximumLength);
         void insertPath(std::vector<PathItem>& path, std::vector<PathItem> const& shortcut, int lowerCut, int upperCut);
+        std::vector<PathItem> poseToPath(std::vector<Pose> const& poseVect, double const dir);
         void addDubinPaths(std::vector<PathItem> & path);
 
 };
