@@ -71,9 +71,10 @@ class HybridAStar {
         std::vector<PathItem> reconstructPath(std::shared_ptr<Node> node);
         std::pair<Pose, std::array<int, 2>> propogate(Node const& node, double const dTheta);
         bool isFinished(Node const& node, Node const& goal);
-        std::vector<PathItem> getShortestDubin(
+        size_t getShortestDubin(
             std::vector<std::vector<PathItem>> const& paths,
-            std::vector<double> const& pathLengths, double const lowerLimit);
-        std::vector<PathItem> addDubinPaths(std::vector<PathItem> & path);
+            std::vector<double> const& pathLengths, double maximumLength);
+        void insertPath(std::vector<PathItem>& path, std::vector<PathItem> const& shortcut, int lowerCut, int upperCut);
+        void addDubinPaths(std::vector<PathItem> & path);
 
 };

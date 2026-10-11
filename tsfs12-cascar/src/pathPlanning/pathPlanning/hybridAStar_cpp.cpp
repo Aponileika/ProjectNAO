@@ -223,22 +223,29 @@ bool HybridAStar::isFinished(Node const& node, Node const& goal) {
     return false;
 };
 
-std::vector<PathItem> HybridAStar::getShortestDubin(
+size_t HybridAStar::getShortestDubin(
     std::vector<std::vector<PathItem>> const& paths,
-    std::vector<double> const& pathLengths, double const lowerLimit) {
+    std::vector<double> const& pathLengths, double maximumLength) {
 
-    double shortestLength {lowerLimit * propogationDistance};
-    std::vector<PathItem> shortestPath {};
+   size_t bestPathIndex {1024};
     for (std::size_t i {0}; i < paths.size(); ++i) {
-        if (pathLengths[i] < shortestLength && !isColliding(paths[i])) {
-            shortestLength = pathLengths[i];
-            shortestPath = paths[i];
+        if (pathLengths[i] < maximumLength && !isColliding(paths[i])) {
+            bestPathIndex = i;
+            maximumLength = pathLengths[i];
         }
     }
-    return shortestPath;
+    return bestPathIndex;
 }
 
-std::vector<PathItem> HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
+void HybridAStar::insertPath(std::vector<PathItem>& path, std::vector<PathItem> const& shortcut, int lowerCut, int upperCut) {
+    std::vector<PathItem> newPath {};
+    newPath.insert(newPath.end(), path.begin(), path.begin() + lowerCut);
+    newPath.insert(newPath.end(), shortcut.begin(), shortcut.end() - 1);
+    newPath.insert(newPath.end(), path.begin() + upperCut, path.end());
+    path = std::move(newPath);
+}
+
+void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
     size_t lower {0};
     size_t upper {path.size()-1};
 
@@ -252,6 +259,7 @@ std::vector<PathItem> HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
             std::cout << "Lower: " << lower << " Upper: " << upper << std::endl;
         }
         // Calculate upper path
+        double upperShortcutLength {0};
         std::vector<PathItem> upperDubin {};
         PathItem staticPoint {path[upper]};
         int upperIndex {};
@@ -262,15 +270,17 @@ std::vector<PathItem> HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
             std::vector<std::vector<PathItem>> dubins {result.first};
             std::vector<double> dubinLengths {result.second};
 
-            std::vector<PathItem> shortestPath {getShortestDubin(dubins, dubinLengths, upper - i)};
-            if (shortestPath.size() != 0) {
-                upperDubin = shortestPath;
+            size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, path[upper][3] - path[i][3])};
+            if (bestPathIndex != 1024) {
+                upperDubin = dubins[bestPathIndex];
+                upperShortcutLength = (path[upper][3] - path[i][3]) - dubinLengths[bestPathIndex];
                 upperIndex = i;
                 break;
             }
         }
 
         // Calculate lower path
+        double lowerShortcutLength {0};
         std::vector<PathItem> lowerDubin {};
         staticPoint = path[lower];
         int lowerIndex {};
@@ -281,53 +291,30 @@ std::vector<PathItem> HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
             std::vector<std::vector<PathItem>> dubins {result.first};
             std::vector<double> dubinLengths {result.second};
 
-            std::vector<PathItem> shortestPath {getShortestDubin(dubins, dubinLengths, i-lower)};
-            if (shortestPath.size() != 0) {
-                lowerDubin = shortestPath;
+            size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, path[i][3] - path[lower][3])};
+            if (bestPathIndex != 1024) {
+                lowerDubin = dubins[bestPathIndex];
+                lowerShortcutLength = (path[i][3]-path[lower][3]) - dubinLengths[bestPathIndex];
                 lowerIndex = i;
                 break;
             }
         }
-        if (lowerDubin.size() == 0) ++lower;
+        if (lowerShortcutLength == 0.0) ++lower;
         
-        std::vector<PathItem> newPath {};
-        if (upperDubin.size() != 0 && lowerDubin.size() != 0) {
-            if ((upper - upperIndex) - static_cast<int>(upperDubin.size()) >= (lowerIndex - lower) - static_cast<int>(lowerDubin.size())) {
-                newPath.insert(newPath.end(), path.begin(), path.begin() + upperIndex);
-                newPath.insert(newPath.end(), upperDubin.begin(), upperDubin.end() - 1);
-                newPath.insert(newPath.end(), path.begin() + upper, path.end());
-                path = std::move(newPath);
+        // Add the largest shortcut
+        if (upperShortcutLength > 0 || lowerShortcutLength > 0){
+            if (upperShortcutLength >= lowerShortcutLength) {
+                insertPath(path, upperDubin, upperIndex, upper);
                 upper = upperIndex;
-            } 
+            }
             else {
-                newPath.insert(newPath.end(), path.begin(), path.begin() + lower);
-                newPath.insert(newPath.end(), lowerDubin.begin(), lowerDubin.end() - 1);
-                newPath.insert(newPath.end(), path.begin() + lowerIndex, path.end());
-                path = std::move(newPath);
-                lower = static_cast<int>(lowerDubin.size());
+                insertPath(path, lowerDubin, lower, lowerIndex);
+                lower += static_cast<int>(lowerDubin.size()) - 1;
                 upper += static_cast<int>(lowerDubin.size()) - lowerIndex - 1;
             }
-        }
-        else if (upperDubin.size() != 0) {
-            newPath.insert(newPath.end(), path.begin(), path.begin() + upperIndex);
-            newPath.insert(newPath.end(), upperDubin.begin(), upperDubin.end() - 1);
-            newPath.insert(newPath.end(), path.begin() + upper, path.end());
-            path = std::move(newPath);
-            upper = upperIndex;
-        }
-        else if (lowerDubin.size() != 0) {
-            newPath.insert(newPath.end(), path.begin(), path.begin() + lower);
-            newPath.insert(newPath.end(), lowerDubin.begin(), lowerDubin.end() - 1);
-            newPath.insert(newPath.end(), path.begin() + lowerIndex, path.end());
-            path = std::move(newPath);
-            lower = static_cast<int>(lowerDubin.size());
-            upper += static_cast<int>(lowerDubin.size()) - lowerIndex - 1;
-        }
-        if (newPath.size() != 0) {
-            path = std::move(newPath);
+            addDistance(path);
         }
     }
-    return path;
 }
 
 std::vector<PathItem> HybridAStar::search(
@@ -408,11 +395,13 @@ std::vector<PathItem> HybridAStar::search(
         if (isFinished(*current, goalNode)) {
             std::cout << "Path found" << std::endl;
             std::vector<PathItem> path {reconstructPath(current)};
+            addDistance(path);
 
             // Find shortcuts using dubin paths. Twice for even better results
             path.back() = {goalNode.x, goalNode.y, wrap_angle(goalNode.theta), 0};
-            path = addDubinPaths(path);
-            path = addDubinPaths(path);
+            addDubinPaths(path);
+            addDubinPaths(path);
+            addDubinPaths(path);
 
             // Reverse found path, since search is backwards
             std::reverse(path.begin(), path.end());
@@ -421,7 +410,6 @@ std::vector<PathItem> HybridAStar::search(
                 point[1] += minY;
                 point[2] = wrap_angle(point[2] + pi);
             }
-            addDistance(path);
             return path;
         }
         

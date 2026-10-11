@@ -95,7 +95,6 @@ int main(){
 
     std::random_device rd;
     std::mt19937 gen(rd());
-
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
     std::array<double, 3> start {dist(gen)*3-4, dist(gen)*8-4, dist(gen)*2*3.1415};
@@ -108,6 +107,7 @@ int main(){
     auto result = planner.search(start, goal, map, xlim, ylim);
     auto t1 {std::chrono::high_resolution_clock::now()};
     auto duration {std::chrono::duration_cast<std::chrono::microseconds>(t1-t0)};
+    std::cout << "Search finished" << std::endl;
     std::cout << "Runtime: " << duration.count()/1000.0 << "ms" << std::endl;
 
     savePath(result, start, goal);
