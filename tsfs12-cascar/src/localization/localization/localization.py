@@ -103,7 +103,7 @@ class Localization(Node):
 			
             t = TransformStamped()
             t.header.stamp = current_time
-            t.header.frame_id = '/odom'
+            t.header.frame_id = 'odom'
             t.child_frame_id = 'base_link'
             
             t.transform.translation.x = msg.x
