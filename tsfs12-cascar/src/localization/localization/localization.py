@@ -98,6 +98,12 @@ class Localization(Node):
             
             current_time  = self.get_clock().now().to_msg()
 
+			q = Quaternion()
+            q.x = 0.0
+            q.y = 0.0
+            q.z = sin(msg.theta / 2.0)
+            q.w = cos(msg.theta / 2.0)
+			
             t = TransformStamped()
             t.header.stamp = current_time
             t.header.frame_id = '/odom'
@@ -106,7 +112,7 @@ class Localization(Node):
 			t.transform.translation.x = msg.x
 			t.transform.translation.y = msg.y
 			t.transform.translation.z = 0.0
-			t.transform.rotation = msg.thata
+			t.transform.rotation = msg.theta
 
 	    	self.tf_brodcaster.sendTransform(t)
 
