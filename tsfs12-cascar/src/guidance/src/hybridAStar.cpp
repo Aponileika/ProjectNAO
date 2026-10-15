@@ -357,7 +357,7 @@ std::vector<PathItem> HybridAStar::search(
 
     if (map.size() == 0) {
         std::cout << "No map, dubin search started!" << std::endl;
-        std::pair result {dubinsPath(start, goal, false)};
+        auto result {dubinsPath(start, goal, false)};
 
         std::vector<std::vector<Pose>> dubins {result.first};
         std::vector<double> dubinLengths {result.second};
@@ -468,6 +468,13 @@ std::vector<PathItem> HybridAStar::search(
                 point[2] = wrap_angle(point[2] + pi);
             }
             addDistance(path);
+
+            // Fix direction of first node
+            double dx {path[1][0] - path[0][0]};
+            double dy {path[1][1] - path[0][1]};
+            double ex {dx * cos(path[0][2]) + dy * sin(path[0][2])};
+            if (ex > 0) path[0][3] = 1; else path[0][3] = -1;
+
             return path;
         }
         
