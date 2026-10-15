@@ -8,6 +8,11 @@ from rclpy.time import Time
 from cascar_msgs.msg import CarCommand, CarMeasurement
 from geometry_msgs.msg import Pose2D
 
+from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import TransformStamped
+from nav_msgs.msg import Odometry
+from tf2_ros import TransformBroadcaster
+
 
 class Localization(Node):
     def __init__(self, Ts = 0.05):
@@ -30,6 +35,11 @@ class Localization(Node):
             self.odo_callback,
             10
         )
+
+        self.tf_brodcaster = TransformBroadcaster(self)
+        self.odom_publisher = self.create_publisher(Odometry, '/odom', 10)
+
+
 
         self.Ts = Ts
 
@@ -85,6 +95,32 @@ class Localization(Node):
             msg.theta = float(self.theta)
 
             self.pos_publisher.publish(msg)
+            
+            current_time  = self.get_clock().now().to_msg()
+
+            t = TransformStamped()
+            t.header.stamp = current_time
+            t.header.frame_id = '/odom'
+            t.child_frame_id = 'base_link'
+
+
+	    	t.transform.translation.x = msg.x
+	    	t.transform.translation.y = msg.y
+	    	t.transform.translation.z = 0.0
+            t.transform.rotation = msg.thata
+
+	    	self.tf_brodcaster.sendTransform(t)
+
+            odom = Odometry()
+            odom.header.stamp = current_time
+            odom.header.frame_id = 'odom'
+            odom.child_frame_id = 'base_link'
+
+            odom.pose.position = msg.pose.position
+            odom.pose.orientation = msg.pose.orientation
+
+            self.odom_publisher.publish(odom)
+
 
 
     def calibrate(self):
