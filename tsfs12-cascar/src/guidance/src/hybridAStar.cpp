@@ -363,7 +363,7 @@ std::vector<PathItem> HybridAStar::search(
         std::pair result {dubinsPath(start, goal, false)};
 
         std::cout << "[DEBUG] result.first.size(): " << result.first.size() << std::endl;
-        std::cout << "[DEBUG] result.second: " << result.second << std::endl;
+        std::cout << "[DEBUG] result.second.size(): " << result.second.size() << std::endl;
 
         if (result.first.empty()) {
             std::cout << "[ERROR] dubinsPath returned an empty path!" << std::endl;
