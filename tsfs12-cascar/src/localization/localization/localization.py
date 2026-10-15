@@ -6,10 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
 from cascar_msgs.msg import CarCommand, CarMeasurement
-from geometry_msgs.msg import Pose2D
-
-from geometry_msgs.msg import PoseStamped
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import Pose2D, Quaternion, TransformStamped
 from nav_msgs.msg import Odometry
 from tf2_ros import TransformBroadcaster
 
@@ -121,8 +118,10 @@ class Localization(Node):
             odom.header.frame_id = 'odom'
             odom.child_frame_id = 'base_link'
 
-            odom.pose.position = msg.pose.position
-            odom.pose.orientation = msg.pose.orientation
+            odom.pose.pose.position.x = msg.x
+            odom.pose.pose.position.y = msg.y
+            odom.pose.pose.position.z = 0.0
+            odom.pose.pose.orientation = q
 
             self.odom_publisher.publish(odom)
 
