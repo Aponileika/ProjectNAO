@@ -364,7 +364,7 @@ std::vector<PathItem> HybridAStar::search(
 
         double maximumLength {1024};
         size_t bestPathIndex {0};
-        for (std::size_t i {0}; i < dubinPaths.size(); ++i) {
+        for (std::size_t i {0}; i < dubins.size(); ++i) {
             if (dubinLengths[i] < maximumLength) {
                 bestPathIndex = i;
                 maximumLength = dubinLengths[i];
