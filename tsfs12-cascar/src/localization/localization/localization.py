@@ -102,12 +102,11 @@ class Localization(Node):
             t.header.stamp = current_time
             t.header.frame_id = '/odom'
             t.child_frame_id = 'base_link'
-
-
-	    	t.transform.translation.x = msg.x
-	    	t.transform.translation.y = msg.y
-	    	t.transform.translation.z = 0.0
-            t.transform.rotation = msg.thata
+			
+			t.transform.translation.x = msg.x
+			t.transform.translation.y = msg.y
+			t.transform.translation.z = 0.0
+			t.transform.rotation = msg.thata
 
 	    	self.tf_brodcaster.sendTransform(t)
 
