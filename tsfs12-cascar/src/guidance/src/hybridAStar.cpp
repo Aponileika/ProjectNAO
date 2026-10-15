@@ -356,67 +356,24 @@ std::vector<PathItem> HybridAStar::search(
     std::cout << "Entered search function!" << std::endl;
 
     if (map.size() == 0) {
-        std::cout << "[DEBUG] Entered empty-map Dubins search branch" << std::endl;
-        std::cout << "[DEBUG] map.size(): " << map.size() << std::endl;
-
-        std::cout << "[DEBUG] Calling dubinsPath(start, goal, false)" << std::endl;
+        std::cout << "No map, dubin search started!" << std::endl;
         std::pair result {dubinsPath(start, goal, false)};
-
-        std::cout << "[DEBUG] result.first.size(): " << result.first.size() << std::endl;
-        std::cout << "[DEBUG] result.second.size(): " << result.second.size() << std::endl;
-
-        if (result.first.empty()) {
-            std::cout << "[ERROR] dubinsPath returned an empty path!" << std::endl;
-        }
 
         std::vector<std::vector<Pose>> dubins {result.first};
         std::vector<double> dubinLengths {result.second};
 
-        std::cout << "[DEBUG] dubins.size(): " << dubins.size() << std::endl;
-        std::cout << "[DEBUG] dubinLengths.size(): " << dubinLengths.size() << std::endl;
-
-        for (size_t i = 0; i < dubins.size(); ++i) {
-            std::cout << "[DEBUG] dubins[" << i << "].size(): " << dubins[i].size() << std::endl;
+        double maximumLength {1024};
+        size_t bestPathIndex {0};
+        for (std::size_t i {0}; i < dubinPaths.size(); ++i) {
+            if (pathLengths[i] < maximumLength) {
+                bestPathIndex = i;
+                maximumLength = pathLengths[i];
+            }
         }
-
-        size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, 1024)};
-
-        std::cout << "[DEBUG] bestPathIndex: " << bestPathIndex << std::endl;
-        std::cout << "[DEBUG] dubins.size(): " << dubins.size() << std::endl;
-
-        if (bestPathIndex >= dubins.size()) {
-            std::cout << "[ERROR] bestPathIndex is out of bounds for dubins!" << std::endl;
-            return {};
-        }
-
-        if (bestPathIndex >= dubinLengths.size()) {
-            std::cout << "[ERROR] bestPathIndex is out of bounds for dubinLengths!" << std::endl;
-            return {};
-        }
-
-        if (dubins[bestPathIndex].empty()) {
-            std::cout << "[ERROR] Selected Dubins path is empty!" << std::endl;
-        }
-
-        std::cout << "[DEBUG] Calling poseToPath()" << std::endl;
         std::vector<PathItem> path {poseToPath(dubins[bestPathIndex], 1)};
 
-        std::cout << "[DEBUG] path.size() after poseToPath(): " << path.size() << std::endl;
-
-        if (path.empty()) {
-            std::cout << "[ERROR] poseToPath returned an empty path!" << std::endl;
-        }
-
-        std::cout << "[DEBUG] Calling addDistance()" << std::endl;
         addDistance(path);
 
-        std::cout << "[DEBUG] path.size() after addDistance(): " << path.size() << std::endl;
-
-        if (path.empty()) {
-            std::cout << "[ERROR] Path is empty after addDistance()!" << std::endl;
-        }
-
-        std::cout << "[DEBUG] Returning path with " << path.size() << " elements" << std::endl;
         return path;
     }
 
