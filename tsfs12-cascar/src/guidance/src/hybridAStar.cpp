@@ -359,7 +359,7 @@ std::vector<PathItem> HybridAStar::search(
         std::vector<double> dubinLengths {result.second};
         size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, 1024)};
 
-        std::vector<PathItem> path {poseToPath(result[bestPathIndex], 1)};
+        std::vector<PathItem> path {poseToPath(dubins[bestPathIndex], 1)};
         addDistance(path);
 
         return path;
