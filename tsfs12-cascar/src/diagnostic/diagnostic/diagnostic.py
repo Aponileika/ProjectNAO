@@ -7,7 +7,7 @@ from math import *
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from cascar_msgs.msg import CarCommand, CarMeasurement
+from cascar_msgs.msg import CarCommand, CarMeasurement, Path
 from geometry_msgs.msg import Pose2D
 from std_msgs.msg import String
 
@@ -28,7 +28,7 @@ class Diagnostics(Node):
         )
 
         self.path_sub = self.create_subscription(
-            String,
+            Path,
             "planned_path",
             self.path_callback,
             10
@@ -59,7 +59,10 @@ class Diagnostics(Node):
     
     def path_callback(self, msg):
         with self.lock:
-            self.pathBuffer['path']=json.loads(msg.data)
+            path = []
+            for point in msg.points:
+                path.append[[point.x, point.y, point.theta, point.dir, point.distance]]
+            self.pathBuffer['path']=path
         
 
     def server_loop(self):
