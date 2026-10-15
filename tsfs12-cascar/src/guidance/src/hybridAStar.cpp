@@ -365,7 +365,7 @@ std::vector<PathItem> HybridAStar::search(
         std::vector<PathItem> path {poseToPath(dubins[bestPathIndex], 1)};
         addDistance(path);
 
-        std::cout << "Path length: " << path.size() << std:endl;
+        std::cout << "Path length: " << path.size() << std::endl;
 
         return path;
     }
