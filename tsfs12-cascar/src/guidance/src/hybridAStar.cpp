@@ -356,129 +356,67 @@ std::vector<PathItem> HybridAStar::search(
     std::cout << "Entered search function!" << std::endl;
 
     if (map.size() == 0) {
-        std::cout << "\n========== DUBINS PATH DEBUG ==========" << std::endl;
-        std::cout << "Map size: " << map.size() << std::endl;
-        std::cout << "Start: [" << start[0] << ", " << start[1] << ", " << start[2] << "]" << std::endl;
-        std::cout << "Goal:  [" << goal[0] << ", " << goal[1] << ", " << goal[2] << "]" << std::endl;
+        std::cout << "[DEBUG] Entered empty-map Dubins search branch" << std::endl;
+        std::cout << "[DEBUG] map.size(): " << map.size() << std::endl;
 
-        for (size_t i = 0; i < start.size(); ++i) {
-            if (!std::isfinite(start[i])) {
-                std::cout << "ERROR: Start contains a non-finite value at index " << i << std::endl;
-            }
-            if (!std::isfinite(goal[i])) {
-                std::cout << "ERROR: Goal contains a non-finite value at index " << i << std::endl;
-            }
-        }
+        std::cout << "[DEBUG] Calling dubinsPath(start, goal, false)" << std::endl;
+        std::pair result {dubinsPath(start, goal, false)};
 
-        std::cout << "\n--- Calling dubinsPath() ---" << std::endl;
-        auto result = dubinsPath(start, goal, false);
-
-        std::cout << "dubinsPath() returned." << std::endl;
-        std::cout << "result.first size: " << result.first.size() << std::endl;
-        std::cout << "result.second: " << result.second << std::endl;
+        std::cout << "[DEBUG] result.first.size(): " << result.first.size() << std::endl;
+        std::cout << "[DEBUG] result.second: " << result.second << std::endl;
 
         if (result.first.empty()) {
-            std::cout << "ERROR: dubinsPath() returned an empty path!" << std::endl;
-            std::cout << "=======================================\n" << std::endl;
-            return {};
-        }
-
-        std::cout << "\n--- Checking Dubins path points ---" << std::endl;
-        for (size_t i = 0; i < result.first.size(); ++i) {
-            const auto &p = result.first[i];
-
-            std::cout << "Point " << i << ": [";
-            for (size_t j = 0; j < p.size(); ++j) {
-                std::cout << p[j];
-                if (j + 1 < p.size()) std::cout << ", ";
-            }
-            std::cout << "]" << std::endl;
-
-            for (size_t j = 0; j < p.size(); ++j) {
-                if (!std::isfinite(p[j])) {
-                    std::cout << "ERROR: Point " << i << " contains a non-finite value at index " << j << std::endl;
-                }
-            }
+            std::cout << "[ERROR] dubinsPath returned an empty path!" << std::endl;
         }
 
         std::vector<std::vector<Pose>> dubins {result.first};
         std::vector<double> dubinLengths {result.second};
 
-        std::cout << "\n--- Checking candidate paths ---" << std::endl;
-        std::cout << "Number of candidate paths: " << dubins.size() << std::endl;
-        std::cout << "Number of candidate lengths: " << dubinLengths.size() << std::endl;
+        std::cout << "[DEBUG] dubins.size(): " << dubins.size() << std::endl;
+        std::cout << "[DEBUG] dubinLengths.size(): " << dubinLengths.size() << std::endl;
 
         for (size_t i = 0; i < dubins.size(); ++i) {
-            std::cout << "Candidate " << i
-                    << ": points=" << dubins[i].size()
-                    << ", length=" << dubinLengths[i] << std::endl;
-
-            if (dubins[i].empty()) {
-                std::cout << "ERROR: Candidate " << i << " is empty!" << std::endl;
-            }
-            if (!std::isfinite(dubinLengths[i])) {
-                std::cout << "ERROR: Candidate " << i << " has a non-finite length!" << std::endl;
-            }
+            std::cout << "[DEBUG] dubins[" << i << "].size(): " << dubins[i].size() << std::endl;
         }
 
-        std::cout << "\n--- Calling getShortestDubin() ---" << std::endl;
-        size_t bestPathIndex = getShortestDubin(dubins, dubinLengths, 1024);
+        size_t bestPathIndex {getShortestDubin(dubins, dubinLengths, 1024)};
 
-        std::cout << "Best path index: " << bestPathIndex << std::endl;
+        std::cout << "[DEBUG] bestPathIndex: " << bestPathIndex << std::endl;
+        std::cout << "[DEBUG] dubins.size(): " << dubins.size() << std::endl;
 
         if (bestPathIndex >= dubins.size()) {
-            std::cout << "ERROR: Best path index is out of bounds!" << std::endl;
-            std::cout << "=======================================\n" << std::endl;
+            std::cout << "[ERROR] bestPathIndex is out of bounds for dubins!" << std::endl;
             return {};
         }
 
-        std::cout << "Selected path points: " << dubins[bestPathIndex].size() << std::endl;
+        if (bestPathIndex >= dubinLengths.size()) {
+            std::cout << "[ERROR] bestPathIndex is out of bounds for dubinLengths!" << std::endl;
+            return {};
+        }
 
         if (dubins[bestPathIndex].empty()) {
-            std::cout << "ERROR: Selected Dubins path is empty!" << std::endl;
-            std::cout << "=======================================\n" << std::endl;
-            return {};
+            std::cout << "[ERROR] Selected Dubins path is empty!" << std::endl;
         }
 
-        std::cout << "\n--- Calling poseToPath() ---" << std::endl;
-        std::vector<PathItem> path = poseToPath(dubins[bestPathIndex], 1);
+        std::cout << "[DEBUG] Calling poseToPath()" << std::endl;
+        std::vector<PathItem> path {poseToPath(dubins[bestPathIndex], 1)};
 
-        std::cout << "poseToPath() returned." << std::endl;
-        std::cout << "Path length after poseToPath: " << path.size() << std::endl;
+        std::cout << "[DEBUG] path.size() after poseToPath(): " << path.size() << std::endl;
 
-        for (size_t i = 0; i < path.size(); ++i) {
-            std::cout << "Path item " << i << ": [";
-            for (size_t j = 0; j < path[i].size(); ++j) {
-                std::cout << path[i][j];
-                if (j + 1 < path[i].size()) std::cout << ", ";
-            }
-            std::cout << "]" << std::endl;
-
-            for (size_t j = 0; j < path[i].size(); ++j) {
-                if (!std::isfinite(path[i][j])) {
-                    std::cout << "ERROR: Path item " << i << " contains a non-finite value at index " << j << std::endl;
-                }
-            }
+        if (path.empty()) {
+            std::cout << "[ERROR] poseToPath returned an empty path!" << std::endl;
         }
 
-        std::cout << "\n--- Calling addDistance() ---" << std::endl;
+        std::cout << "[DEBUG] Calling addDistance()" << std::endl;
         addDistance(path);
 
-        std::cout << "addDistance() returned." << std::endl;
-        std::cout << "Path length after addDistance: " << path.size() << std::endl;
+        std::cout << "[DEBUG] path.size() after addDistance(): " << path.size() << std::endl;
 
-        for (size_t i = 0; i < path.size(); ++i) {
-            std::cout << "Final path item " << i << ": [";
-            for (size_t j = 0; j < path[i].size(); ++j) {
-                std::cout << path[i][j];
-                if (j + 1 < path[i].size()) std::cout << ", ";
-            }
-            std::cout << "]" << std::endl;
+        if (path.empty()) {
+            std::cout << "[ERROR] Path is empty after addDistance()!" << std::endl;
         }
 
-        std::cout << "Returning path with " << path.size() << " points." << std::endl;
-        std::cout << "=======================================\n" << std::endl;
-
+        std::cout << "[DEBUG] Returning path with " << path.size() << " elements" << std::endl;
         return path;
     }
 
