@@ -59,10 +59,10 @@ class Diagnostics(Node):
     
     def path_callback(self, msg):
         with self.lock:
-            path = []
-            for point in msg.points:
-                path.append[[point.x, point.y, point.theta, point.dir, point.distance]]
-            self.pathBuffer['path']=path
+            self.pathBuffer['path'] = [
+                [point.x, point.y, point.theta, point.dir, point.distance]
+                for point in msg.points
+            ]
         
 
     def server_loop(self):
