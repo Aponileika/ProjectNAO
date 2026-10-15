@@ -353,6 +353,8 @@ std::vector<PathItem> HybridAStar::search(
     Pose const& start, Pose const& goal, std::vector<std::vector<double>> const& map,
     std::array<double, 2> xlim, std::array<double,2> ylim) {
 
+    std::cout << "Entered search function!" << std::endl;
+
     if (map.size() == 0) {
         std::cout << "No map, dubin search started!" << std::endl;
         std::pair result {dubinsPath(start, goal, false)};
