@@ -3,7 +3,7 @@
 #include <cascar_msgs/msg/path.hpp>
 #include <cascar_msgs/msg/path_point.hpp>
 
-#include "hybridAStar.hpp"
+#include "guidance/hybridAStar.hpp"
 
 #include <array>
 #include <vector>

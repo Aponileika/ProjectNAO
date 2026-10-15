@@ -1,5 +1,5 @@
-#include "hybridAStar.hpp"
-#include "dubinPath.hpp"
+#include "guidance/hybridAStar.hpp"
+#include "guidance/dubinPath.hpp"
 
 #include <memory>
 #include <iostream>
