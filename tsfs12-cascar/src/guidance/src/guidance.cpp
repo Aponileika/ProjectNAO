@@ -84,6 +84,8 @@ private:
 
     void plan_path()
     {
+        std::cout << "Planning path" << std::endl;
+
         Pose start = {x, y, theta};
         Pose goal = {x_goal, y_goal, theta_goal};
 
