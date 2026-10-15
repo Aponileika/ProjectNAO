@@ -67,7 +67,9 @@ class PurePursuit():
             cs = ((atan2(sin(dtheta), cos(dtheta))) / 
                   (self.path[self.subpath][self.curr_node+1][4] - self.path[self.subpath][self.curr_node][4]))
             u0 = atan(self.L * cs)
-            u = u0 - self.ky * atan(self.ky * ey) - self.ktheta * etheta
+            u = (u0 - 
+                 (1 - etheta**2 / 6 + etheta**4 / 120 - etheta**6 / 5040) * self.ky * atan(self.ky * ey) - 
+                 self.ktheta * etheta)
             delta = atan(u * self.L)
             self.delta = self.value_limit(delta, -self.delta_max, self.delta_max)
 
