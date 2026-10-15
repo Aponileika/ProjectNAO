@@ -348,9 +348,20 @@ void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
     }
 }
 
+
 std::vector<PathItem> HybridAStar::search(
-    Pose const& start, Pose const& goal, std::vector<std::vector<double>> const& map,
-    std::array<double, 2> xlim, std::array<double,2> ylim) {
+    Pose const& start, Pose const& goal, std::vector<std::vector<double>> const& map = {},
+    std::array<double, 2> xlim = {0,0}, std::array<double,2> ylim = {0,0}) {
+
+    if (map.size() == 0) {
+        std::vector<std::vector<Pose>> dubinPath {dubinsPath(start[0], start[1], start[2], 
+                                                             goal[0],  goal[1],  goal[2], false)};
+        size_t bestDubinIndex {getShortestDubin(dubinPath)};
+        std::vector<PathItem> path {poseToPath(dubinPath[bestDubinIndex], 1)};
+        addDistance(path);
+
+        return path;
+    }
 
     double minX {xlim[0]};
     double minY {ylim[0]};

@@ -4,7 +4,7 @@ from scipy.ndimage import binary_dilation
 from collections import deque
 from math import sin, cos, sqrt
 
-from .dubinPath import *
+from dubinPath import *
 
 
 class Node():
@@ -30,22 +30,25 @@ class HybridAStar():
         N = 5
         self.steeringAngles = np.linspace(-self.deltaMax, self.deltaMax, N)
 
-        self.mapGrid = None
-        self.distanceGrid = None
-        self.width = None
-        self.height = None
+        self.mapGrid = None       # Occupancy map, 2D binary list. 0 = No obstacle, 1 = Obstacle
+        self.width = None         # Width of map
+        self.height = None        # Height of map
 
+        #Map / State rettings
         self.xy_resolution = 0.05
         self.theta_resolution = np.deg2rad(30)
-        self.map_resolution = 0.05
+        self.map_resolution = 0.05  # Unnessesary ??
 
+        # Goal finding tolerance
         self.xy_tolerance = 0.1
         self.theta_tolerance = np.deg2rad(10)
 
+        # Car constants
         self.L = 0.285
         self.track = 0.15
         self.radius = 1.0*max(self.L, self.track)/2
 
+        # Search propogation settings
         self.propogationDistance = 0.2
         self.propogationInterval = 0.04
         self.dThetas = np.tan(self.steeringAngles) / self.L
@@ -65,31 +68,6 @@ class HybridAStar():
         return binary_dilation(grid != 0, structure=footprint)
 
 
-    def createDistanceGrid(self, goal):
-        distanceGrid = np.full((self.height, self.width), np.inf)
-        gx, gy = self.worldToGrid(goal.x, goal.y)
-
-        queue = deque([(gx, gy)])
-        distanceGrid[gy, gx] = 0
-
-        while queue:
-            x, y = queue.popleft()
-            distance = distanceGrid[y, x] + self.xy_resolution
-
-            for nx, ny in ((x-1,y),(x+1,y),(x,y-1),(x,y+1)):
-                if nx < 0 or nx >= self.width or ny < 0 or ny >= self.height:
-                    continue
-                if self.mapGrid[ny, nx]:
-                    continue
-                if distanceGrid[ny, nx] != np.inf:
-                    continue
-
-                distanceGrid[ny, nx] = distance
-                queue.append((nx, ny))
-
-        return distanceGrid
-
-
     @staticmethod
     def wrap_angle(theta):
         """Wrap an angle to [-pi, pi]."""
@@ -97,6 +75,7 @@ class HybridAStar():
 
 
     def worldToGrid(self, x, y):
+        """Convert continous coordinates to the discrete grid"""
         gx = int(x / self.xy_resolution)
         gy = int(y / self.xy_resolution)
 
@@ -104,6 +83,7 @@ class HybridAStar():
 
 
     def stateKey(self, x, y, theta):
+        """Convert continous pose to discrete state"""
         x_index = int(round(x / self.xy_resolution))
         y_index = int(round(y / self.xy_resolution))
         theta_index = int(round(self.wrap_angle(theta) / self.theta_resolution))
@@ -112,21 +92,20 @@ class HybridAStar():
 
 
     def isColliding(self, trajectory):
+        """Check for collisions"""
         for point in trajectory:
             x = point[0]
             y = point[1]
             gx, gy = self.worldToGrid(x, y)
-            if gx < 0 or gx >= self.width or gy < 0 or gy >= self.height:
+            if gx < 0 or gx >= self.width or gy < 0 or gy >= self.height:   #Collision if outside map
                 return True
-            if self.mapGrid[gy,gx]:
+            if self.mapGrid[gy,gx]:                                         #Collision if location is occupied
                 return True
         return False
 
 
     def heuristic(self, startNode, goalNode):
-        # gx, gy  = self.worldToGrid(startNode.x, goalNode.y)
-        # return self.distanceGrid[gy, gx]**2
-        return (startNode.y - goalNode.y)**2 + (startNode.x - goalNode.x)**2
+        return sqrt((startNode.y - goalNode.y)**2 + (startNode.x - goalNode.x)**2)    #Inflated heuristic, faster search
 
 
     def reconstruct_path(self, node):
@@ -138,15 +117,15 @@ class HybridAStar():
             node = node.parent
 
         return path
-        return path[::-1]
 
 
     def propogate(self, node, dTheta):
+        """Propogates a state using the theta difference dependent on steering angle"""
         x = node.x
         y = node.y
         theta = node.theta 
 
-        dir = -1
+        dir = -1   #Backwards search
 
         result = (x, y, theta)
         travelled = 0
@@ -155,6 +134,7 @@ class HybridAStar():
             x += ds * cos(theta)
             y += ds * sin(theta)
 
+            # Check if new state is ok
             gx, gy = self.worldToGrid(x,y)
             if gx < 0 or gx >= self.width or gy < 0 or gy >= self.height:
                 return None
@@ -171,6 +151,7 @@ class HybridAStar():
 
 
     def isFinished(self, node, goal):
+        """Determince if current state is close enough to the goal"""
         ex = abs(node.x - goal.x)
         ey = abs(node.y - goal.y)
         etheta = abs(self.wrap_angle(node.theta-goal.theta))
@@ -181,6 +162,7 @@ class HybridAStar():
 
 
     def getShortestDubin(self, paths, pathLengths, lowerLimit):
+        """Selects the shortest dubin path from a list"""
         colliding = []
         for dubin in paths:
             colliding.append(self.isColliding(dubin))
@@ -196,6 +178,7 @@ class HybridAStar():
 
 
     def removeDupes(self, trajectory):
+        """The dubin shortcuts tend to create duplicates. This function was easier than fixing that."""
         i = 0
         while i < len(trajectory)-1:
             if trajectory[i] == trajectory[i+1]:
@@ -206,6 +189,7 @@ class HybridAStar():
 
 
     def addDistance(self, trajectory):
+        """Add distance along the path. Useful for control"""
         dist = 0
         trajectory[0] = (trajectory[0][0], trajectory[0][1], trajectory[0][2], dist)
         for i in range(1, len(trajectory)):
@@ -233,12 +217,14 @@ class HybridAStar():
         maxIter = len(path)
         iterations = 0
 
+        # Search from both ends, stop if the ends meet or if max iterations is reached
         while lower + 1 < upper and iterations < len(path):
             iterations += 1
             if iterations >= maxIter:
                 print("WARNING ; MAX ITERATIONS REACHED")
                 print(f"Lower: {lower}, Upper: {upper}")   
 
+            # Search from both ends, each find the longest dubin path from that end
             # Calculate upper path
             upperDubin = None
             staticPoint = path[upper]
@@ -272,6 +258,7 @@ class HybridAStar():
 
             # Add the one that shortens the path most, or the one that exists, provided they are shortcuts
             if upperDubin != None and lowerDubin != None:
+                #Since the points should (propoably arent tbh) equally spaced, comparing indexes is quicker than actual distance
                 if (upper - upperIndex) - len(upperDubin) >= (lowerIndex - lower) - len(lowerDubin):
                     path = path[:upperIndex] + upperDubin[:-1] + path[upper:]
                     upper = upperIndex
@@ -292,6 +279,14 @@ class HybridAStar():
         
 
     def search(self, start, goal, map=None, xlim=None, ylim=None):
+        """
+        Search for a path from point A to point B while avoiding obstacles.
+        Does the search backwards, ensuring that the goal is reached perfectly.
+        Uses an inflated heuristic, meaning that an optimal path isn't found immideatly. 
+        This is fixed by later looking for shortcuts in the form of Dubin paths.
+        """
+
+        # If there is no map, there are no obstacles. Therefore, a dubin path is optimal.
         if map is None:
             validPaths, validLengths = dubinsPath( (start[0], start[1]), start[2], (goal[0], goal[1]), goal[2], getDistance=True)
             shortestPath = None
@@ -309,10 +304,12 @@ class HybridAStar():
         startNode = Node(start[0] - minX, start[1] - minY, self.wrap_angle(start[2]))
         goalNode = Node(goal[0] - minX, goal[1] - minY, self.wrap_angle(goal[2]))
 
+        # Set up the backwards search
         startNode, goalNode = goalNode, startNode
         startNode.theta = self.wrap_angle(startNode.theta + np.pi)
         goalNode.theta = self.wrap_angle(goalNode.theta + np.pi)
 
+        # Since the car isn't a point, inflate the map so that they dont crash
         self.mapGrid = self.inflate_map(map)
         self.height, self.width = map.shape
 
@@ -320,16 +317,13 @@ class HybridAStar():
             print("Start or Goal is inside object")
             return None
 
-        # self.distanceGrid = np.copy(self.mapGrid)
-        # self.distanceGrid = self.createDistanceGrid(goalNode)
-        # print("Distance map done")
-
+        #Set up priority queue
         startNode.h = self.heuristic(startNode, goalNode)
         openSet = []
         counter = 0
         heapq.heappush(openSet, (startNode.f, counter, startNode))
 
-
+        # Set up map of gs
         nx = self.width
         ny = self.height
         ntheta = int(round(2*np.pi / self.theta_resolution))
@@ -341,17 +335,22 @@ class HybridAStar():
         iterations = 0
         maxIterations = 1e6
 
+        # Main search loop
+        # Look as long as there are unexpanded nodes and not max iterations
         while openSet:
             iterations += 1
             if iterations > maxIterations:
                 print("MAX ITERATIONS REACHED")
                 return None
 
+            # Expand most promising node
             _, _, current = heapq.heappop(openSet)
             key = self.stateKey(current.x, current.y, current.theta)
+            # If there is a better way to this state, skip this node
             if current.g > best_gs[key]:
                 continue
 
+            # Check if goal is reached
             if self.isFinished(current, goalNode):
                 print("Path found, searching for shortcuts")
                 path = self.reconstruct_path(current)
@@ -359,14 +358,19 @@ class HybridAStar():
                     point = path[i]
                     path[i] = (point[0], point[1], self.wrap_angle(point[2] + np.pi)) #Since the search is backwards, turn every point around.
 
-                path = self.addDubinPaths(path, goalNode)
+                #Look for shortcuts
+                #path = self.addDubinPaths(path, goalNode)   #First search finds large shortcuts
+                #path = self.addDubinPaths(path, goalNode)   #Second search finds small shortcuts
                 path = self.removeDupes(path)
                 path = self.addDistance(path)
+
+                # Since the map has origin in (0,0), and the real world might not, add those limits back
                 for i in range(len(path)):
                     point = path[i]
                     path[i] = (point[0]+xlim[0], point[1]+ylim[0], point[2], point[3])
                 return path
 
+            # Propogate the node
             for dTheta, steeringAngle in zip(self.dThetas, self.steeringAngles):
                 newPoint = self.propogate(current, dTheta)
                 if newPoint is None:
@@ -375,7 +379,7 @@ class HybridAStar():
                 newX, newY, newTheta = newPoint
                 xi, yi, ti = self.stateKey(newX, newY, newTheta)
 
-                newg = current.g + self.propogationDistance**2
+                newg = current.g + self.propogationDistance
                 if newg >= best_gs[xi, yi, ti]:
                     continue
                 best_gs[xi, yi, ti] = newg
@@ -456,12 +460,12 @@ if __name__ == "__main__":
             print(f"    Time:  {time.time() - t0}")
             print(f"    Start: {start}")
             print(f"    Goal:  {goal}")
-            print(f"    Final: {float(path[-1][0] + xlim[0]), float(path[-1][1] + ylim[0]), float(path[-1][2])}")
+            print(f"    Final: {float(path[-1][0]), float(path[-1][1]), float(path[-1][2])}")
 
             for i in range(1, len(path)):
                 if path[i] == path[i - 1]:
                     print("    WARNING: DUPLICATES")
-                    print((float(path[i][0]+xlim[0]), float(path[i][1]+ylim[0])))
+                    print((float(path[i][0]), float(path[i][1])))
 
         for x_min, x_max, y_min, y_max in obstacles:
             ax.fill(
@@ -472,14 +476,7 @@ if __name__ == "__main__":
 
         if path is not None:
             path = np.array(path)
-
-            ax.plot(
-                path[:, 0] + xlim[0],
-                path[:, 1] + ylim[0],
-                "-o",
-                markersize=3,
-                label="Hybrid A* path"
-            )
+            ax.plot(path[:, 0], path[:, 1], "-o", markersize=3, label="Hybrid A* path")
 
         ax.quiver(start[0], start[1], np.cos(start[2]), np.sin(start[2]),
                   angles="xy", scale_units="xy", scale=1, color="green", label="Start" )
