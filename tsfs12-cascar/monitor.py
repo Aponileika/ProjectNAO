@@ -4,6 +4,8 @@ import socket
 import time
 import matplotlib.pyplot as plt
 import numpy as np
+import qtm
+import asyncio
 
 
 class Monitor():
@@ -70,15 +72,15 @@ class Monitor():
         self.cascarSocket = None
         self.connectCascar()
 
-        # self.qualisysIP = ""
-        # self.qualisysPort = 0
-        # self.qualisysSocket = None
-        # self.connectQualisys()
+        self.qualisysIP = "192.168.0.50"
+        self.qualisysPort = 22222
+        self.qualisysSocket = None
+        self.connectQualisys()
 
         self.socketLock = threading.Lock()
 
         threading.Thread(target=self.cascarData, daemon=True).start()
-        #threading.Thread(target=self.qualisysData, daemon=True).start()
+        threading.Thread(target=self.qualisysData, daemon=True).start()
         threading.Thread(target=self.requestData, daemon=True).start()
 
 
@@ -170,37 +172,51 @@ class Monitor():
                     self.path = msg['path']
 
 
-    def qualisysData(self, debug=False):
-        buffer = ""
-        while True:
-            data = self.qualisysSocket.recv(1024)
+    def qualisysData(self):
+        async def run():
+            connection = await qtm.connect(self.qualisysIP)
+            if connection is None:
+                print("Failed to connect to QTM")
+                return
 
-            if not data:
-                break
-            buffer += data.decode()
+            print("Connected to QTM")
+            last_update = 0.0
 
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
-                values = line.split()
+            def on_packet(packet):
+                nonlocal last_update
 
-                if not values:
-                    continue
+                now = time.monotonic()
+                if now - last_update < 0.1:
+                    return
+                last_update = now
 
-                if values[0] == "POSE":
-                    self.currTrueX = float(values[1]) / 1000
-                    self.currTrueY = float(values[2]) / 1000
-                    self.currTrueTheta = np.deg2rad(float(values[6]))
+                header, body = packet.get_6d_euler()
+                if not body:
+                    return
 
-                    self.pastTrueX.append(self.currTrueX)
-                    self.pastTrueY.append(self.currTrueY)
-                    self.pastTrueTheta.append(self.currTrueTheta)
+                pos, euler = body[2]
+                self.currTrueX = pos.x / 1000
+                self.currTrueY = pos.y / 1000
+                self.currTrueTheta = np.deg2rad(euler[2])
 
-                    if debug:
-                        print(
-                            f"QTM: x={self.currTrueX:.2f}, "
-                            f"y={self.currTrueY:.2f}, "
-                            f"theta={self.currTrueTheta:.2f}"
-                        )
+                self.pastTrueX.append(self.currTrueX)
+                self.pastTrueY.append(self.currTrueY)
+                self.pastTrueTheta.append(self.currTrueTheta)
+
+                print(f"Pose: x={self.currTrueX:.3f}, y={self.currTrueY:.3f}, theta={self.currTrueTheta:.3f}")
+
+            print("Starting QTM stream")
+            result = await connection.stream_frames(
+                components=["6deuler"],
+                on_packet=on_packet
+            )
+            print(f"Stream returned: {result}")
+            await asyncio.Event().wait()
+
+        try:
+            asyncio.run(run())
+        except Exception as e:
+            print(f"QTM error: {e}")
 
 
     def requestData(self):
