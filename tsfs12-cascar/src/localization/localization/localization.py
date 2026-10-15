@@ -63,9 +63,6 @@ class Localization(Node):
         self.timer = self.create_timer(self.Ts, self.updateState)
 
 
-
-    _
-
     def imu_callback(self, msg):
         self.w = msg.w - self.bw
 
@@ -104,14 +101,20 @@ class Localization(Node):
             t = TransformStamped()
             t.header.stamp = current_time
             t.header.frame_id = '/odom'
-            t.child.frame_id = 'base_link'
+            t.child_frame_id = 'base_link'
 
-            self.tf_brodcaster.sendTransform(t)
+
+	    t.transform.translation.x = msg.x
+	    t.transform.translation.y = msg.y
+	    t.transform.translation.z = 0.0
+            t.transform.rotation = msg.thata
+
+	    self.tf_brodcaster.sendTransform(t)
 
             odom = Odometry()
             odom.header.stamp = current_time
             odom.header.frame_id = 'odom'
-            odom.header.frame_id = 'base_link'
+            odom.child_frame_id = 'base_link'
 
             odom.pose.position = msg.pose.position
             odom.pose.orientation = msg.pose.orientation
