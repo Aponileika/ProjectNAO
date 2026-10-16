@@ -117,6 +117,7 @@ class PurePursuit():
                 if self.curr_node >= len(self.path[self.subpath]):
                     self.curr_node = 0
                     self.subpath += 1
+                    self.ied = 0
                     if self.subpath >= len(self.path):
                         self.subpath = 0
                         self.path = []                    
@@ -135,6 +136,7 @@ class PurePursuit():
         self.map = []
         self.curr_node = 0
         self.distanceTraveled = 0
+        self.ied = 0
 
 
     def set_path(self, path):
