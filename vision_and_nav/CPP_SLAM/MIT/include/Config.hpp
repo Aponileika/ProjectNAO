@@ -329,6 +329,9 @@ constexpr auto panto_gt_path = PANTO_EXPAND_GT_PATH(PANTO_ACTIVE_DATASET);
 
 const Dataset panto_dataset = Dataset::PANTO_ACTIVE_DATASET;
 
+#define PANTO_STARTUP_FORCED_KEYFRAME_INTERVAL 0.25
+#define PANTO_NUM_FORCED_KFS 15
+
 #define PANTO_LOGPATH                                                          \
   "/Users/Jonathan/Programmering/FIA/PANTOPILOT/vision_and_nav/CPP_SLAM/logs/" \
   "Latest"

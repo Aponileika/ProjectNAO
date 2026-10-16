@@ -330,13 +330,42 @@ private:
     const u64 StartGeneration;
 };
 
+struct OP_EigenValueBiasResidual
+{
+    /*
+     * One residual per consecutive KF, with all of them shared gyrobias. Initialize
+     * the gyrobias to 0
+     * */
+    Eigen::Vector3d _BearingRight, _BearingLeft;
+    Eigen::Quaterniond CameraToBodyRotation;
+
+    OP_EigenValueBiasResidual(const Eigen::Vector3d& BearingLeft, const Eigen::Vector3d BearingRight, const Eigen::Matrix4d* TBS) : 
+        _BearingLeft(BearingLeft), _BearingRight(BearingRight), CameraToBodyRotation(TBS->block<3,3>(0,0)){}
+
+    static ceres::CostFunction* Create(const Eigen::Vector3d& BearingLeft, const Eigen::Vector3d BearingRight, const Eigen::Matrix4d* TBS)
+    {
+        return new ceres::AutoDiffCostFunction<OP_EigenValueBiasResidual, 3, 1>(
+                new OP_EigenValueBiasResidual(BearingLeft, BearingRight, TBS));
+    }
+};
+
 bool OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
         const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame,
         typeKeyFrame* PreviousFrame = nullptr,
         typeKeyFrameQueue* KeyFrameQueue = nullptr);
+
 bool OP_BundleAdjustTracking(typeLocalMapTracking& TrackingMap,
         typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame);
-bool OP_BundleAdjustLocal(typeLocalMap& LocalMap,
+bool OP_BundleAdjustTrackingVisualOnly(typeLocalMapTracking& TrackingMap,
+        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame);
+
+bool OP_BundleAdjustLocal(typeLocalMap& LocalMap, typeKeyFrameQueue* KeyFrameQueue);
+bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap, typeKeyFrameQueue* KeyFrameQueue);
+
+bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap,
         typeKeyFrameQueue* KeyFrameQueue);
+
+// This local map should just be all global kfs and mappoints at this point.
+bool OP_EigenValueSolveGyroBias(typeLocalMap& LocalMap);
 
 #endif //__OP_BA_HPP_

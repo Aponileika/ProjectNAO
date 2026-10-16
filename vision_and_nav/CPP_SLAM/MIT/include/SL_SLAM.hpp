@@ -110,6 +110,7 @@ typedef struct
     typePosePrediction PosePrediction;
     typeTrackingStatistics TrackingStats;
 
+    std::atomic_bool& VisualOnlyMode;
     typeTrackingStatisticsQueue* TrackingStatQueue;
     typeKeyFrameQueue *KeyFrameQueue;
     typeGlobalMap *GlobalMap;
@@ -134,6 +135,7 @@ typedef struct
     typeSPSCQueue<typeDenseLocaMapData>* DenseQueue;
 #endif
 
+    std::atomic_bool& VisualOnlyMode;
     typeKeyFrameQueue *KeyFrameQueue;
     typeGlobalMap *GlobalMap;
     typeCovisibilityGraph *CovisibilityGraph;
