@@ -240,7 +240,7 @@ struct OP_IMUResidual
             AccBiasi - PreIntegration.AccelBias.template cast<T>();
 
         const Sophus::SO3<T> DeltaRNominal(
-                Eigen::Quaternion<T>( PreIntegration.DeltaR.template cast<T>()));
+                Eigen::Quaternion<T>(PreIntegration.DeltaR.template cast<T>()));
 
         const Sophus::SO3<T> DeltaRCorrected = DeltaRNominal * Sophus::SO3<T>::exp( PreIntegration.JRg.template cast<T>() *
                     DeltaBg);
@@ -337,15 +337,50 @@ struct OP_EigenValueBiasResidual
      * the gyrobias to 0
      * */
     Eigen::Vector3d _BearingRight, _BearingLeft;
-    Eigen::Quaterniond CameraToBodyRotation;
+    Eigen::Matrix3d BodyToCameraRotation;
+    Eigen::Matrix3d CameraToBodyRotation;
+    Eigen::Matrix3d _GyroJacobian;
+    Eigen::Quaterniond PreintegratedRotation;
+    Eigen::Matrix3d Sxx, Syy, Szz, Sxy, Syz, Szx;
 
-    OP_EigenValueBiasResidual(const Eigen::Vector3d& BearingLeft, const Eigen::Vector3d BearingRight, const Eigen::Matrix4d* TBS) : 
-        _BearingLeft(BearingLeft), _BearingRight(BearingRight), CameraToBodyRotation(TBS->block<3,3>(0,0)){}
+    OP_EigenValueBiasResidual(const Eigen::Matrix3d& DeltaR, const Eigen::Matrix3d& GyroJacobian, const Eigen::Vector3d& BearingLeft, 
+            const Eigen::Vector3d& BearingRight, const Eigen::Matrix4d* TBS, 
+            const Eigen::Matrix3d& _Sxx, const Eigen::Matrix3d& _Syy, const Eigen::Matrix3d& _Szz, const Eigen::Matrix3d& _Sxy, 
+            const Eigen::Matrix3d& _Syz, const Eigen::Matrix3d& _Szx) : 
+        _GyroJacobian(GyroJacobian), _BearingLeft(BearingLeft), 
+        _BearingRight(BearingRight), BodyToCameraRotation(TBS->block<3,3>(0,0)), PreintegratedRotation(Eigen::Quaterniond(DeltaR)),
+        Sxx(_Sxx), Syy(_Syy), Szz(_Szz), Sxy(_Sxy), Syz(_Syz), Szx(_Szx)
+    {
+        CameraToBodyRotation = BodyToCameraRotation.transpose();
+    }
 
-    static ceres::CostFunction* Create(const Eigen::Vector3d& BearingLeft, const Eigen::Vector3d BearingRight, const Eigen::Matrix4d* TBS)
+    template <typename T> bool operator()(
+            // arguments
+            const T* const GyroBias,
+            T* residuals)
+    {
+        Eigen::Map<const Eigen::Matrix<T, 3, 1>> _GyroBias(GyroBias);
+
+        const Sophus::SO3<T> BiasCorrectedGamma = PreintegratedRotation * Sophus::SO3<T>::exp(_GyroJacobian * GyroBias);
+        const Eigen::Matrix<T, 3, 3> CameraRotation = BodyToCameraRotation * BiasCorrectedGamma * CameraToBodyRotation;
+
+        const Eigen::Matrix<T, 1, 3> Row1 = CameraRotation.rows(0);
+        const Eigen::Matrix<T, 1, 3> Row2 = CameraRotation.rows(1);
+        const Eigen::Matrix<T, 1, 3> Row3 = CameraRotation.rows(2);
+
+        return true;
+    }
+
+    static ceres::CostFunction* Create(const Eigen::Matrix3d& DeltaR, const Eigen::Matrix3d& GyroJacobian, const Eigen::Vector3d& BearingLeft, 
+            const Eigen::Vector3d BearingRight, const Eigen::Matrix4d* TBS,
+            const Eigen::Matrix3d& _Sxx, const Eigen::Matrix3d& _Syy, const Eigen::Matrix3d& _Szz, const Eigen::Matrix3d& _Sxy, 
+            const Eigen::Matrix3d& _Syz, const Eigen::Matrix3d& _Szx
+            )
     {
         return new ceres::AutoDiffCostFunction<OP_EigenValueBiasResidual, 3, 1>(
-                new OP_EigenValueBiasResidual(BearingLeft, BearingRight, TBS));
+                new OP_EigenValueBiasResidual(DeltaR, GyroJacobian, BearingLeft, BearingRight, TBS,
+                                              _Sxx, _Syy, _Szz, _Sxy, _Syz, _Szx
+                    ));
     }
 };
 
