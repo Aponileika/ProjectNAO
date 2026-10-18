@@ -22,6 +22,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
         "msg/ControlRequest.msg"
         "msg/Points2D.msg"
         "msg/NodeIDs.msg"
+        "msg/Path.msg"
+        "msg/PathPoint.msg"
         "msg/IDMCommand.msg"
         "msg/MissionControl.msg"
         "msg/SensorBias.msg"

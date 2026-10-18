@@ -1,5 +1,5 @@
-#include "hybridAStar_cpp.hpp"
-#include "dubinPathCpp.hpp"
+#include "guidance/hybridAStar.hpp"
+#include "guidance/dubinPath.hpp"
 
 #include <memory>
 #include <iostream>
@@ -348,9 +348,34 @@ void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
     }
 }
 
+
 std::vector<PathItem> HybridAStar::search(
     Pose const& start, Pose const& goal, std::vector<std::vector<double>> const& map,
     std::array<double, 2> xlim, std::array<double,2> ylim) {
+
+    std::cout << "Entered search function!" << std::endl;
+
+    if (map.size() == 0) {
+        std::cout << "No map, dubin search started!" << std::endl;
+        auto result {dubinsPath(start, goal, false)};
+
+        std::vector<std::vector<Pose>> dubins {result.first};
+        std::vector<double> dubinLengths {result.second};
+
+        double maximumLength {1024};
+        size_t bestPathIndex {0};
+        for (std::size_t i {0}; i < dubins.size(); ++i) {
+            if (dubinLengths[i] < maximumLength) {
+                bestPathIndex = i;
+                maximumLength = dubinLengths[i];
+            }
+        }
+        std::vector<PathItem> path {poseToPath(dubins[bestPathIndex], 1)};
+
+        addDistance(path);
+
+        return path;
+    }
 
     double minX {xlim[0]};
     double minY {ylim[0]};
@@ -443,6 +468,13 @@ std::vector<PathItem> HybridAStar::search(
                 point[2] = wrap_angle(point[2] + pi);
             }
             addDistance(path);
+
+            // Fix direction of first node
+            double dx {path[1][0] - path[0][0]};
+            double dy {path[1][1] - path[0][1]};
+            double ex {dx * cos(path[0][2]) + dy * sin(path[0][2])};
+            if (ex > 0) path[0][3] = 1; else path[0][3] = -1;
+
             return path;
         }
         

@@ -6,10 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
 from cascar_msgs.msg import CarCommand, CarMeasurement
-from geometry_msgs.msg import Pose2D
-
-from geometry_msgs.msg import PoseStamped
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import Pose2D, Quaternion, TransformStamped
 from nav_msgs.msg import Odometry
 from tf2_ros import TransformBroadcaster
 
@@ -63,11 +60,9 @@ class Localization(Node):
         self.timer = self.create_timer(self.Ts, self.updateState)
 
 
-
-    _
-
     def imu_callback(self, msg):
         self.w = msg.w - self.bw
+        print(f"w = {self.w}")
 
 
     def odo_callback(self, msg):
@@ -75,6 +70,8 @@ class Localization(Node):
         self.Vodo = msg.v
         stamp = msg.header.stamp
         self.VodoTime = stamp.sec + 1e-9*stamp.nanosec
+
+        print(f"Vodo = {self.Vodo}")
 
         if self.oldVodo == None:
             self.oldVodo = self.Vodo
@@ -100,21 +97,34 @@ class Localization(Node):
             self.pos_publisher.publish(msg)
             
             current_time  = self.get_clock().now().to_msg()
-
+            
+            q = Quaternion()
+            q.x = 0.0
+            q.y = 0.0
+            q.z = sin(msg.theta / 2.0)
+            q.w = cos(msg.theta / 2.0)
+			
             t = TransformStamped()
             t.header.stamp = current_time
-            t.header.frame_id = '/odom'
-            t.child.frame_id = 'base_link'
-
+            t.header.frame_id = 'odom'
+            t.child_frame_id = 'base_link'
+            
+            t.transform.translation.x = msg.x
+            
+            t.transform.translation.y = msg.y
+            t.transform.translation.z = 0.0
+            t.transform.rotation = q
             self.tf_brodcaster.sendTransform(t)
 
             odom = Odometry()
             odom.header.stamp = current_time
             odom.header.frame_id = 'odom'
-            odom.header.frame_id = 'base_link'
+            odom.child_frame_id = 'base_link'
 
-            odom.pose.position = msg.pose.position
-            odom.pose.orientation = msg.pose.orientation
+            odom.pose.pose.position.x = msg.x
+            odom.pose.pose.position.y = msg.y
+            odom.pose.pose.position.z = 0.0
+            odom.pose.pose.orientation = q
 
             self.odom_publisher.publish(odom)
 
