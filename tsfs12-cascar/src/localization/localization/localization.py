@@ -62,6 +62,7 @@ class Localization(Node):
 
     def imu_callback(self, msg):
         self.w = msg.w - self.bw
+        print(f"w = {self.w}")
 
 
     def odo_callback(self, msg):
@@ -69,6 +70,8 @@ class Localization(Node):
         self.Vodo = msg.v
         stamp = msg.header.stamp
         self.VodoTime = stamp.sec + 1e-9*stamp.nanosec
+
+        print(f"Vodo = {self.Vodo}")
 
         if self.oldVodo == None:
             self.oldVodo = self.Vodo
