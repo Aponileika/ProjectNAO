@@ -1,82 +1,114 @@
 import os
 
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
-
 from ament_index_python.packages import get_package_share_directory
+
+from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
 
-    slam_config = LaunchConfiguration("slam_params_file")
+    # Package directories
+    cascar_share = get_package_share_directory('cascar')
+    slam_toolbox_share = get_package_share_directory('slam_toolbox')
 
-    rviz_config = LaunchConfiguration("rviz_config")
+    # Robot description
+    urdf_path = os.path.join(
+        cascar_share,
+        'model',
+        'turtle_cascar.urdf'
+    )
 
-    default_slam_config = "/tmp/cascar_slam.yaml"
+    with open(urdf_path, 'r') as urdf_file:
+        robot_description = urdf_file.read()
 
-    default_rviz_config = os.path.join(
-        get_package_share_directory("cascar"),
-        "rviz",
-        "default.rviz",
+    # SLAM configuration
+    slam_params_file = os.path.join(
+        cascar_share,
+        'config',
+        'cascar_slam.yaml'
+    )
+
+    # Existing robot and LiDAR launch
+    robot_launch_file = os.path.join(
+        cascar_share,
+        'launch',
+        'cascar_full_launch.py'
+    )
+
+    # Standard SLAM Toolbox launch
+    slam_launch_file = os.path.join(
+        slam_toolbox_share,
+        'launch',
+        'online_async_launch.py'
     )
 
     return LaunchDescription([
 
-        DeclareLaunchArgument(
-            "slam_params_file",
-            default_value=default_slam_config,
-            description="SLAM Toolbox configuration file",
+        # 1. Start existing robot, IMU and LiDAR nodes
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(robot_launch_file),
         ),
 
-        DeclareLaunchArgument(
-            "rviz_config",
-            default_value=default_rviz_config,
-            description="RViz configuration file",
-        ),
-
-        # Temporary odometry-to-base transform.
-        # All six values are zero.
+        # 2. Publish the robot's fixed URDF transforms
         Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="slam_initial_odom_transform",
+            package='robot_state_publisher',
+            executable='robot_state_publisher',
+            name='robot_state_publisher',
+            output='screen',
+            parameters=[
+                {
+                    'robot_description': robot_description,
+                    'use_sim_time': False,
+                }
+            ],
+        ),
+
+        # 3. Temporary initial odometry transform
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='initial_odom_to_base',
+            output='screen',
             arguments=[
-                "--x", "0",
-                "--y", "0",
-                "--z", "0",
-                "--roll", "0",
-                "--pitch", "0",
-                "--yaw", "0",
-                "--frame-id", "odom",
-                "--child-frame-id", "base_link",
+                '--x', '0',
+                '--y', '0',
+                '--z', '0',
+                '--roll', '0',
+                '--pitch', '0',
+                '--yaw', '0',
+                '--frame-id', 'odom',
+                '--child-frame-id', 'turtle/base_link',
             ],
-            output="screen",
         ),
 
-        # SLAM Toolbox
+        # 4. Temporary LiDAR mounting transform
         Node(
-            package="slam_toolbox",
-            executable="async_slam_toolbox_node",
-            name="slam_toolbox",
-            output="screen",
-            parameters=[
-                slam_config,
-                {"use_sim_time": False},
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_to_laser',
+            output='screen',
+            arguments=[
+                '--x', '0',
+                '--y', '0',
+                '--z', '0',
+                '--roll', '0',
+                '--pitch', '0',
+                '--yaw', '0',
+                '--frame-id', 'turtle/base_link',
+                '--child-frame-id', 'laser',
             ],
         ),
 
-        # RViz2
-        Node(
-            package="rviz2",
-            executable="rviz2",
-            name="rviz2",
-            output="screen",
-            arguments=["-d", rviz_config],
-            parameters=[
-                {"use_sim_time": False},
-            ],
+        # 5. Start SLAM Toolbox without RViz
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(slam_launch_file),
+            launch_arguments={
+                'slam_params_file': slam_params_file,
+                'use_sim_time': 'false',
+            }.items(),
         ),
-
     ])
