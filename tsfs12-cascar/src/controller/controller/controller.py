@@ -11,7 +11,7 @@ from cascar_msgs.msg import CarCommand, CarMeasurement, Path
 from geometry_msgs.msg import Pose2D
 from std_msgs.msg import String
 
-from pursuit import *
+from .pursuit import *
 
 
 class Controller(Node):
