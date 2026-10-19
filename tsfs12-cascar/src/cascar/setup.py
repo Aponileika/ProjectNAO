@@ -26,8 +26,9 @@ setup(
         ),
         (
             str(Path("share") / package_name / "config"),
-            list(map(str(, Path("config").globl("*"))),
+            list(map(str, Path("config").glob("*"))),
         ),
+
     ],
     install_requires=["setuptools", "numpy", "smbus2", "serial"],
     zip_safe=True,
