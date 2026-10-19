@@ -22,7 +22,7 @@ class Diagnostics(Node):
 
         self.pos_sub = self.create_subscription(
             Pose2D,
-            "pose",
+            "qualisys_pose",
             self.pos_callback,
             10
         )
