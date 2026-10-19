@@ -24,6 +24,10 @@ setup(
             str(Path("share") / package_name / "rviz"),
             list(map(str, Path("rviz").glob("*"))),
         ),
+	(
+            str(Path("share") / package_name / "config"),
+            list(map(str(, Path("config").globl("*"))),
+	),
     ],
     install_requires=["setuptools", "numpy", "smbus2", "serial"],
     zip_safe=True,
