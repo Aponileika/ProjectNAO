@@ -48,16 +48,17 @@ def generate_launch_description():
 
         # Publish the initial odom -> base transform using Qualisys.
         Node(
-            package="cascar",
-            executable="qualisys_odom",
-            name="qualisys_odom",
-            output="screen",
+            package='qualisys',
+            executable='qualisys',
+            name='qualisys_odom',
+            output='screen',
             parameters=[{
-                "qualisys_ip": "192.168.0.50",
-                "body_index": 2,
-                "publish_rate": 20.0,
+                'qualisys_ip': '192.168.0.50',
+                'body_index': 2,
+                'publish_rate': 20.0,
             }],
         ),
+
 
         # SLAM Toolbox.
         Node(
