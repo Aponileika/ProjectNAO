@@ -23,7 +23,7 @@ class Controller(Node):
         self.get_logger().info("Control Node Started")
 
         #Publish steering commands
-        self.car_publisher_ = self.create_publisher(ActuatorCommand, "car_command", 1)
+        self.car_publisher_ = self.create_publisher(ActuatorCommand, "turtle/actuator_command", 1)
 
         #Subscribe to measurements
         self.pos_sub = self.create_subscription(
