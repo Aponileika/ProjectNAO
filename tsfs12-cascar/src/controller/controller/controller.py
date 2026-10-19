@@ -34,7 +34,7 @@ class Controller(Node):
         )
 
         self.path_sub = self.create_subscription(
-            String,
+            Path,
             "planned_path",
             self.path_callback,
             10
