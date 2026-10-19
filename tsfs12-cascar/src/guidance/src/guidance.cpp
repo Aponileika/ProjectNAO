@@ -25,7 +25,7 @@ public:
         path_publisher = this->create_publisher<cascar_msgs::msg::Path>("planned_path", 1);
 
         pos_sub = this->create_subscription<geometry_msgs::msg::Pose2D>(
-            "pose", 10,
+            "qualisys_pose", 10,
             std::bind(&Guidance::pos_callback, this, std::placeholders::_1)
         );
 
