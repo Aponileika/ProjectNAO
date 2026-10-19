@@ -1,7 +1,7 @@
-
 #!/usr/bin/env python3
 
 import asyncio
+import math
 import threading
 import time
 
@@ -10,7 +10,8 @@ import qtm
 import rclpy
 
 from rclpy.node import Node
-from geometry_msgs.msg import Pose2D
+from geometry_msgs.msg import Pose2D, TransformStamped
+from tf2_ros import TransformBroadcaster
 
 
 class QualisysPoseNode(Node):
@@ -18,10 +19,20 @@ class QualisysPoseNode(Node):
     def __init__(self):
         super().__init__("qualisys_pose_node")
 
-        # ROS 2 parameters
         self.declare_parameter("qualisys_ip", "192.168.0.50")
         self.declare_parameter("body_index", 2)
         self.declare_parameter("publish_rate", 20.0)
+
+        # TF frame configuration
+        self.declare_parameter("odom_frame", "odom")
+        self.declare_parameter("base_frame", "turtle/base_link")
+
+        # Qualisys pose corresponding to the desired origin.
+        # Set these to the measured Qualisys coordinates of the
+        # robot's starting position if the robot should start at 0,0,0.
+        self.declare_parameter("origin_x", 0.0)
+        self.declare_parameter("origin_y", 0.0)
+        self.declare_parameter("origin_theta", 0.0)
 
         self.qualisys_ip = str(
             self.get_parameter("qualisys_ip").value
@@ -33,27 +44,43 @@ class QualisysPoseNode(Node):
             self.get_parameter("publish_rate").value
         )
 
+        self.odom_frame = str(
+            self.get_parameter("odom_frame").value
+        )
+        self.base_frame = str(
+            self.get_parameter("base_frame").value
+        )
+
+        self.origin_x = float(
+            self.get_parameter("origin_x").value
+        )
+        self.origin_y = float(
+            self.get_parameter("origin_y").value
+        )
+        self.origin_theta = float(
+            self.get_parameter("origin_theta").value
+        )
+
         if self.publish_rate <= 0.0:
             raise ValueError("publish_rate must be positive")
 
         if self.body_index < 0:
             raise ValueError("body_index cannot be negative")
 
-        # Never exceed 20 Hz
         self.publish_rate = min(self.publish_rate, 20.0)
         self.min_period = 1.0 / self.publish_rate
 
-        # Publisher
-        self.publisher = self.create_publisher(
+        self.pose_publisher = self.create_publisher(
             Pose2D,
-            "qualisys_pose",
+            "/qualisys_pose",
             10
         )
+
+        self.tf_broadcaster = TransformBroadcaster(self)
 
         self.last_publish_time = 0.0
         self.stop_event = threading.Event()
 
-        # Run QTM's asyncio client in a separate thread
         self.qtm_thread = threading.Thread(
             target=self.run_qtm,
             daemon=True
@@ -64,8 +91,8 @@ class QualisysPoseNode(Node):
             f"Connecting to Qualisys at {self.qualisys_ip}"
         )
         self.get_logger().info(
-            f"Publishing Pose2D on /qualisys_pose "
-            f"at a maximum of {self.publish_rate:.1f} Hz"
+            f"Publishing /qualisys_pose and TF "
+            f"{self.odom_frame} -> {self.base_frame}"
         )
 
     def run_qtm(self):
@@ -92,7 +119,6 @@ class QualisysPoseNode(Node):
             if self.stop_event.is_set():
                 return
 
-            # Limit packet processing and publishing rate
             now = time.monotonic()
 
             if now - self.last_publish_time < self.min_period:
@@ -103,25 +129,60 @@ class QualisysPoseNode(Node):
             if not body or self.body_index >= len(body):
                 return
 
-            # Extract selected rigid body's position and orientation
             pos, euler = body[self.body_index]
 
-            # Convert millimeters to meters and degrees to radians
-            x = pos.x / 1000.0
-            y = pos.y / 1000.0
-            theta = np.deg2rad(euler[2])
+            # Qualisys position: millimeters -> meters.
+            raw_x = pos.x / 1000.0
+            raw_y = pos.y / 1000.0
 
-            # Do not publish NaN or infinite values
-            if not np.all(np.isfinite([x, y, theta])):
+            # Qualisys Euler angles: degrees -> radians.
+            raw_theta = math.radians(euler[2])
+
+            if not np.all(
+                np.isfinite([raw_x, raw_y, raw_theta])
+            ):
                 return
 
-            # Create and publish Pose2D
-            msg = Pose2D()
-            msg.x = float(x)
-            msg.y = float(y)
-            msg.theta = float(theta)
+            # Express the pose relative to the configured origin.
+            dx = raw_x - self.origin_x
+            dy = raw_y - self.origin_y
 
-            self.publisher.publish(msg)
+            c = math.cos(self.origin_theta)
+            s = math.sin(self.origin_theta)
+
+            x = c * dx + s * dy
+            y = -s * dx + c * dy
+
+            theta = math.atan2(
+                math.sin(raw_theta - self.origin_theta),
+                math.cos(raw_theta - self.origin_theta)
+            )
+
+            # Publish the relative planar pose.
+            pose_msg = Pose2D()
+            pose_msg.x = float(x)
+            pose_msg.y = float(y)
+            pose_msg.theta = float(theta)
+
+            self.pose_publisher.publish(pose_msg)
+
+            # Broadcast odom -> base_link.
+            tf_msg = TransformStamped()
+            tf_msg.header.stamp = self.get_clock().now().to_msg()
+            tf_msg.header.frame_id = self.odom_frame
+            tf_msg.child_frame_id = self.base_frame
+
+            tf_msg.transform.translation.x = float(x)
+            tf_msg.transform.translation.y = float(y)
+            tf_msg.transform.translation.z = 0.0
+
+            tf_msg.transform.rotation.x = 0.0
+            tf_msg.transform.rotation.y = 0.0
+            tf_msg.transform.rotation.z = math.sin(theta / 2.0)
+            tf_msg.transform.rotation.w = math.cos(theta / 2.0)
+
+            self.tf_broadcaster.sendTransform(tf_msg)
+
             self.last_publish_time = now
 
         try:
