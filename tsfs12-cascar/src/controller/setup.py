@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-		'pursuit = controller.controller:main',
+		'controller = controller.controller:main',
         ],
     },
 )
