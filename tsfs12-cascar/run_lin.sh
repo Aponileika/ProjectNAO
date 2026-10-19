@@ -17,7 +17,7 @@ else
       -v /run/user/$(id -u)/pulse:/run/user/$(id -u)/pulse \
       -v "$(pwd):/cascar_ws" \
       --device=/dev/i2c-1 \
-      --device=/dev/arduino \
+      --device=/dev/ttyUSB1:/dev/arduino \
       --device=/dev/rplidar \
       --device=/dev/snd \
       --hostname cascar \
