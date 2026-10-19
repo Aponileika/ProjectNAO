@@ -1,0 +1,8 @@
+# Request
+std_msgs/Header header
+float32[] x      # The x-coordinates of the points
+float32[] y      # The y-coordinates of the points
+---
+# Response
+bool success      # Whether the motion planner successfully received and processed the path
+string message    # Any additional information or error messages
