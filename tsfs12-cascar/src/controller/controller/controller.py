@@ -7,7 +7,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from cascar_msgs.msg import CarCommand, CarMeasurement, Path
+from cascar_msgs.msg import CarCommand, CarMeasurement, Path, ActuatorCommand
 from geometry_msgs.msg import Pose2D
 from std_msgs.msg import String
 
@@ -23,7 +23,7 @@ class Controller(Node):
         self.get_logger().info("Control Node Started")
 
         #Publish steering commands
-        self.car_publisher_ = self.create_publisher(CarCommand, "car_command", 1)
+        self.car_publisher_ = self.create_publisher(ActuatorCommand, "car_command", 1)
 
         #Subscribe to measurements
         self.pos_sub = self.create_subscription(
@@ -103,12 +103,10 @@ class Controller(Node):
         speed_norm = v / self.vmax
         steer_norm = delta / self.delta_max
 
-        max_speed = 100.0       #Actual command max
-        max_steer = 95.0  
-
-        msg = CarCommand()
-        msg.speed = speed_norm * max_speed
-        msg.steer = steer_norm * max_steer
+        msg = ActuatorCommand()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.throttle = speed_norm
+        msg.steering = steer_norm = delta / self.delta_max
 
         self.car_publisher_.publish(msg)
 
