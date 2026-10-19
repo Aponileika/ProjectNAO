@@ -32,7 +32,6 @@ class PurePursuit():
         self.ktheta=ktheta
 
         self.path = []
-        self.subpath = 0
         self.curr_node = 0
 
         self.distanceTraveled = 0
@@ -40,9 +39,9 @@ class PurePursuit():
 
     def control_signal(self, x, y, theta, dt, debug = False):
         if self.path:
-            self.get_next_node(x, y, theta, self.path[self.subpath][self.curr_node][3])
+            self.get_next_node(x, y, theta, self.path[self.curr_node][3])
 
-            dir = self.path[self.subpath][self.curr_node][3]
+            dir = self.path[self.curr_node][3]
             ed, ey, etheta = self.get_errors(x, y, theta)
 
             # Stop Integral Winding (?)
@@ -54,7 +53,7 @@ class PurePursuit():
                 ed = 0
                 self.ied = 0
             
-            v = self.path[self.subpath][0][3] * self.vmax * min(0.9*cos(etheta) + 0.1, self.kx * ed + self.kix * self.ied)
+            v = self.path[0][3] * self.vmax * min(0.9*cos(etheta) + 0.1, self.kx * ed + self.kix * self.ied)
             self.v = self.value_limit(v, -self.vmax, self.vmax)
 
             # # Adjust heading error for reverse
@@ -63,12 +62,12 @@ class PurePursuit():
             # etheta = atan2(sin(etheta), cos(etheta))
 
             # Steering (NO velocity division!)
-            dtheta = (self.path[self.subpath][self.curr_node+1][2] - self.path[self.subpath][self.curr_node][2])
+            dtheta = (self.path[self.curr_node+1][2] - self.path[self.curr_node][2])
             cs = ((atan2(sin(dtheta), cos(dtheta))) / 
-                  (self.path[self.subpath][self.curr_node+1][4] - self.path[self.subpath][self.curr_node][4]))
-            u0 = atan(self.L * cs)
+                  (self.path[self.curr_node+1][4] - self.path[self.curr_node][4]))
+            u0 = 0
             u = (u0 - 
-                 (1 - etheta**2 / 6 + etheta**4 / 120 - etheta**6 / 5040) * self.ky * atan(self.ky * ey) - 
+                 atan(self.ky * ey) - 
                  self.ktheta * etheta)
             delta = atan(u * self.L)
             self.delta = self.value_limit(delta, -self.delta_max, self.delta_max)
@@ -88,14 +87,14 @@ class PurePursuit():
    
 
     def get_errors(self, x, y, theta):
-        dx  = self.path[self.subpath][self.curr_node][0] - x 
-        dy  = self.path[self.subpath][self.curr_node][1] - y
+        dx  = self.path[self.curr_node][0] - x 
+        dy  = self.path[self.curr_node][1] - y
 
-        ed =  self.path[self.subpath][-1][4] - self.distanceTraveled
+        ed =  self.path[-1][4] - self.distanceTraveled
         #ex =  dx*cos(self.theta) + dy*sin(self.theta)
         ey = -dx*sin(theta) + dy*cos(theta)
 
-        etheta  = self.path[self.subpath][self.curr_node][2] - theta
+        etheta  = self.path[self.curr_node][2] - theta
         etheta = atan2(sin(etheta), cos(etheta))
 
         return (ed, ey, etheta)
@@ -105,22 +104,16 @@ class PurePursuit():
         #Check if the old node is behind the robot
         #PREVENTS BACKWARDS MOVEMENT
         if self.curr_node != len(self.path) - 1:
-            dx  = self.path[self.subpath][self.curr_node][0] - x 
-            dy  = self.path[self.subpath][self.curr_node][1] - y
+            dx  = self.path[self.curr_node][0] - x 
+            dy  = self.path[self.curr_node][1] - y
 
             ex = dx*cos(theta) + dy*sin(theta)
 
             if dir * ex < 0:
                 self.curr_node += 1
-                self.distanceTraveled = self.path[self.subpath][self.curr_node][4]
-
-                if self.curr_node >= len(self.path[self.subpath]):
-                    self.curr_node = 0
-                    self.subpath += 1
-                    self.ied = 0
-                    if self.subpath >= len(self.path):
-                        self.subpath = 0
-                        self.path = []                    
+                self.distanceTraveled = self.path[self.curr_node][4]
+                if self.curr_node > =len(self.path):
+                    self.path = []            
 
 
     def value_limit(self, value, min, max):
@@ -140,26 +133,4 @@ class PurePursuit():
 
 
     def set_path(self, path):
-        if not path:
-            self.path = []
-
-        result = []
-        current = [path[0]]
-
-        for i in range(1, len(path)):
-            row = path[i]
-
-            if row[3] != path[i - 1][3]:
-                # Include the switching row in the current sublist
-                current.append(row)
-                result.append(current)
-
-                # Start the next sublist with that same row
-                current = [row]
-            else:
-                current.append(row)
-
-        if current:
-            result.append(current)
-
-        self.path = result
+        self.path = path
