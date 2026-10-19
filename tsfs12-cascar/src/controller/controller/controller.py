@@ -65,7 +65,7 @@ class Controller(Node):
 
         self.infoCounter = 0
         self.last_time = None
-        self.timer = self.create_timer(self.Ts, self.control_loop)
+        self.timer = self.create_timer(self.Ts, self.main_loop)
 
 
     def pos_callback(self, msg):
