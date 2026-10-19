@@ -26,10 +26,12 @@ class PurePursuit():
         #Control system data
         self.v = 0
         self.delta = 0
-        self.kx=kx,
-        self.kix = kix,
-        self.ky=ky,
+        self.kx=kx
+        self.kix = kix
+        self.ky=ky
         self.ktheta=ktheta
+
+        self.ied = 0
 
         self.path = []
         self.subpath = 0
