@@ -140,8 +140,14 @@ class PurePursuit():
 
 
     def set_path(self, path):
+        # Handle an empty path safely
         if not path:
             self.path = []
+            self.subpath = 0
+            self.curr_node = 0
+            self.distanceTraveled = 0
+            self.ied = 0
+            return
 
         result = []
         current = [path[0]]
@@ -154,7 +160,7 @@ class PurePursuit():
                 current.append(row)
                 result.append(current)
 
-                # Start the next sublist with that same row
+                # Start the next subpath at the switching row
                 current = [row]
             else:
                 current.append(row)
@@ -163,3 +169,7 @@ class PurePursuit():
             result.append(current)
 
         self.path = result
+        self.subpath = 0
+        self.curr_node = 0
+        self.distanceTraveled = 0
+        self.ied = 0
