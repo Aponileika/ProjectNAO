@@ -32,20 +32,20 @@ def generate_launch_description():
         Node(
             package="controller",
             namespace=agent_name,
-            executable="pursuit",
-            name="pursuit",
+            executable="controller",
+            name="controller",
         ),
         Node(
-            package="pathPlanning",
+            package="guidance",
             namespace=agent_name,
-            executable="pathPlanning",
-            name="pathPlanning",
+            executable="guidance",
+            name="guidance",
         ),
         Node(
-            package="localization",
+            package="qualisys",
             namespace=agent_name,
-            executable="localization",
-            name="localization",
+            executable="qualisys",
+            name="qualisys",
         ),
         Node(
             package="diagnostic",
