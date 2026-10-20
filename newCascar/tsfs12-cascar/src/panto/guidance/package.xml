@@ -10,7 +10,7 @@
 
   <depend>rclcpp</depend>
   <depend>geometry_msgs</depend>
-  <depend>cascar_msgs</depend>
+  <depend>cascar_interfaces</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
