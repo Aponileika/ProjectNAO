@@ -106,8 +106,8 @@ class Controller(Node):
         msg = ActuatorCommand()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.throttle = speed_norm
-        msg.steering = steer_norm = delta / self.delta_max
-
+        msg.steering = steer_norm
+        
         self.car_publisher_.publish(msg)
 
 
