@@ -22,7 +22,7 @@ public:
     {
         RCLCPP_INFO(this->get_logger(), "Guidance Node Started");
 
-        path_publisher = this->create_publisher<cascar_msgs::msg::Path>("planned_path", 1);
+        path_publisher = this->create_publisher<cascar_interfaces::msg::Path>("planned_path", 1);
 
         pos_sub = this->create_subscription<geometry_msgs::msg::Pose2D>(
             "qualisys_pose", 10,
