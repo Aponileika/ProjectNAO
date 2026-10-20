@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            "navigation = navigation.localization:main",
+            "qualisys = navigation.qualisys:main",
         ],
     },
 )
