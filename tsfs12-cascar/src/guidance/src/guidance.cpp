@@ -5,7 +5,7 @@
 #include <cascar_msgs/msg/path.hpp>
 #include <cascar_msgs/msg/path_point.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
-#include <tf2/exceptions.h>
+#include <tf2/exceptions.hpp>
 #include <tf2/time.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
