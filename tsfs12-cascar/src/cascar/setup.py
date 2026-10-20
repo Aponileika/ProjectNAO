@@ -14,7 +14,11 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         (
             str(Path("share") / package_name / "launch"),
-            list(map(str, Path("launch").glob("*"))),
+            [
+                str(path)
+                for path in Path("launch").glob("*")
+                if path.is_file()
+            ],
         ),
         (
             str(Path("share") / package_name / "model"),
