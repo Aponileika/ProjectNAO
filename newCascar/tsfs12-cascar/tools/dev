@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_dir="$(cd -- "${script_dir}/.." && pwd)"
+compose_file="${repo_dir}/deploy/dev/compose.yaml"
+
+export DEV_UID="${DEV_UID:-$(id -u)}"
+export DEV_GID="${DEV_GID:-$(id -g)}"
+
+compose=(
+  docker compose
+  --file "${compose_file}"
+)
+
+usage() {
+  cat <<'EOF'
+Usage: tools/dev <command>
+
+Commands:
+  up      Build the image and start the development container
+  shell   Open an interactive shell in the running container
+  down    Stop and remove the development container
+EOF
+}
+
+case "${1:-}" in
+  up)
+    exec "${compose[@]}" up --detach --build
+    ;;
+  shell)
+    exec "${compose[@]}" exec dev bash
+    ;;
+  down)
+    exec "${compose[@]}" down
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,316 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+control_dir="${TMPDIR:-/tmp}/cascar-ssh-${UID}"
+mkdir -p "${control_dir}"
+chmod 700 "${control_dir}"
+
+ssh_options=(
+  -o ControlMaster=auto
+  -o ControlPersist=60
+  -o "ControlPath=${control_dir}/%C"
+)
+usage() {
+  cat <<'EOF'
+Usage:
+  tools/car pull IMAGE|ENV_FILE     # Download onto the laptop (online)
+  tools/car build IMAGE|ENV_FILE    # Build and load onto the laptop (online)
+  tools/car publish IMAGE|ENV_FILE  # Build and push for sharing (online)
+  tools/car deploy SSH_HOST ENV_FILE
+  tools/car lidar SSH_HOST on|off
+  tools/car status SSH_HOST
+  tools/car logs SSH_HOST
+
+Examples:
+  tools/car pull deploy/car/turtle.env
+  tools/car build deploy/car/turtle.env
+  tools/car publish registry.example/cascar-car:abc1234
+  tools/car deploy pi@turtle.local deploy/car/turtle.env
+  tools/car lidar pi@turtle.local off
+  tools/car logs pi@turtle.local
+EOF
+}
+
+require_args() {
+  local expected=$1
+  shift
+  if [[ $# -ne ${expected} ]]; then
+    usage >&2
+    exit 2
+  fi
+}
+
+# Accept an image reference or a car environment file. Compose parses the file;
+# never execute its contents as shell code. Paths ending in .env are always files,
+# so a typo cannot accidentally become a registry pull or build tag.
+image_argument() {
+  local value=$1
+  local resolved
+  if [[ -f "${value}" || "${value}" == *.env || "${value}" == *.env.example ]]; then
+    if [[ ! -f "${value}" ]]; then
+      echo "Environment file not found: ${value}" >&2
+      return 2
+    fi
+    resolved=$(docker compose --env-file "${value}" --project-name cascar \
+      --file "${repo_dir}/deploy/car/compose.yaml" --profile '*' config --images | sort -u)
+    if [[ -z "${resolved}" || "${resolved}" == *$'\n'* ]]; then
+      echo "Expected one shared CASCAR_IMAGE in the car configuration." >&2
+      return 2
+    fi
+    printf '%s\n' "${resolved}"
+  else
+    printf '%s\n' "${value}"
+  fi
+}
+
+command_name=${1:-}
+if [[ -z "${command_name}" ]]; then
+  usage >&2
+  exit 2
+fi
+shift
+
+case "${command_name}" in
+  help|--help|-h)
+    usage
+    ;;
+  pull)
+    require_args 1 "$@"
+    image=$(image_argument "$1")
+    docker pull --platform "${CASCAR_PLATFORM:-linux/arm64}" "${image}"
+    ;;
+  build|publish)
+    require_args 1 "$@"
+    image=$(image_argument "$1")
+    platform=${CASCAR_PLATFORM:-linux/arm64}
+    if ! builder_info=$(docker buildx inspect --bootstrap 2>&1); then
+      echo "Unable to inspect the active Docker buildx builder." >&2
+      printf '%s\n' "${builder_info}" >&2
+      exit 1
+    fi
+
+    supported_platforms=$(
+      printf '%s\n' "${builder_info}" \
+        | sed -n 's/^[[:space:]]*Platforms:[[:space:]]*//p' \
+        | tr ',' '\n' \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/\*$//'
+    )
+    if ! grep -Fxq "${platform}" <<< "${supported_platforms}"; then
+      supported_platforms_display=$(
+        printf '%s\n' "${supported_platforms}" \
+          | paste -sd, - \
+          | sed 's/,/, /g'
+      )
+      if [[ -z "${supported_platforms_display}" ]]; then
+        supported_platforms_display="none reported"
+      fi
+
+      cat >&2 <<EOF
+The active Docker buildx builder does not support ${platform}.
+Supported platforms: ${supported_platforms_display}
+
+For ARM64 builds from a Linux host, install QEMU emulation and refresh the
+builder:
+  docker run --privileged --rm tonistiigi/binfmt --install arm64
+  docker buildx inspect --bootstrap
+
+A native or remote builder that supports ${platform} can also be used. Set
+CASCAR_PLATFORM only when the target car uses a different architecture.
+EOF
+      exit 1
+    fi
+
+    output_option=--load
+    if [[ "${command_name}" == publish ]]; then
+      output_option=--push
+    fi
+    revision=$(git -C "${repo_dir}" rev-parse --short HEAD)
+    docker buildx build \
+      --platform "${platform}" \
+      --file "${repo_dir}/docker/car/Dockerfile" \
+      --build-arg "VCS_REF=${revision}" \
+      --tag "${image}" \
+      "${output_option}" \
+      "${repo_dir}"
+    ;;
+  deploy)
+    require_args 2 "$@"
+    ssh_host=$1
+    env_file=$2
+
+    if [[ ! -f "${env_file}" ]]; then
+      echo "Environment file not found: ${env_file}" >&2
+      exit 2
+    fi
+
+    local_stage=$(mktemp -d)
+    remote_stage=
+    cleanup() {
+      rm -rf -- "${local_stage}"
+      if [[ -n "${remote_stage}" ]]; then
+        ssh "${ssh_options[@]}" "${ssh_host}" "rm -rf -- '${remote_stage}'" || true
+      fi
+    }
+    trap cleanup EXIT
+    # Resolve with Compose rather than sourcing an environment file as shell code.
+    # Transfer the resolved configuration so laptop/car shell variables cannot
+    # cause the car to start a different image than the one we exported.
+    docker compose --env-file "${env_file}" --project-name cascar \
+      --file "${repo_dir}/deploy/car/compose.yaml" --profile '*' \
+      config > "${local_stage}/compose.yaml"
+    image=$(docker compose --file "${local_stage}/compose.yaml" \
+      --profile '*' config --images | sort -u)
+    if [[ -z "${image}" || "${image}" == *$'\n'* ]]; then
+      echo "Expected one shared CASCAR_IMAGE in the car configuration." >&2
+      exit 2
+    fi
+    if ! image_platform=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${image}"); then
+      echo "Image is not available on the laptop. While online, run one of:" >&2
+      echo "  tools/car pull ${env_file}   # Use a published image" >&2
+      echo "  tools/car build ${env_file}  # Build from this checkout" >&2
+      exit 1
+    fi
+
+    # Check connectivity and architecture before spending time exporting the image.
+    remote_arch=$(ssh "${ssh_options[@]}" "${ssh_host}" uname -m)
+    case "${remote_arch}" in
+      aarch64|arm64) target_platform=linux/arm64 ;;
+      x86_64) target_platform=linux/amd64 ;;
+      *) echo "Unsupported car architecture: ${remote_arch} (a 64-bit OS is required)" >&2; exit 1 ;;
+    esac
+    if [[ "${image_platform}" != "${target_platform}" ]]; then
+      echo "Image is ${image_platform}, but the car needs ${target_platform}." >&2
+      echo "Rebuild with CASCAR_PLATFORM=${target_platform} tools/car build ${image}" >&2
+      exit 1
+    fi
+
+    echo "Exporting ${image} for ${target_platform}..."
+    docker image save "${image}" | gzip -1 > "${local_stage}/image.tar.gz"
+    remote_stage=$(ssh "${ssh_options[@]}" "${ssh_host}" 'mktemp -d /tmp/cascar-deploy.XXXXXXXXXX')
+    # Keep the remote path safe to use in shell commands and scp destinations.
+    if [[ ! "${remote_stage}" =~ ^/tmp/cascar-deploy\.[a-zA-Z0-9]+$ ]]; then
+      remote_stage=
+      echo "Could not create a staging directory on the car." >&2
+      exit 1
+    fi
+    echo "Copying image and configuration to ${ssh_host}..."
+    scp "${ssh_options[@]}" \
+      "${local_stage}/image.tar.gz" \
+      "${local_stage}/compose.yaml" \
+      "${repo_dir}/deploy/car/cascar.service" \
+      "${ssh_host}:${remote_stage}/"
+    scp "${ssh_options[@]}" "${env_file}" "${ssh_host}:${remote_stage}/car.env"
+
+    # Load from a file so sudo can prompt on the terminal without corrupting an
+    # image stream. Complete loading and validation before touching the service.
+    ssh -t "${ssh_options[@]}" "${ssh_host}" "set -eu; cd '${remote_stage}'; "'
+      sudo -v
+      sudo docker compose version
+      sudo docker image load --input image.tar.gz
+      sudo docker compose --env-file car.env --file compose.yaml --profile "*" config --quiet
+      sudo install -d -m 0755 /etc/cascar
+      sudo install -m 0644 compose.yaml /etc/cascar/compose.yaml
+      sudo install -m 0600 car.env /etc/cascar/car.env
+      sudo install -m 0644 cascar.service /etc/systemd/system/cascar.service
+      sudo systemctl daemon-reload
+      sudo systemctl enable cascar.service
+      sudo systemctl restart cascar.service
+      sudo docker compose --env-file /etc/cascar/car.env \
+        --project-directory /etc/cascar --profile "*" ps
+    '
+    echo "Deployed ${image} to ${ssh_host}."
+    ;;
+  lidar)
+    require_args 2 "$@"
+    ssh_host=$1
+    lidar_state=$2
+
+    case "${lidar_state}" in
+      on)
+        remote_action='if sudo grep -q \
+            "^[[:space:]]*COMPOSE_PROFILES=" \
+            /etc/cascar/car.env; then
+          sudo sed -i \
+            "s/^[[:space:]]*COMPOSE_PROFILES=.*/COMPOSE_PROFILES=lidar/" \
+            /etc/cascar/car.env
+        else
+          printf "%s\n" "COMPOSE_PROFILES=lidar" | \
+            sudo tee -a /etc/cascar/car.env >/dev/null
+        fi
+        sudo docker compose \
+          --env-file /etc/cascar/car.env \
+          --project-directory /etc/cascar \
+          --profile lidar \
+          up --detach lidar'
+        ;;
+      off)
+        remote_action='sudo docker compose \
+          --env-file /etc/cascar/car.env \
+          --project-directory /etc/cascar \
+          --profile lidar \
+          exec --no-TTY lidar bash -c '\''
+            source "/opt/ros/${ROS_DISTRO}/setup.bash"
+            source /opt/cascar/setup.bash
+            timeout 5 ros2 service call \
+              "/${CASCAR_NAME}/stop_motor" \
+              std_srvs/srv/Empty "{}"
+          '\'' || true
+        if sudo grep -q \
+            "^[[:space:]]*COMPOSE_PROFILES=" \
+            /etc/cascar/car.env; then
+          sudo sed -i \
+            "s/^[[:space:]]*COMPOSE_PROFILES=.*/COMPOSE_PROFILES=/" \
+            /etc/cascar/car.env
+        else
+          printf "%s\n" "COMPOSE_PROFILES=" | \
+            sudo tee -a /etc/cascar/car.env >/dev/null
+        fi
+        sudo docker compose \
+          --env-file /etc/cascar/car.env \
+          --project-directory /etc/cascar \
+          stop lidar || true
+        sudo docker compose \
+          --env-file /etc/cascar/car.env \
+          --project-directory /etc/cascar \
+          rm --force lidar'
+        ;;
+      *)
+        echo "LiDAR state must be 'on' or 'off'" >&2
+        exit 2
+        ;;
+    esac
+
+    ssh "${ssh_options[@]}" "${ssh_host}" "true"
+
+    # Updating the optional service does not restart the core car service.
+    ssh -t "${ssh_options[@]}" "${ssh_host}" "
+      set -eu
+      sudo -v
+      if ! sudo test -f /etc/cascar/car.env; then
+        echo \"Car is not deployed: /etc/cascar/car.env does not exist\" >&2
+        exit 2
+      fi
+      ${remote_action}
+      sudo docker compose \\
+        --env-file /etc/cascar/car.env \\
+        --project-directory /etc/cascar \\
+        --profile lidar \\
+        ps
+    "
+    ;;
+  status)
+    require_args 1 "$@"
+    ssh -t "${ssh_options[@]}" "$1" \
+      "sudo systemctl status cascar.service --no-pager"
+    ;;
+  logs)
+    require_args 1 "$@"
+    ssh -t "${ssh_options[@]}" "$1" \
+      "sudo docker compose --env-file /etc/cascar/car.env --project-directory /etc/cascar --profile lidar logs --follow --tail=100"
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

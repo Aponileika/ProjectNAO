@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<!-- Expand with xacro; the project launch does this automatically. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="cascar_tiger">
+  <xacro:include filename="cascar.xacro" />
+  <xacro:cascar prefix="tiger/" body_color="1.0 0.5 0.0 1.0" />
+</robot>

@@ -1,0 +1,16 @@
+[Unit]
+Description=CASCAR ROS 2 container
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/etc/cascar
+ExecStart=/usr/bin/docker compose --env-file /etc/cascar/car.env up --detach --pull never
+ExecStop=/usr/bin/docker compose --env-file /etc/cascar/car.env --profile * down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

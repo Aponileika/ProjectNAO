@@ -1,0 +1,53 @@
+services:
+  cascar:
+    image: ${CASCAR_IMAGE:?Set CASCAR_IMAGE in car.env}
+    pull_policy: never
+    container_name: cascar-${CASCAR_NAME:?Set CASCAR_NAME in car.env}
+    network_mode: host
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 3s
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_AUTOMATIC_DISCOVERY_RANGE: "SUBNET"
+    command:
+      - ros2
+      - launch
+      - cascar_hardware
+      - hardware_launch.py
+      - agent_name:=${CASCAR_NAME}
+      - arduino_port:=/dev/arduino
+    devices:
+      - /dev/arduino:/dev/arduino
+      - /dev/i2c-1:/dev/i2c-1
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+
+  lidar:
+    profiles: [lidar]
+    image: ${CASCAR_IMAGE:?Set CASCAR_IMAGE in car.env}
+    pull_policy: never
+    container_name: cascar-${CASCAR_NAME:?Set CASCAR_NAME in car.env}-lidar
+    network_mode: host
+    restart: unless-stopped
+    init: true
+    # ROS launch uses a 5 second signal-escalation window, and the driver can
+    # block for 2 seconds while waiting for scan data. Leave time for its motor
+    # shutdown command to reach the hardware before Docker sends SIGKILL.
+    stop_grace_period: 15s
+    environment:
+      CASCAR_NAME: ${CASCAR_NAME}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_AUTOMATIC_DISCOVERY_RANGE: "SUBNET"
+    command:
+      - ros2
+      - launch
+      - cascar_hardware
+      - lidar_launch.py
+      - agent_name:=${CASCAR_NAME}
+      - lidar_model:=${CASCAR_LIDAR_MODEL:-a2m8}
+      - lidar_port:=/dev/rplidar
+    devices:
+      - /dev/rplidar:/dev/rplidar
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
