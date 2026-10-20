@@ -1,0 +1,28 @@
+[agent]
+# Should be: "turtle", "panther", "rooster", "grasshopper", "tiger", or
+# "arcticfox" depending on which car is being used. Can be overwritten by using
+# the `agent_name` launch argument in the demo launch files.
+name = "turtle"
+
+[qualisys]
+# Should be set to true if using Qualisys motion capture in Visionen.
+use = false
+
+[rviz]
+# Default rviz2 file to use for visualizations
+file = "src/cascar/rviz/default.rviz"
+
+[simulator_demo]
+# Whether to launch the manual control interface for the simulator.
+launch_manual_control = true
+
+[state_estimator_demo]
+# Whether to visualize the state estimation results using rviz2.
+visualization = true
+# Whether to also launch the manual control interface.
+launch_manual_control = true
+# Whether to use the Qualisys motion capture system for the state estimation. If
+# this is `true`, the `qualisys.use` parameter must also be set to `true`.
+use_qualisys = false
+# Whether to use a constant acceleration model for the state estimation.
+use_constant_acceleration = true
