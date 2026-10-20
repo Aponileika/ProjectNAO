@@ -1,0 +1,13 @@
+*
+!docker
+!docker/car
+!docker/car/**
+!src
+!src/provided
+!src/provided/cascar_hardware
+!src/provided/cascar_hardware/**
+!src/provided/cascar_interfaces
+!src/provided/cascar_interfaces/**
+!src/third_party
+!src/third_party/sllidar_ros2
+!src/third_party/sllidar_ros2/**

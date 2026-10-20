@@ -1,0 +1,64 @@
+/**:
+  ros__parameters:
+    # Simulator-only bicycle model and motion limits.
+    # These speed and acceleration limits are not enforced on the physical car.
+    wheelbase_m: 0.275
+    max_speed_mps: 1.0
+    max_acceleration_mps2: 1.0
+
+    # Simulator steering command scale/limit and physical-car joint-state limit.
+    # On the physical car this only clamps the published steering angle;
+    # actual steering commands use max_steering_percent below.
+    max_steering_angle_rad: 0.35
+
+    # Command watchdog timeout used by both simulator and physical-car driver.
+    command_timeout_sec: 0.25
+
+    # Physical-car command mapping: normalized effort [-1, 1] is multiplied
+    # by these percentages before being sent to the Arduino.
+    max_throttle_percent: 100.0
+    max_steering_percent: 95.0
+
+    # Physical-car wheel encoder conversion to measured velocity.
+    wheel_radius_m: 0.039
+    wheel_magnets: 10
+
+    # Physical-car published steering joint positions:
+    # angle = offset + commanded_steering_percent * scale.
+    # These values describe the steering angle; they do not trim or otherwise
+    # change the commands sent to the physical steering actuator.
+    steering_offset_rad: 0.02840205
+    steering_scale_rad_per_percent: 0.00335285
+
+    # Physical-car startup steering sweep.
+    startup_steering_sweep_enabled: true
+    startup_steering_sweep_percent: 30.0
+    startup_settle_sec: 2.0
+    startup_steering_hold_sec: 1.0
+
+    # Sensor and simulator output uncertainty.
+    wheel_velocity_variance: 0.01
+    sample_frequency_hz: 100.0
+    angular_velocity_variance: 0.01
+    linear_acceleration_variance: 0.1
+    odom_position_variance: 0.01
+    odom_yaw_variance: 0.01
+    odom_linear_velocity_variance: 0.01
+    odom_yaw_rate_variance: 0.01
+
+    # State-estimator tuning.
+    update_rate_hz: 100.0
+    initial_covariance: [2.0, 2.0, 0.1, 0.1, 0.001, 0.01]
+    process_noise_rates: [0.1, 0.1, 0.1, 0.1, 0.1, 0.00001]
+    qualisys_position_variance: 0.0001
+    qualisys_orientation_variance: 0.0001
+    imu_yaw_rate_variance: 0.01
+    measurement_gate_confidence: 0.95
+    use_accelerometer_stop_detection: true
+    stop_window_size: 10
+    stop_acceleration_threshold: 0.6
+    stop_confidence_samples: 3
+    stale_wheel_seconds: 2.0
+    stop_threshold_margin: 0.05
+    stopped_velocity_variance: 0.01
+    qualisys_wait_log_period_sec: 5.0

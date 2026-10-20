@@ -1,0 +1,11 @@
+# Put this file in /etc/udev/rules.d
+#
+# Instructions from : https://www.sparkfun.com/news/2332
+# 1. dmesg for device mount information
+# 2. udevadm info -a -p  $(udevadm info -q path -n /dev/ttyUSB0) for details
+# 3. udevadm trigger -- to activate rules without reboot, for debuggning
+
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE:="0777", SYMLINK+="rplidar"
+
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", MODE:="0777", SYMLINK+="arduino"
+
