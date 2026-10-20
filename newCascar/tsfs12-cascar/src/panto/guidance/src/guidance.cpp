@@ -65,12 +65,12 @@ private:
 
     void publish_path()
     {
-        cascar_msgs::msg::Path msg;
+        cascar_interfaces::msg::Path msg;
         msg.points.reserve(path.size());
 
         for (const auto &point : path)
         {
-            cascar_msgs::msg::PathPoint path_point;
+            cascar_interfaces::msg::PathPoint path_point;
             path_point.x = point[0];
             path_point.y = point[1];
             path_point.theta = point[2];
