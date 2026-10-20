@@ -31,7 +31,11 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             "slam_params_file",
-            default_value="/tmp/cascar_slam.yaml",
+            default_value=os.path.join(
+                get_package_share_directory("cascar"),
+                "config",
+                "cascar_slam.yaml",
+            ),
             description="Path to SLAM Toolbox parameters",
         ),
 
