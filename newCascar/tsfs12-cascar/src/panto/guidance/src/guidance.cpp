@@ -103,7 +103,7 @@ private:
         publish_path();
     }
 
-    rclcpp::Publisher<cascar_msgs::msg::Path>::SharedPtr path_publisher;
+    rclcpp::Publisher<cascar_interfaces::msg::Path>::SharedPtr path_publisher;
     rclcpp::Subscription<geometry_msgs::msg::Pose2D>::SharedPtr pos_sub;
     rclcpp::Subscription<geometry_msgs::msg::Pose2D>::SharedPtr goal_sub;
     rclcpp::TimerBase::SharedPtr timer;
