@@ -12,7 +12,7 @@ def generate_launch_description():
     basics_launch = PathJoinSubstitution([
         FindPackageShare("cascar"),
         "launch",
-        "cascar_launch.py"
+        "project_launch.py"
     ])
 
     return LaunchDescription([
