@@ -3,8 +3,8 @@
 xhost +local:root
 
 # If the container already exists, restart it.
-if docker container inspect cascar >/dev/null 2>&1; then
-    docker start -ai cascar
+if docker container inspect panto >/dev/null 2>&1; then
+    docker start -ai panto
 else
     docker run -it \
       --net=host \
@@ -20,6 +20,6 @@ else
       --device=/dev/ttyUSB1:/dev/arduino \
       --device=/dev/rplidar \
       --device=/dev/snd \
-      --hostname cascar \
+      --hostname panto \
       --name cascar cascar:latest
 fi
