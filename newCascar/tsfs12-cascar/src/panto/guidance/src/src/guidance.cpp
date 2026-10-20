@@ -1,7 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/pose2_d.hpp>
-#include <cascar_msgs/msg/path.hpp>
-#include <cascar_msgs/msg/path_point.hpp>
+#include <cascar_interfaces/msg/pose2_d.hpp>
+#include <cascar_interfaces/msg/path.hpp>
+#include <cascar_interfaces/msg/path_point.hpp>
 
 #include "guidance/hybridAStar.hpp"
 

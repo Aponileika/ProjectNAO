@@ -7,8 +7,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from cascar_msgs.msg import CarCommand, CarMeasurement, Path
-from cascar_interfaces.msg import ActuatorCommand
+from cascar_interfaces.msg import ActuatorCommand, Path, PathPoint
 from geometry_msgs.msg import Pose2D
 from std_msgs.msg import String
 

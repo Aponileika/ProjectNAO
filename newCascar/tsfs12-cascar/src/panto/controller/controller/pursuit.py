@@ -4,13 +4,6 @@ from time import sleep
 import json
 import numpy as np
 
-import rclpy
-from rclpy.node import Node
-from rclpy.time import Time
-from cascar_msgs.msg import CarCommand, CarMeasurement, Path
-from geometry_msgs.msg import Pose2D
-from std_msgs.msg import String
-
 
 class PurePursuit():
     def __init__(self, vmax: float, delta_max:float, kx: float, kix: float, ky: float, ktheta:float):

@@ -12,6 +12,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
         "msg/ActuatorCommand.msg"
+        "msg/PathPoint.msg"
+        "msg/path.msg"
         "srv/ResetPose.srv"
         DEPENDENCIES geometry_msgs std_msgs
         )
