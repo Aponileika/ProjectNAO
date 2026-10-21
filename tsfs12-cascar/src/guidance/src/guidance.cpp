@@ -5,7 +5,6 @@
 #include <cascar_msgs/msg/path.hpp>
 #include <cascar_msgs/msg/path_point.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
-#include <tf2/time.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
@@ -151,7 +150,7 @@ private:
         try
         {
             map_from_odom = tf_buffer->lookupTransform(
-                map_frame, "odom", tf2::TimePointZero);
+                map_frame, "odom", rclcpp::Time(0));
         }
         catch (const std::runtime_error & ex)
         {
