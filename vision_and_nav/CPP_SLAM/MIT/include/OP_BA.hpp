@@ -8,6 +8,7 @@
 #include "CM_Camera.hpp"
 #include "Config.hpp"
 #include "IMU_PreIntegration.hpp"
+#include "LG_Logging.hpp"
 #include "MAP_Mapping.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 
@@ -336,49 +337,143 @@ struct OP_EigenValueBiasResidual
      * One residual per consecutive KF, with all of them shared gyrobias. Initialize
      * the gyrobias to 0
      * */
-    Eigen::Vector3d _BearingRight, _BearingLeft;
     Eigen::Matrix3d BodyToCameraRotation;
     Eigen::Matrix3d CameraToBodyRotation;
     Eigen::Matrix3d _GyroJacobian;
     Eigen::Quaterniond PreintegratedRotation;
     Eigen::Matrix3d Sxx, Syy, Szz, Sxy, Syz, Szx;
 
-    OP_EigenValueBiasResidual(const Eigen::Matrix3d& DeltaR, const Eigen::Matrix3d& GyroJacobian, const Eigen::Vector3d& BearingLeft, 
-            const Eigen::Vector3d& BearingRight, const Eigen::Matrix4d* TBS, 
+    OP_EigenValueBiasResidual(const Eigen::Matrix3d& DeltaR, const Eigen::Matrix3d& GyroJacobian,  const Eigen::Matrix4d* TBS, 
             const Eigen::Matrix3d& _Sxx, const Eigen::Matrix3d& _Syy, const Eigen::Matrix3d& _Szz, const Eigen::Matrix3d& _Sxy, 
             const Eigen::Matrix3d& _Syz, const Eigen::Matrix3d& _Szx) : 
-        _GyroJacobian(GyroJacobian), _BearingLeft(BearingLeft), 
-        _BearingRight(BearingRight), BodyToCameraRotation(TBS->block<3,3>(0,0)), PreintegratedRotation(Eigen::Quaterniond(DeltaR)),
+        _GyroJacobian(GyroJacobian), BodyToCameraRotation(TBS->block<3,3>(0,0)), PreintegratedRotation(Eigen::Quaterniond(DeltaR)),
         Sxx(_Sxx), Syy(_Syy), Szz(_Szz), Sxy(_Sxy), Syz(_Syz), Szx(_Szx)
     {
         CameraToBodyRotation = BodyToCameraRotation.transpose();
     }
 
-    template <typename T> bool operator()(
-            // arguments
-            const T* const GyroBias,
-            T* residuals)
-    {
-        Eigen::Map<const Eigen::Matrix<T, 3, 1>> _GyroBias(GyroBias);
+    template <typename T>
+        bool operator()(
+                const T* const GyroBias, 
+                T* Residuals) const
+        {
+            const Eigen::Map<const Eigen::Matrix<T, 3, 1>> Bias(GyroBias);
 
-        const Sophus::SO3<T> BiasCorrectedGamma = PreintegratedRotation * Sophus::SO3<T>::exp(_GyroJacobian * GyroBias);
-        const Eigen::Matrix<T, 3, 3> CameraRotation = BodyToCameraRotation * BiasCorrectedGamma * CameraToBodyRotation;
+            const Sophus::SO3<T> Gamma(
+                    PreintegratedRotation.template cast<T>());
 
-        const Eigen::Matrix<T, 1, 3> Row1 = CameraRotation.rows(0);
-        const Eigen::Matrix<T, 1, 3> Row2 = CameraRotation.rows(1);
-        const Eigen::Matrix<T, 1, 3> Row3 = CameraRotation.rows(2);
+            const Sophus::SO3<T> BiasCorrectedGamma =
+                Gamma * Sophus::SO3<T>::exp(
+                        _GyroJacobian.template cast<T>() * Bias);
 
-        return true;
-    }
+            const Eigen::Matrix<T, 3, 3> CameraRotation =
+                BodyToCameraRotation.template cast<T>() *
+                BiasCorrectedGamma.matrix() *
+                CameraToBodyRotation.template cast<T>();
 
-    static ceres::CostFunction* Create(const Eigen::Matrix3d& DeltaR, const Eigen::Matrix3d& GyroJacobian, const Eigen::Vector3d& BearingLeft, 
-            const Eigen::Vector3d BearingRight, const Eigen::Matrix4d* TBS,
+            const Eigen::Matrix<T, 1, 3> R0 = CameraRotation.row(0);
+            const Eigen::Matrix<T, 1, 3> R1 = CameraRotation.row(1);
+            const Eigen::Matrix<T, 1, 3> R2 = CameraRotation.row(2);
+
+            const Eigen::Matrix<T, 3, 3> SxxT = Sxx.template cast<T>();
+            const Eigen::Matrix<T, 3, 3> SyyT = Syy.template cast<T>();
+            const Eigen::Matrix<T, 3, 3> SzzT = Szz.template cast<T>();
+            const Eigen::Matrix<T, 3, 3> SxyT = Sxy.template cast<T>();
+            const Eigen::Matrix<T, 3, 3> SyzT = Syz.template cast<T>();
+            const Eigen::Matrix<T, 3, 3> SzxT = Szx.template cast<T>();
+
+            Eigen::Matrix<T, 3, 3> M;
+
+            M(0, 0) =
+                (R2 * SyyT * R2.transpose())(0, 0)
+                - T(2) * (R2 * SyzT * R1.transpose())(0, 0)
+                + (R1 * SzzT * R1.transpose())(0, 0);
+
+            M(0, 1) =
+                (R2 * SyzT * R0.transpose())(0, 0)
+                - (R2 * SxyT * R2.transpose())(0, 0)
+                - (R1 * SzzT * R0.transpose())(0, 0)
+                + (R1 * SzxT * R2.transpose())(0, 0);
+
+            M(0, 2) =
+                (R2 * SxyT * R1.transpose())(0, 0)
+                - (R2 * SyyT * R0.transpose())(0, 0)
+                - (R1 * SzxT * R1.transpose())(0, 0)
+                + (R1 * SyzT * R0.transpose())(0, 0);
+
+            M(1, 1) =
+                (R0 * SzzT * R0.transpose())(0, 0)
+                - T(2) * (R0 * SzxT * R2.transpose())(0, 0)
+                + (R2 * SxxT * R2.transpose())(0, 0);
+
+            M(1, 2) =
+                (R0 * SzxT * R1.transpose())(0, 0)
+                - (R0 * SyzT * R0.transpose())(0, 0)
+                - (R2 * SxxT * R1.transpose())(0, 0)
+                + (R2 * SxyT * R0.transpose())(0, 0);
+
+            M(2, 2) =
+                (R1 * SxxT * R1.transpose())(0, 0)
+                - T(2) * (R0 * SxyT * R1.transpose())(0, 0)
+                + (R0 * SyyT * R0.transpose())(0, 0);
+
+            // M is symmetric.
+            M(1, 0) = M(0, 1);
+            M(2, 0) = M(0, 2);
+            M(2, 1) = M(1, 2);
+
+            // Calculate lambda_min(M).
+            // Characteristic polynomial:
+            // lambda^3 + b*lambda^2 + c*lambda + d = 0
+            // Using closed form solution to be differentiable with jets
+            const T b = -M(0, 0) - M(1, 1) - M(2, 2);
+
+            const T c =
+                M(0, 0) * M(1, 1) +
+                M(0, 0) * M(2, 2) +
+                M(1, 1) * M(2, 2) -
+                M(0, 1) * M(0, 1) -
+                M(0, 2) * M(0, 2) -
+                M(1, 2) * M(1, 2);
+
+            const T d =
+                M(1, 1) * M(0, 2) * M(0, 2) +
+                M(0, 0) * M(1, 2) * M(1, 2) +
+                M(2, 2) * M(0, 1) * M(0, 1) -
+                M(0, 0) * M(1, 1) * M(2, 2) -
+                T(2) * M(0, 1) * M(1, 2) * M(0, 2);
+
+            const T s =
+                T(2) * b * b * b -
+                T(9) * b * c +
+                T(27) * d;
+
+            const T discriminantTerm =
+                b * b - T(3) * c;
+
+            const T t = T(4) * discriminantTerm *
+                discriminantTerm *
+                discriminantTerm;
+
+            const T alpha = ceres::acos(s / ceres::sqrt(t));
+            const T beta = alpha / T(3);
+
+            const T r = T(0.5) * ceres::sqrt(t);
+            const T w = ceres::pow(r, 1.0 / 3.0);
+
+            Residuals[0] =
+                (-b - T(2) * w * ceres::cos(beta)) / T(3);
+
+            return true;
+        }
+
+    static ceres::CostFunction* Create(const Eigen::Matrix3d& DeltaR, const Eigen::Matrix3d& GyroJacobian, const Eigen::Matrix4d* TBS,
             const Eigen::Matrix3d& _Sxx, const Eigen::Matrix3d& _Syy, const Eigen::Matrix3d& _Szz, const Eigen::Matrix3d& _Sxy, 
             const Eigen::Matrix3d& _Syz, const Eigen::Matrix3d& _Szx
             )
     {
-        return new ceres::AutoDiffCostFunction<OP_EigenValueBiasResidual, 3, 1>(
-                new OP_EigenValueBiasResidual(DeltaR, GyroJacobian, BearingLeft, BearingRight, TBS,
+        return new ceres::AutoDiffCostFunction<OP_EigenValueBiasResidual, 1, 3>(
+                new OP_EigenValueBiasResidual(DeltaR, GyroJacobian, TBS,
                                               _Sxx, _Syy, _Szz, _Sxy, _Syz, _Szx
                     ));
     }
@@ -401,6 +496,6 @@ bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap,
         typeKeyFrameQueue* KeyFrameQueue);
 
 // This local map should just be all global kfs and mappoints at this point.
-bool OP_EigenValueSolveGyroBias(typeLocalMap& LocalMap);
+bool OP_EigenValueSolveGyroBias(typeGlobalMap& LocalMap);
 
 #endif //__OP_BA_HPP_

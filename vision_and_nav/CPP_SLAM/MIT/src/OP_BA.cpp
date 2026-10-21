@@ -2,6 +2,7 @@
 #include "CM_Camera.hpp"
 #include "Config.hpp"
 #include "LG_Logging.hpp"
+#include "PANTOVEC_PantoVector.hpp"
 
 /*see https://ceres-solver.googlesource.com/ceres-solver/+/master/examples/simple_bundle_adjuster.cc
  *and https://ceres-solver.readthedocs.io/latest/nnls_tutorial.html
@@ -351,6 +352,104 @@ bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap, typeKeyFrameQueue* K
     }
 
     LG_Log(LogSeverity::DBG, "%s\n", Summary.FullReport().c_str());
+    return true;
+}
+
+bool OP_EigenValueSolveGyroBias(typePantoVector<typeKeyFrame>& KeyFrames, const typePantoVector<typePantoMapPoint>& MapPoints)
+{
+    static const fp64 cx = OPStereoIntrinsics.cx;
+    static const fp64 cy = OPStereoIntrinsics.cy;
+
+    static const fp64 fx = OPStereoIntrinsics.fx;
+    static const fp64 fy = OPStereoIntrinsics.fx;
+
+    ceres::Problem Problem;
+
+    //Index i contains bearing pairs i -> i + 1
+    std::vector<std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>>> BearingPairs;
+
+    ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+
+    for(const typeKeyFrame& KF : KeyFrames)
+    {
+        LG_Log(LogSeverity::DATA, "Unoptimized gyrobias value: (%lf, %lf, %lf)", KF.PreIntegrationData.GyroBias.x(), 
+                KF.PreIntegrationData.GyroBias.y(), KF.PreIntegrationData.GyroBias.z());
+    }
+
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+
+        Eigen::Matrix3d Sxx = Eigen::Matrix3d::Zero();
+        Eigen::Matrix3d Syy = Eigen::Matrix3d::Zero();
+        Eigen::Matrix3d Szz = Eigen::Matrix3d::Zero(); 
+        Eigen::Matrix3d Sxy = Eigen::Matrix3d::Zero();
+        Eigen::Matrix3d Syz = Eigen::Matrix3d::Zero(); 
+        Eigen::Matrix3d Szx = Eigen::Matrix3d::Zero();
+
+        const u64 NextKFID = KeyFrame.NextKFID;
+        if(NextKFID == PANTO_ID_NOT_SET)
+        {
+            break;
+        }
+        const typeKeyFrame& NextKeyFrame = KeyFrames[NextKFID];
+
+        BearingPairs.push_back({});
+        BearingPairs.back().reserve(KeyFrame.Points.ImagePoints.active_size());
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+            if(MapPointID == PANTO_ID_NOT_SET)
+            {
+                continue;
+            }
+            if(MapPoints[MapPointID].KeyFrameIDs.contains(NextKFID))
+            {
+                const Eigen::Vector2d& ImagePoint2 = NextKeyFrame.Points.ImagePoints[MapPoints[MapPointID].ImagePointIDs[NextKFID]].Point;
+                BearingPairs.back().push_back(
+                            std::pair(
+                                Eigen::Vector3d((ImagePoint.Point.x() - cx) / fx, (ImagePoint.Point.y() - cy) / fy, 1).normalized(), 
+                                Eigen::Vector3d((ImagePoint2.x() - cx) / fx, (ImagePoint2.y() - cy) / fy, 1).normalized()));
+            }
+        }
+
+        for(const std::pair<Eigen::Vector3d, Eigen::Vector3d>& BearingPair : BearingPairs.back())
+        {
+            const Eigen::Vector3d& First = BearingPair.first;
+            const Eigen::Vector3d& Second = BearingPair.first;
+            const fp64 X = First.x();
+            const fp64 Y = First.y();
+            const fp64 Z = First.z();
+            
+            const Eigen::Matrix3d OuterProductSecond = Second * Second.transpose();
+            Sxx += X * X * OuterProductSecond;
+            Syy += Y * Y * OuterProductSecond;
+            Szz += Z * Z * OuterProductSecond;
+            Sxy += X * Y * OuterProductSecond;
+            Syz += Y * Z * OuterProductSecond;
+            Szx += Z * X * OuterProductSecond;
+        }
+
+        Problem.AddResidualBlock(
+                OP_EigenValueBiasResidual::Create(
+                NextKeyFrame.PreIntegrationData.DeltaR,
+                NextKeyFrame.PreIntegrationData.JRg,
+                TBS,
+                Sxx,
+                Syy,
+                Szz,
+                Sxy,
+                Syz,
+                Szx), 
+                lossfunc,
+                KeyFrame.PreIntegrationData.GyroBias.data());
+
+    }
+    for(const typeKeyFrame& KF : KeyFrames)
+    {
+        LG_Log(LogSeverity::DATA, "Optimized gyrobias value: (%lf, %lf, %lf)", KF.PreIntegrationData.GyroBias.x(), 
+                KF.PreIntegrationData.GyroBias.y(), KF.PreIntegrationData.GyroBias.z());
+    }
+
     return true;
 }
 
