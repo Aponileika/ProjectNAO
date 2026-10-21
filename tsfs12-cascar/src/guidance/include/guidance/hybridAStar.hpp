@@ -14,7 +14,8 @@ class HybridAStar {
 
         std::vector<PathItem> search(
             Pose const& start, Pose const& goal, std::vector<std::vector<double>> const& map = {},
-            std::array<double, 2> xlim = {0,0}, std::array<double,2> ylim = {0,0});
+            std::array<double, 2> xlim = {0,0}, std::array<double,2> ylim = {0,0},
+            double resolution = 0.05);
 
 
     private:

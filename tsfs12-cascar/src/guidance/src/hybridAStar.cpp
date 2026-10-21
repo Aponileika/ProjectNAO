@@ -351,7 +351,7 @@ void HybridAStar::addDubinPaths(std::vector<PathItem> & path) {
 
 std::vector<PathItem> HybridAStar::search(
     Pose const& start, Pose const& goal, std::vector<std::vector<double>> const& map,
-    std::array<double, 2> xlim, std::array<double,2> ylim) {
+    std::array<double, 2> xlim, std::array<double,2> ylim, double resolution) {
 
     std::cout << "Entered search function!" << std::endl;
 
@@ -376,6 +376,13 @@ std::vector<PathItem> HybridAStar::search(
 
         return path;
     }
+
+    if (!std::isfinite(resolution) || resolution <= 0.0) {
+        std::cerr << "Invalid map resolution" << std::endl;
+        return {};
+    }
+    xy_resolution = resolution;
+    map_resolution = resolution;
 
     double minX {xlim[0]};
     double minY {ylim[0]};
