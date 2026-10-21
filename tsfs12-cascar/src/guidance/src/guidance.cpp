@@ -5,7 +5,6 @@
 #include <cascar_msgs/msg/path.hpp>
 #include <cascar_msgs/msg/path_point.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
-#include <tf2/exceptions.hpp>
 #include <tf2/time.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -21,6 +20,7 @@
 #include <functional>
 #include <cmath>
 #include <string>
+#include <stdexcept>
 
 using Pose = std::array<double, 3>;
 using Path = std::vector<std::array<double, 5>>;
@@ -153,7 +153,7 @@ private:
             map_from_odom = tf_buffer->lookupTransform(
                 map_frame, "odom", tf2::TimePointZero);
         }
-        catch (const tf2::TransformException & ex)
+        catch (const std::runtime_error & ex)
         {
             RCLCPP_WARN(
                 this->get_logger(),
