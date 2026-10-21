@@ -24,6 +24,7 @@ class Controller(Node):
 
         #Publish steering commands
         self.car_publisher_ = self.create_publisher(ActuatorCommand, "turtle/actuator_command", 1)
+        self.car_publisher2_ = self.create_publisher(ActuatorCommand, "actuator_command", 1)
 
         #Subscribe to measurements
         self.pos_sub = self.create_subscription(
@@ -109,6 +110,7 @@ class Controller(Node):
         msg.steering = steer_norm
         
         self.car_publisher_.publish(msg)
+        self.car_publisher2_.publish(msg)
 
 
     def main_loop(self):

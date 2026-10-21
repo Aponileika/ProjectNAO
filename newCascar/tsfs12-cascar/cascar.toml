@@ -2,11 +2,11 @@
 # Should be: "turtle", "panther", "rooster", "grasshopper", "tiger", or
 # "arcticfox" depending on which car is being used. Can be overwritten with
 # the `agent_name` launch argument.
-name = "panther"
+name = "turtle"
 
 [backend]
 # Data source used by the project launch file: "simulator" or "vehicle".
-type = "simulator"
+type = "vehicle"
 
 [qualisys]
 # Should be set to true if using Qualisys motion capture in Visionen.
@@ -14,6 +14,6 @@ use = false
 
 [rviz]
 # Whether to start rviz2 with the project launch file.
-enabled = true
+enabled = false
 # Default rviz2 file to use for visualizations.
 file = "default.rviz"

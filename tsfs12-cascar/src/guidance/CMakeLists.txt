@@ -11,6 +11,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(cascar_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
 add_executable(guidance
   src/guidance.cpp
@@ -29,6 +30,7 @@ ament_target_dependencies(guidance
   nav_msgs
   tf2_ros
   cascar_msgs
+  nav_msgs
 )
 
 install(TARGETS
