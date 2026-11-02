@@ -1,6 +1,7 @@
 #include "../include/OP_BA.hpp"
 #include "CM_Camera.hpp"
 #include "Config.hpp"
+#include "IMU_PreIntegration.hpp"
 #include "LG_Logging.hpp"
 #include "PANTOVEC_PantoVector.hpp"
 
@@ -1757,4 +1758,200 @@ void __OP_BuildProblemLocalVisualOnly(typeLocalMap& LocalMap, ceres::Problem& Pr
             }
         }
     }
+}
+
+bool OP_MAPGyroVelocityBiasGravityAndVelocity( typePantoVector<typeKeyFrame>& LocalMap)
+{
+    // Chat gpt
+    using Matrix9 = Eigen::Matrix<fp64, 9, 9>;
+
+    std::vector<typeKeyFrame*> KeyFrames;
+    KeyFrames.reserve(LocalMap.active_size());
+
+    for(typeKeyFrame& KeyFrame : LocalMap)
+    {
+        KeyFrames.push_back(&KeyFrame);
+    }
+
+    if(KeyFrames.size() < 2)
+    {
+        return false;
+    }
+
+    ceres::Problem Problem;
+
+    /*
+     * Keep optimization variables in separate contiguous storage so their
+     * addresses remain valid for the lifetime of the Ceres problem.
+     */
+    std::vector<Eigen::Vector3d> Velocities(KeyFrames.size());
+
+    for(std::size_t i = 0; i < KeyFrames.size(); ++i)
+    {
+        Velocities[i] = KeyFrames[i]->NavigationState.Velocity;
+    }
+
+    Eigen::Vector3d GyroBias =
+        KeyFrames.front()->NavigationState.GyroBias;
+
+    Eigen::Vector3d AccelBias =
+        KeyFrames.front()->NavigationState.AccelorometerBias;
+
+    /*
+     * Identity means the initial gravity estimate is +Z. Replace this with
+     * your current gravity-direction estimate if one exists.
+     *
+     * Eigen stores quaternion coefficients as x,y,z,w.
+     */
+    Eigen::Quaterniond GravityWorldZAlignmentRotation =
+        Eigen::Quaterniond::Identity();
+
+    Problem.AddParameterBlock(GyroBias.data(), 3);
+    Problem.AddParameterBlock(AccelBias.data(), 3);
+
+    Problem.AddParameterBlock(
+        GravityWorldZAlignmentRotation.coeffs().data(),
+        4);
+
+    Problem.SetManifold(
+        GravityWorldZAlignmentRotation.coeffs().data(),
+        new ceres::EigenQuaternionManifold);
+
+    for(Eigen::Vector3d& Velocity : Velocities)
+    {
+        Problem.AddParameterBlock(Velocity.data(), 3);
+    }
+
+    for(std::size_t i = 0; i + 1 < KeyFrames.size(); ++i)
+    {
+        typeKeyFrame& KeyFrame = *KeyFrames[i];
+        typeKeyFrame& KeyFrameNext = *KeyFrames[i + 1];
+
+        /*
+         * This assumes that a keyframe stores the preintegration from its
+         * previous keyframe to itself.
+         */
+        const typePreIntegrationData& PreIntegrationData =
+            KeyFrameNext.PreIntegrationData;
+
+        if(PreIntegrationData.DeltaT <= 0.0)
+        {
+            LG_Log(
+                LogSeverity::ERROR,
+                "[IMU MAP] Invalid preintegration interval\n");
+
+            return false;
+        }
+
+        /*
+         * Covariance ordering:
+         *
+         * [rotation, velocity, position, gyro bias, accel bias]
+         *
+         * This factor has only the first nine residuals.
+         */
+        Matrix9 Covariance9 =
+            PreIntegrationData.Covariance.topLeftCorner<9, 9>();
+
+        /*
+         * Avoid numerical LLT failures from extremely small eigenvalues.
+         */
+        Covariance9.diagonal().array() += 1e-12;
+
+        const Eigen::LLT<Matrix9> LLT(Covariance9);
+
+        if(LLT.info() != Eigen::Success)
+        {
+            LG_Log(
+                LogSeverity::ERROR,
+                "[IMU MAP] Covariance LLT failed for KF pair "
+                "%llu -> %llu\n",
+                static_cast<unsigned long long>(KeyFrame.ID),
+                static_cast<unsigned long long>(KeyFrameNext.ID));
+
+            return false;
+        }
+
+        const Matrix9 SqrtInfo =
+            LLT.matrixL()
+                .solve(Matrix9::Identity());
+
+        /*
+         * These must be body-to-world poses. Change only these four lines
+         * if your navigation-state member names differ.
+         */
+        const Eigen::Matrix3d& Rwb =
+            KeyFrame.NavigationState.Rwb;
+
+        const Eigen::Matrix3d& RwbNext =
+            KeyFrameNext.NavigationState.Rwb;
+
+        const Eigen::Vector3d& Position =
+            KeyFrame.NavigationState.Position;
+
+        const Eigen::Vector3d& PositionNext =
+            KeyFrameNext.NavigationState.Position;
+
+        ceres::CostFunction* CostFunction =
+            OP_MAPGyroVelocityBiasGravityAndVelocity::Create(
+                Rwb,
+                RwbNext,
+                Position,
+                PositionNext,
+                PreIntegrationData.DeltaT,
+                PreIntegrationData.DeltaPosition,
+                PreIntegrationData.DeltaVelocity,
+                PreIntegrationData.DeltaR,
+                PreIntegrationData.GyroBias,
+                PreIntegrationData.AccelBias,
+                PreIntegrationData.JPg,
+                PreIntegrationData.JPa,
+                PreIntegrationData.JVg,
+                PreIntegrationData.JVa,
+                PreIntegrationData.JRg,
+                SqrtInfo);
+
+        Problem.AddResidualBlock(
+            CostFunction,
+            nullptr,
+            Velocities[i].data(),
+            Velocities[i + 1].data(),
+            GravityWorldZAlignmentRotation.coeffs().data(),
+            GyroBias.data(),
+            AccelBias.data());
+    }
+
+    ceres::Solver::Options Options;
+    Options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    Options.linear_solver_type = ceres::DENSE_NORMAL_CHOLESKY;
+    Options.max_num_iterations = 30;
+    Options.function_tolerance = 1e-8;
+    Options.gradient_tolerance = 1e-10;
+    Options.parameter_tolerance = 1e-10;
+    Options.minimizer_progress_to_stdout = false;
+
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+
+    if(!Summary.IsSolutionUsable())
+    {
+        LG_Log( LogSeverity::ERROR,
+            "[IMU MAP] Optimization failed: %s\n", Summary.BriefReport().c_str());
+
+        return false;
+    }
+
+    /*
+     * Commit the shared biases and individual velocities.
+     */
+    for(std::size_t i = 0; i < KeyFrames.size(); ++i)
+    {
+        KeyFrames[i]->NavigationState.Velocity = Velocities[i];
+
+        KeyFrames[i]->NavigationState.GyroBias = GyroBias;
+
+        KeyFrames[i]->NavigationState.AccelorometerBias = AccelBias;
+    }
+
+    return true;
 }
