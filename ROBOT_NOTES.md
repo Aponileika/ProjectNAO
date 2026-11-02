@@ -281,6 +281,17 @@ Stock NAOqi gait, no app tuning, no burst gait:
   standing should run with the balancer on. Not yet wired into the app's
   handshake, celebrate wave or dance.
 
+### Open for `…319`
+
+- **Every reboot re-flags all 23 joints** (`LimitsTest` / `MotionHalLimitError`),
+  so the robot is limp until `ALDiagnosis._clearActiveDiagnosis()` runs.
+  `wake_up()` should clear it itself — but only when every flag is that kind.
+- **Charging is unconfirmed.** It ran flat on 2026-11-02 (42% → 2% → off over
+  ~40 min of testing) while plugged in, reading −0.91 A. One reading earlier
+  showed +1.15 A, so the charger or its connection is suspect.
+- Ignore the left sonar; offer the stock gait in the app; put the whole-body
+  balancer into the handshake, celebrate wave and dance.
+
 So `config.json` now targets this robot: `burst_gait` false, `torso_wy` 0.0.
 The hardcoded walk tuning in `app_window.py` (MaxStepX 0.020 etc.) is still the
 `…344` set and is likely unnecessary here.
