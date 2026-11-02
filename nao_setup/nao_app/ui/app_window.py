@@ -6,6 +6,7 @@ import math
 import Queue
 from nao_app.ui.widgets import make_card, make_btn, BG, FG, ACCENT, SUCCESS, ERROR, WARN, CARD_BG, BTN_BG, BTN_FG
 from nao_app.backend import persona
+from nao_app.backend.nao_connection import wake_up, stiffen_body
 
 # Where the robot's wandering speech comes from.  Phrase banks are the
 # scripted lines in backend/persona.py; the local model writes its own.
@@ -1276,8 +1277,7 @@ class NaoAppWindow(object):
                         try:
                             if not self.conn.motion.robotIsWakeUp():
                                 self._set_status("Waking up for posture...")
-                            self.conn.motion.wakeUp()
-                            self.conn.motion.setStiffnesses("Body", 1.0)
+                            wake_up(self.conn.motion, self.conn.memory)
                         except Exception as e:
                             print("[Posture] wake-up warning: %s" % e)
                     if name in ("Sit", "SitRelax", "Crouch"):
@@ -1306,7 +1306,7 @@ class NaoAppWindow(object):
             return
         try:
             if self.conn.motion:
-                self.conn.motion.wakeUp()
+                wake_up(self.conn.motion, self.conn.memory)
             if self.conn.posture:
                 self.conn.posture.goToPosture("StandInit", 0.5)
 
@@ -1865,7 +1865,7 @@ class NaoAppWindow(object):
                     self._seeking = False
                     return
             else:
-                self.conn.motion.wakeUp()
+                wake_up(self.conn.motion, self.conn.memory)
                 if self.conn.posture:
                     self.conn.posture.goToPosture("StandInit", 0.5)
 
@@ -1889,7 +1889,7 @@ class NaoAppWindow(object):
                     # Legs must actually be at full stiffness before walking — a
                     # partially relaxed leg is the classic cause of a collapse a
                     # few steps in.
-                    try: self.conn.motion.setStiffnesses("Body", 1.0)
+                    try: stiffen_body(self.conn.motion, self.conn.memory, 1.0)
                     except Exception: pass
                     # NOTE: setSmartStiffnessEnabled() is deliberately NOT used
                     # here.  It lets NAOqi lower stiffness on joints it thinks
@@ -3323,7 +3323,7 @@ class NaoAppWindow(object):
             try:
                 # Stiffness first: stopMove may have relaxed the walk engine,
                 # and setAngles on a limp arm does nothing.
-                motion.setStiffnesses("Body", 1.0)
+                stiffen_body(motion, self.conn.memory, 1.0)
                 time.sleep(0.2)
             except Exception as e:
                 print("[Celebrate] stiffness error: %s" % e)
@@ -3343,7 +3343,7 @@ class NaoAppWindow(object):
         if motion:
             try:
                 # Ensure stiffness is on before moving
-                motion.setStiffnesses("Body", 1.0)
+                stiffen_body(motion, self.conn.memory, 1.0)
                 time.sleep(0.2)
                 # Victory wave: alternate arm raises
                 for _ in range(2):

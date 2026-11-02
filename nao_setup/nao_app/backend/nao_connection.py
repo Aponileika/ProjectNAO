@@ -1,6 +1,61 @@
 import socket
 from nao_app.config import _make_proxy
 
+
+def powerable_joints(motion, memory):
+    """Body joints whose position sensor reads inside the joint's limits.
+
+    ALMotion refuses to stiffen a joint it believes is past its mechanical
+    stop, and a single refusal makes setStiffnesses("Body", ...) apply to
+    nothing at all.  On BodyId ALDR1312N090319 the RWristYaw sensor reads
+    ~50 deg beyond its limit with the wrist physically centred, so every
+    whole-body wake-up silently left the robot limp.  ALMotion.getAngles()
+    clamps to the limits, so the raw ALMemory value is the only way to see it.
+
+    The margin is wide on purpose.  A relaxed joint posed by hand sits a few
+    hundredths past its stop (RHipPitch -1.59 against -1.535 in a hand-set
+    crouch), and leaving a hip unpowered for that tips the robot on its face.
+    A broken sensor is off by far more: RWristYaw reads 0.7-1.1 rad out."""
+    names = motion.getBodyNames("Body")
+    if memory is None:
+        return names
+    limits = motion.getLimits("Body")
+    raw = memory.getListData(["Device/SubDeviceList/%s/Position/Sensor/Value" % n
+                              for n in names])
+    ok, out = [], []
+    for n, lim, pos in zip(names, limits, raw):
+        if pos is None or lim[0] - 0.3 <= pos <= lim[1] + 0.3:
+            ok.append(n)
+        else:
+            out.append("%s=%+.2f" % (n, pos))
+    if out:
+        print("[Stiffness] left unpowered, sensor outside limits: %s" % ", ".join(out))
+    return ok
+
+
+def stiffen_body(motion, memory, value=1.0):
+    joints = powerable_joints(motion, memory)
+    motion.setStiffnesses(joints, value)
+    if value <= 0 or max(motion.getStiffnesses(joints)) > 0:
+        return
+    # One refused joint voids the whole call.  Go joint by joint so only the
+    # joint ALMotion actually refuses stays limp.
+    refused = []
+    for j in joints:
+        motion.setStiffnesses(j, value)
+        if motion.getStiffnesses(j)[0] <= 0:
+            refused.append(j)
+    print("[Stiffness] ALMotion refused: %s" % (", ".join(refused) or "none"))
+
+
+def wake_up(motion, memory):
+    """wakeUp() that works when one joint's sensor is out of range.
+
+    Stiffening the usable joints first marks the robot awake, so wakeUp()
+    then has nothing left to do and cannot trip over the bad joint."""
+    stiffen_body(motion, memory, 1.0)
+    motion.wakeUp()
+
 class NaoConnectionManager(object):
     def __init__(self):
         self.ip = None

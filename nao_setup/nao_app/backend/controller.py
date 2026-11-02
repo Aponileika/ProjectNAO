@@ -10,6 +10,7 @@ except ImportError:
     HAS_PYGAME = False
 
 from nao_app.config import _clamp, _lerp
+from nao_app.backend.nao_connection import wake_up
 
 class GamepadController(object):
     def __init__(self, proxies, ui_callbacks=None):
@@ -114,8 +115,7 @@ class GamepadController(object):
         motion = self.get_proxy("motion")
         if motion is not None:
             try:
-                motion.wakeUp()
-                motion.setStiffnesses("Body", 1.0)
+                wake_up(motion, self.get_proxy("memory"))
                 motion.setFallManagerEnabled(True)
                 motion.setMoveArmsEnabled(True, True)
                 motion.setMotionConfig([
@@ -240,8 +240,7 @@ class GamepadController(object):
             # reflex fired during a failed attempt it will have dropped
             # stiffness, leaving any later try under-powered.  The old code set
             # this up once before the loop.
-            for setup in (lambda: motion.wakeUp(),
-                          lambda: motion.setStiffnesses("Body", 1.0),
+            for setup in (lambda: wake_up(motion, self.get_proxy("memory")),
                           lambda: motion.setFallManagerEnabled(True),
                           lambda: motion.setMoveArmsEnabled(True, True)):
                 try:
