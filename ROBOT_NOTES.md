@@ -267,9 +267,19 @@ Stock NAOqi gait, no app tuning, no burst gait:
 - 0.5 m square with 90° turns, 0.2 m sidesteps both ways, 180° spin and back:
   all completed, overall peak roll 0.135 / pitch 0.165, odometry closes the
   square.
-- A left-arm wave (`angleInterpolation` on the left arm while standing) at the
-  end of that routine misbehaved; afterwards the posture classifier reported
-  `SitOnChair`. Details still to be written up.
+- **A left-arm wave knocked it over.** Arm raised overhead, then the elbow
+  swung through 1.0 rad every 0.35 s (~1.4 Hz), three times, with the
+  whole-body balancer off. It started fine, then the robot rocked harder with
+  each swing and fell (the posture classifier then said `SitOnChair`).
+  Walking is balanced by the walk engine; a bare `angleInterpolation` while
+  standing is not — the legs just hold their angles. The app's handshake,
+  celebrate wave and dance are the same kind of motion.
+- **Fix, measured: the whole-body balancer.** With `wbEnable(True)`,
+  `wbFootState("Fixed", "Legs")` and `wbEnableBalanceConstraint(True, "Legs")`
+  the identical fast wave peaked at a 0.124 rad tilt change and the robot
+  stayed up; a slow half-amplitude wave peaked at 0.030. Any arm motion while
+  standing should run with the balancer on. Not yet wired into the app's
+  handshake, celebrate wave or dance.
 
 So `config.json` now targets this robot: `burst_gait` false, `torso_wy` 0.0.
 The hardcoded walk tuning in `app_window.py` (MaxStepX 0.020 etc.) is still the

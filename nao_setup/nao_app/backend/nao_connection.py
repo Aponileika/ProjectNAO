@@ -1,4 +1,5 @@
 import socket
+import time
 from nao_app.config import _make_proxy
 
 
@@ -36,13 +37,20 @@ def powerable_joints(motion, memory):
 def stiffen_body(motion, memory, value=1.0):
     joints = powerable_joints(motion, memory)
     motion.setStiffnesses(joints, value)
-    if value <= 0 or max(motion.getStiffnesses(joints)) > 0:
+    if value <= 0:
+        return
+    # Read back only after the DCM has applied it: an immediate read returns
+    # the old 0.0 and made healthy joints (HeadYaw, first in the list) look
+    # refused.
+    time.sleep(0.1)
+    if max(motion.getStiffnesses(joints)) > 0:
         return
     # One refused joint voids the whole call.  Go joint by joint so only the
     # joint ALMotion actually refuses stays limp.
     refused = []
     for j in joints:
         motion.setStiffnesses(j, value)
+        time.sleep(0.1)
         if motion.getStiffnesses(j)[0] <= 0:
             refused.append(j)
     print("[Stiffness] ALMotion refused: %s" % (", ".join(refused) or "none"))
