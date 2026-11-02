@@ -4,7 +4,7 @@ Running log of findings about the physical robots and this codebase. Everything
 here was **measured**, not assumed. Add to it as you learn more; the point is
 that nobody has to rediscover the same things twice.
 
-Last updated: 2026-09-10
+Last updated: 2026-11-02
 
 ---
 
@@ -13,7 +13,8 @@ Last updated: 2026-09-10
 | BodyId | Version | State |
 |---|---|---|
 | `ALDR1312N090344` | V5.0 (naoH25) | **Walks, marginally.** Damaged/missing fingers. Needs `burst_gait`. |
-| `ALDR1312N090346` | V5.0 (naoH25) | **Motors will not energise.** See below. |
+| `ALDR1312N090346` | V5.0 (naoH25) | **Motors will not energise.** See below — probably the same fault as `…319`. |
+| `ALDR1312N090319` | V5.0 (naoH25) | **Walks well, stock gait.** Broken RWristYaw sensor and left sonar. See below. |
 
 They are visually identical — **put a physical sticker on one.** To check which
 one you are on, run `whichnao.py`, or read
@@ -208,6 +209,71 @@ Also boots and shuts down after ~1 minute on some attempts.
 Next thing to try: **reseat the battery.** A pack that is inserted but not fully
 latched fits all three symptoms — CPU runs off the charger, motors never get the
 current they need, brownout under load.
+
+**Update 2026-11-02:** robot `…319` showed exactly these symptoms and turned out
+to be one joint sensor reading outside its limits, not power (see below). Check
+`ALDiagnosis._getActiveDiagnosisSummary()` on this robot before opening it up.
+Note `…319`'s head is `ALDT1312N090346`; whether that is this robot's head is
+unknown.
+
+---
+
+## Robot `…319` — the good walker
+
+BodyId `ALDR1312N090319`, head `ALDT1312N090346`, NAOqi 2.1.4.13. First
+connected 2026-11-02 on Wi-Fi `dlink-82A4`, `192.168.0.104`.
+
+### It looked dead: one bad joint sensor
+
+`setStiffnesses("Body", 1.0)` was accepted and every joint stayed at 0.00,
+exactly like `…346`. It was not power — the robot runs fine on battery alone
+and all 45 boards report 0 errors. The chain of causes:
+
+1. **The RWristYaw sensor reads garbage**: −2.45, −2.22, −2.50, +2.91, +3.02 rad
+   on successive reads, against limits of ±1.824, with the wrist physically
+   centred.
+2. At boot ALDiagnosis's `LimitsTest_<joint>` / `MotionHalLimitError` then
+   flags **all 23** motorised joints, and ALMotion (`DiagnosisEffectEnabled`
+   true) refuses stiffness on all of them. `ALDiagnosis._clearActiveDiagnosis()`
+   lifts that until the next reboot.
+3. Even then, ALMotion refuses to stiffen RWristYaw, and **one refused joint
+   voids a whole-body `setStiffnesses` call** — so every `wakeUp()` /
+   `setStiffnesses("Body", …)` still left the robot limp. Stiffening chains
+   individually worked; `"Body"` and `"RArm"` did not.
+
+Fix in the app: `nao_connection.wake_up()` / `stiffen_body()` power only the
+joints whose raw sensor reads within 0.3 rad of their limits, then fall back to
+joint-by-joint if ALMotion still refuses the batch. **The margin matters**: with
+0.05 rad, a hand-posed crouch (RHipPitch −1.59 vs −1.535) left a hip unpowered
+and the robot pitched onto its face during the stand.
+
+Gotchas measured on this robot:
+- **`ElectricCurrent` sensors read 0.0 on every joint**, even when stiff and
+  resisting a hand. Zero current is not evidence of an unpowered motor.
+- **Standing up from sitting fails**: the posture planner goes via lying on the
+  back and pushes up off the hands, which needs the unpowered right wrist.
+  **Start from Crouch** — Crouch → StandInit worked every time.
+- **The left sonar reports phantom obstacles** at 0.16–0.32 m with nothing
+  there (right sonar reads clear). Wander mode turned on the spot ~25 times in
+  3 s. Wander is unusable on this robot until the left sonar is ignored.
+- New `ALProxy` connections fail on the first try roughly half the time over
+  this Wi-Fi; a retry works. Long-lived connections are stable.
+
+### Walking — healthy
+
+Stock NAOqi gait, no app tuning, no burst gait:
+- Straight 1 m: peak roll **0.079**, bounded for 12 s (`…344` reaches 0.35 and
+  falls in 4 s).
+- 0.5 m square with 90° turns, 0.2 m sidesteps both ways, 180° spin and back:
+  all completed, overall peak roll 0.135 / pitch 0.165, odometry closes the
+  square.
+- A left-arm wave (`angleInterpolation` on the left arm while standing) at the
+  end of that routine misbehaved; afterwards the posture classifier reported
+  `SitOnChair`. Details still to be written up.
+
+So `config.json` now targets this robot: `burst_gait` false, `torso_wy` 0.0.
+The hardcoded walk tuning in `app_window.py` (MaxStepX 0.020 etc.) is still the
+`…344` set and is likely unnecessary here.
 
 ---
 
