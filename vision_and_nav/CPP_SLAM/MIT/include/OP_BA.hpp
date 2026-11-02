@@ -227,8 +227,7 @@ struct OP_IMUResidual
 
         const T Dt = T(PreIntegration.DeltaT);
 
-        const Eigen::Matrix<T,3,1> GravityT =
-            Gravity.template cast<T>();
+        const Eigen::Matrix<T,3,1> GravityT = Gravity.template cast<T>();
 
         // --------------------------------
         // Bias correction
@@ -363,8 +362,7 @@ struct OP_EigenValueBiasResidual
                     PreintegratedRotation.template cast<T>());
 
             const Sophus::SO3<T> BiasCorrectedGamma =
-                Gamma * Sophus::SO3<T>::exp(
-                        _GyroJacobian.template cast<T>() * Bias);
+                Gamma * Sophus::SO3<T>::exp( _GyroJacobian.template cast<T>() * Bias);
 
             const Eigen::Matrix<T, 3, 3> CameraRotation =
                 BodyToCameraRotation.template cast<T>() *
@@ -479,6 +477,173 @@ struct OP_EigenValueBiasResidual
     }
 };
 
+struct OP_MAPGyroVelocityBiasGravityAndVelocity
+{
+    Eigen::Matrix3d Rwb;
+    Eigen::Matrix3d RwbNext;
+    Eigen::Vector3d Position;
+    Eigen::Vector3d PositionNext;
+    fp64 DeltaTime;
+
+    Eigen::Vector3d PreintegratedPosition;
+    Eigen::Vector3d PreintegratedVelocity;
+    Eigen::Matrix3d PreintegratedRotation;
+
+    Eigen::Vector3d PreintegrationGyroBias;
+    Eigen::Vector3d PreintegrationAccBias;
+
+    Eigen::Matrix3d JAlphaBg;
+    Eigen::Matrix3d JAlphaBa;
+    Eigen::Matrix3d JBetaBg;
+    Eigen::Matrix3d JBetaBa;
+    Eigen::Matrix3d JGammaBg;
+
+    Eigen::Matrix<fp64, 9, 9> SqrtInformation;
+
+    OP_MAPGyroVelocityBiasGravityAndVelocity(
+            const Eigen::Matrix3d& _Rwb,
+            const Eigen::Matrix3d& _RwbNext,
+            const Eigen::Vector3d& _Position,
+            const Eigen::Vector3d& _PositionNext,
+            const fp64 _DeltaTime,
+
+            const Eigen::Vector3d& _PreintegratedPosition,
+            const Eigen::Vector3d& _PreintegratedVelocity,
+            const Eigen::Matrix3d& _PreintegratedRotation,
+            const Eigen::Vector3d& _PreintegrationGyroBias,
+            const Eigen::Vector3d& _PreintegrationAccBias,
+
+            const Eigen::Matrix3d& _JAlphaBg,
+            const Eigen::Matrix3d& _JAlphaBa,
+            const Eigen::Matrix3d& _JBetaBg,
+            const Eigen::Matrix3d& _JBetaBa,
+            const Eigen::Matrix3d& _JGammaBg,
+            const Eigen::Matrix<fp64, 9, 9> _SqrtInformation
+            ) 
+        : Rwb(_Rwb),
+        RwbNext(_RwbNext),
+        Position(_Position),
+        PositionNext(_PositionNext),
+        DeltaTime(_DeltaTime),
+
+        PreintegratedPosition(_PreintegratedPosition),
+        PreintegratedVelocity(_PreintegratedVelocity),
+        PreintegratedRotation(_PreintegratedRotation),
+
+        PreintegrationGyroBias(_PreintegrationGyroBias),
+        PreintegrationAccBias(_PreintegrationAccBias),
+
+        JAlphaBg(_JAlphaBg),
+        JAlphaBa(_JAlphaBa),
+        JBetaBg(_JBetaBg),
+        JBetaBa(_JBetaBa),
+        JGammaBg(_JGammaBg),
+        SqrtInformation(_SqrtInformation)
+    {}
+
+    template <typename T> bool operator()(
+         const T* const Velocity,
+         const T* const VelocityNext,
+         const T* const GravityWorldZAlignmentRotation,
+         const T* const GyroBias,
+         const T* const AccelorometerBias,
+         T* Residuals) const
+        {
+            const Eigen::Map<const Eigen::Matrix<T, 3, 1>> V(Velocity);
+            const Eigen::Map<const Eigen::Matrix<T, 3, 1>> VNext(VelocityNext);
+            const Eigen::Map<const Eigen::Quaternion<T>> GravityWorldAlign(GravityWorldZAlignmentRotation);
+            const Eigen::Map<const Eigen::Matrix<T, 3, 1>> GBias(GyroBias);
+            const Eigen::Map<const Eigen::Matrix<T, 3, 1>> ABias(AccelorometerBias);
+
+            const Eigen::Matrix<T, 3, 1> DeltaBg = GBias - PreintegrationGyroBias.template cast<T>();
+
+            const Eigen::Matrix<T, 3, 1> DeltaBa = ABias - PreintegrationAccBias.template cast<T>();
+
+            const Eigen::Matrix<T, 3, 1> AlphaCorrected = PreintegratedPosition.template cast<T>() +
+                JAlphaBg.template cast<T>() * DeltaBg + JAlphaBa.template cast<T>() * DeltaBa;
+
+            const Eigen::Matrix<T, 3, 1> BetaCorrected = PreintegratedVelocity.template cast<T>() +
+                JBetaBg.template cast<T>() * DeltaBg + JBetaBa.template cast<T>() * DeltaBa;
+
+            const Sophus::SO3<T> Gamma( PreintegratedRotation.template cast<T>());
+
+            const Sophus::SO3<T> GammaCorrected = Gamma * Sophus::SO3<T>::exp(JGammaBg.template cast<T>() * DeltaBg);
+
+
+            const T Dt = T(DeltaTime);
+
+            const Eigen::Matrix<T, 3, 3> Rk = Rwb.template cast<T>();
+            const Eigen::Matrix<T, 3, 3> RkNext = RwbNext.template cast<T>();
+            const Eigen::Matrix<T, 3, 1> Pk = Position.template cast<T>();
+            const Eigen::Matrix<T, 3, 1> PkNext = PositionNext.template cast<T>();
+            const Eigen::Quaternion<T> GravityQuaternion = GravityWorldAlign.normalized();
+            const Eigen::Matrix<T, 3, 1> Gravity = GravityQuaternion * Eigen::Matrix<T, 3, 1>(T(0), T(0), T(9.81));
+            const Eigen::Matrix<T, 3, 1> PositionResidual = Rk.transpose() *
+                (PkNext - Pk - V * Dt - T(0.5) * Gravity * Dt * Dt) - AlphaCorrected;
+
+            const Eigen::Matrix<T, 3, 1> VelocityResidual = Rk.transpose() *
+                (VNext - V - Gravity * Dt) - BetaCorrected;
+
+            const Sophus::SO3<T> VisualRelativeRotation(Rk.transpose() * RkNext);
+
+            const Eigen::Matrix<T, 3, 1> RotationResidual =
+                (GammaCorrected.inverse() * VisualRelativeRotation).log();
+
+            Eigen::Map<Eigen::Matrix<T, 9, 1>> Res(Residuals);
+
+            Res.template segment<3>(0) = PositionResidual;
+            Res.template segment<3>(3) = VelocityResidual;
+            Res.template segment<3>(6) = RotationResidual;
+
+            Res = SqrtInformation.template cast<T>() * Res;
+
+            return true;
+        }
+
+    static ceres::CostFunction* Create(
+            const Eigen::Matrix3d& _Rwb,
+            const Eigen::Matrix3d& _RwbNext,
+            const Eigen::Vector3d& _Position,
+            const Eigen::Vector3d& _PositionNext,
+            const fp32 _DeltaTime,
+            const Eigen::Vector3d& _PreintegratedPosition,
+            const Eigen::Vector3d& _PreintegratedVelocity,
+            const Eigen::Matrix3d& _PreintegratedRotation,
+            const Eigen::Vector3d& _PreintegrationGyroBias,
+            const Eigen::Vector3d& _PreintegrationAccBias,
+            const Eigen::Matrix3d& _JAlphaBg,
+            const Eigen::Matrix3d& _JAlphaBa,
+            const Eigen::Matrix3d& _JBetaBg,
+            const Eigen::Matrix3d& _JBetaBa,
+            const Eigen::Matrix3d& _JGammaBg,
+            const Eigen::Matrix<fp64, 9, 9>& _SqrtInformation
+    )
+    {
+        return new ceres::AutoDiffCostFunction<OP_MAPGyroVelocityBiasGravityAndVelocity, 
+            9, 
+            3, 3, 4, 3, 3>(
+                new OP_MAPGyroVelocityBiasGravityAndVelocity(
+                    _Rwb,
+                    _RwbNext,
+                    _Position,
+                    _PositionNext,
+                    _DeltaTime,
+                    _PreintegratedPosition,
+                    _PreintegratedVelocity,
+                    _PreintegratedRotation,
+                    _PreintegrationGyroBias,
+                    _PreintegrationAccBias,
+                    _JAlphaBg,
+                    _JAlphaBa,
+                    _JBetaBg,
+                    _JBetaBa,
+                    _JGammaBg,
+                    _SqrtInformation
+                )
+            );
+    }
+};
+
 bool OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
         const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame,
         typeKeyFrame* PreviousFrame = nullptr,
@@ -497,5 +662,6 @@ bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap,
 
 // This local map should just be all global kfs and mappoints at this point.
 bool OP_EigenValueSolveGyroBias(typeGlobalMap& LocalMap);
+bool OP_MAPGyroVelocityBiasGravityAndVelocity(typePantoVector<typeKeyFrame>& LocalMap);
 
 #endif //__OP_BA_HPP_
