@@ -644,6 +644,112 @@ struct OP_MAPGyroVelocityBiasGravityAndVelocity
     }
 };
 
+struct OP_TranslationOnlyBundle
+{
+    OP_TranslationOnlyBundle(fp64 ObservedX, fp64 ObservedY,
+            const Eigen::Quaterniond& CameraToWorld, const Eigen::Vector4d& Point,
+            const typeOPCameraIntrinsics* Intrinsics)
+        : ObservedX_(ObservedX), ObservedY_(ObservedY),
+          WorldToCamera_(CameraToWorld.conjugate().toRotationMatrix()),
+          Point_(Point), Intrinsics_(Intrinsics) {}
+
+    template <typename T>
+    bool operator()(const T* const tp, T* residuals) const
+    {
+        const Eigen::Map<const Eigen::Matrix<T,3,1>> Center(tp);
+        const Eigen::Matrix<T,3,1> Xc = WorldToCamera_.template cast<T>() *
+            (Point_.head<3>().template cast<T>() - Center * T(Point_.w()));
+        if(Xc.z() * T(Point_.w()) <= T(0))
+        {
+            return false;
+        }
+
+        residuals[0] = T(Intrinsics_->fx) * Xc.x() / Xc.z() + T(Intrinsics_->cx) - T(ObservedX_);
+        residuals[1] = T(Intrinsics_->fy) * Xc.y() / Xc.z() + T(Intrinsics_->cy) - T(ObservedY_);
+        return true;
+    }
+
+    static ceres::CostFunction* Create(fp64 ObservedX, fp64 ObservedY,
+            const Eigen::Quaterniond& CameraToWorld, const Eigen::Vector4d& Point,
+            const typeOPCameraIntrinsics* Intrinsics)
+    {
+        return new ceres::AutoDiffCostFunction<OP_TranslationOnlyBundle, 2, 3>(
+                new OP_TranslationOnlyBundle(ObservedX, ObservedY, CameraToWorld, Point, Intrinsics));
+    }
+
+    fp64 ObservedX_, ObservedY_;
+    Eigen::Matrix3d WorldToCamera_;
+    Eigen::Vector4d Point_;
+    const typeOPCameraIntrinsics* Intrinsics_;
+};
+
+#if defined(CONFIG_STEREO)
+struct OP_StereoTranslationOnlyBundle
+{
+    OP_StereoTranslationOnlyBundle(fp64 ObservedXLeft, fp64 ObservedYLeft,
+            fp64 ObservedXRight, fp64 ObservedYRight,
+            const Eigen::Quaterniond& CameraToWorld, const Eigen::Vector4d& Point,
+            const typeOPStereoIntrinsics* Intrinsics)
+        : ObservedXLeft_(ObservedXLeft), ObservedYLeft_(ObservedYLeft),
+          ObservedXRight_(ObservedXRight), ObservedYRight_(ObservedYRight),
+          WorldToCamera_(CameraToWorld.conjugate().toRotationMatrix()),
+          Point_(Point), Intrinsics_(Intrinsics) {}
+
+    template <typename T>
+    bool operator()(const T* const tp, T* residuals) const
+    {
+        const Eigen::Map<const Eigen::Matrix<T,3,1>> Center(tp);
+        const Eigen::Matrix<T,3,1> Xc = WorldToCamera_.template cast<T>() *
+            (Point_.head<3>().template cast<T>() - Center * T(Point_.w()));
+        if(Xc.z() * T(Point_.w()) <= T(0))
+        {
+            return false;
+        }
+
+        residuals[0] = T(Intrinsics_->fx) * Xc.x() / Xc.z() + T(Intrinsics_->cx) - T(ObservedXLeft_);
+        residuals[1] = T(Intrinsics_->fy) * Xc.y() / Xc.z() + T(Intrinsics_->cy) - T(ObservedYLeft_);
+        residuals[2] = T(Intrinsics_->fx) * (Xc.x() - T(Intrinsics_->B * Point_.w())) / Xc.z() +
+            T(Intrinsics_->cx) - T(ObservedXRight_);
+        residuals[3] = T(Intrinsics_->fy) * Xc.y() / Xc.z() + T(Intrinsics_->cy) - T(ObservedYRight_);
+        return true;
+    }
+
+    static ceres::CostFunction* Create(fp64 ObservedXLeft, fp64 ObservedYLeft,
+            fp64 ObservedXRight, fp64 ObservedYRight,
+            const Eigen::Quaterniond& CameraToWorld, const Eigen::Vector4d& Point,
+            const typeOPStereoIntrinsics* Intrinsics)
+    {
+        return new ceres::AutoDiffCostFunction<OP_StereoTranslationOnlyBundle, 4, 3>(
+                new OP_StereoTranslationOnlyBundle(ObservedXLeft, ObservedYLeft, ObservedXRight,
+                    ObservedYRight, CameraToWorld, Point, Intrinsics));
+    }
+
+    fp64 ObservedXLeft_, ObservedYLeft_, ObservedXRight_, ObservedYRight_;
+    Eigen::Matrix3d WorldToCamera_;
+    Eigen::Vector4d Point_;
+    const typeOPStereoIntrinsics* Intrinsics_;
+};
+#endif // CONFIG_STEREO
+
+// Stereo-NEC, Sec. III-C / Eq. (5). Call after the bias estimation steps.
+// KeyFrames must form one temporal chain (PreviousKFID); storage order and IDs
+// need not be consecutive. Each destination KF stores its incoming preintegration.
+// Uses the source NavigationState.GyroBias and anchors the first camera rotation.
+// The combined call restores camera/navigation poses if either stage fails.
+#if defined(CONFIG_IMU)
+bool OP_UpdateRotationsFromPreIntegration(typePantoVector<typeKeyFrame>& KeyFrames);
+bool OP_RotationTranslationDecoupledOptimization(typePantoVector<typeKeyFrame>& KeyFrames,
+        const typePantoVector<typePantoMapPoint>& MapPoints);
+#endif
+
+// Holds rotations and triangulated homogeneous points fixed, optimizing only
+// camera centers. Returns false without changing poses if any KF cannot be solved.
+// MapPoints is the complete global map, indexed directly by MapPointID.
+// Requires three usable point observations per KF; uses unit pixel covariance
+// because typePantoImagePoint does not yet store the detection scale.
+bool OP_BundleAdjustTranslationOnly(typePantoVector<typeKeyFrame>& KeyFrames,
+        const typePantoVector<typePantoMapPoint>& MapPoints);
+
 bool OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
         const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame,
         typeKeyFrame* PreviousFrame = nullptr,
@@ -657,11 +763,11 @@ bool OP_BundleAdjustTrackingVisualOnly(typeLocalMapTracking& TrackingMap,
 bool OP_BundleAdjustLocal(typeLocalMap& LocalMap, typeKeyFrameQueue* KeyFrameQueue);
 bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap, typeKeyFrameQueue* KeyFrameQueue);
 
-bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap,
-        typeKeyFrameQueue* KeyFrameQueue);
+bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap, typeKeyFrameQueue* KeyFrameQueue);
 
 // This local map should just be all global kfs and mappoints at this point.
-bool OP_EigenValueSolveGyroBias(typeGlobalMap& LocalMap);
+bool OP_EigenValueSolveGyroBias(typePantoVector<typeKeyFrame>& KeyFrames,
+        const typePantoVector<typePantoMapPoint>& MapPoints);
 bool OP_MAPGyroVelocityBiasGravityAndVelocity(typePantoVector<typeKeyFrame>& LocalMap);
 
 #endif //__OP_BA_HPP_

@@ -252,9 +252,7 @@ static Eigen::Vector3d SLPriv_GetGroundTruthCameraPosition( const typeGroundTrut
 #endif
 
 #if !defined(DEBUG)
-static void SLPriv_UpdateVisualization(
-        typeGlobalMap* GlobalMap,
-        typeTimingStatistics& VisualizationUpdateTiming)
+static void SLPriv_UpdateVisualization(typeGlobalMap* GlobalMap, typeTimingStatistics& VisualizationUpdateTiming)
 {
     if(!PANTO_DATASET_REALTIME_MODE)
     {
@@ -1191,7 +1189,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 
         if(!FirstFrame)
         {
-            TimeAccum = NextFrameTimeStamp- LastKFTime;
+            TimeAccum = NextFrameTimeStamp - LastKFTime;
         }
         TrackingData.TrackingStats = typeTrackingStatistics{};
         NumProcessedLoops++;
@@ -2003,7 +2001,11 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
              * i) bias estimate w/ min eigenvalue of normal epipolar constraint between left cameras (epipolar planes intersect at the baseline).
              * ii) etc... ? :(
              * */
+            std::scoped_lock Lock(LocalMap.GlobalMap->Mutex, LocalMap.CovisibilityGraph->Mutex);
             LocalMap.VisualOnlyMode.store(false, std::memory_order_relaxed);
+            OP_EigenValueSolveGyroBias(LocalMap.GlobalMap->KeyFrames, LocalMap.GlobalMap->MapPoints);
+            OP_MAPGyroVelocityBiasGravityAndVelocity(LocalMap.GlobalMap->KeyFrames);
+            OP_BundleAdjustTranslationOnly(LocalMap.GlobalMap->KeyFrames, LocalMap.GlobalMap->MapPoints);
         }
         typeLocalMappingScopedTimer IterationTimer(
                 Statistics(typeLocalMappingTimingStage::IterationTotal));

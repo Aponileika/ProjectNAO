@@ -68,6 +68,9 @@ LDFLAGS := \
 
 ifeq ($(UNAME_S),Darwin)
 LDFLAGS += -Wl,-rpath,$(EXT_LIB_DIR)
+OP_TEST_LDFLAGS := -Wl,-dead_strip
+else
+OP_TEST_LDFLAGS := -Wl,--gc-sections
 endif
 
 LDLIBS := \
@@ -80,7 +83,7 @@ LDLIBS := \
   $(OPENCVLIBS)
 
 
-.PHONY: FORCE clean imu_test
+.PHONY: FORCE clean imu_test op_step3_test
 
 main : FORCE $(sourcedir)main.cpp
 	$(CXX) -o main $(sourcedir)main.cpp \
@@ -97,6 +100,15 @@ imu_test : MIT/test/IMU_Test.cpp
 	$(LDLIBS) \
 	-ferror-limit=100
 
+op_step3_test : MIT/test/OP_Step3Test.cpp
+	$(CXX) -o op_step3_test MIT/test/OP_Step3Test.cpp \
+	-DCONFIG_IMU -DCONFIG_STEREO \
+	$(CXXFLAGS) -ffunction-sections -fdata-sections \
+	$(LDFLAGS) $(OP_TEST_LDFLAGS) \
+	$(LDLIBS) \
+	-ferror-limit=100
+	./op_step3_test
+
 clean :
-	rm -f main imu_test
+	rm -f main imu_test op_step3_test
 

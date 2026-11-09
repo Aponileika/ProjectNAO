@@ -1760,6 +1760,263 @@ void __OP_BuildProblemLocalVisualOnly(typeLocalMap& LocalMap, ceres::Problem& Pr
     }
 }
 
+// Stereo-NEC Step 3 uses fixed structure and fixed rotations, leaving one
+// independent three-parameter camera-center block per keyframe.
+bool OP_BundleAdjustTranslationOnly(typePantoVector<typeKeyFrame>& KeyFrames,
+        const typePantoVector<typePantoMapPoint>& MapPoints)
+{
+    if(KeyFrames.empty())
+    {
+        return false;
+    }
+
+    // Stage centers so an unusable solve cannot leave partially updated poses.
+    std::vector<Eigen::Vector3d> Centers;
+    Centers.reserve(KeyFrames.active_size());
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        const typeCameraPose& Pose = KeyFrame.Camera.Pose;
+        if(!Pose.Quaternion.coeffs().allFinite() ||
+           std::abs(Pose.Quaternion.squaredNorm() - 1.0) > 1e-6 ||
+           !Pose.tParametrization.allFinite()
+#if defined(CONFIG_IMU)
+           || KeyFrame.Camera.Intrinsics == nullptr
+           || !KeyFrame.Camera.Intrinsics->T_BS.allFinite()
+#endif
+          )
+        {
+            return false;
+        }
+        Centers.push_back(Pose.tParametrization);
+    }
+
+    ceres::HuberLoss LossFunction(CERES_HUBER_THRESHOLD);
+    ceres::Problem::Options ProblemOptions;
+    ProblemOptions.loss_function_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
+    ceres::Problem Problem(ProblemOptions);
+    std::size_t Index = 0;
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        Eigen::Vector3d& Center = Centers[Index++];
+        const Eigen::Quaterniond Rotation = KeyFrame.Camera.Pose.Quaternion.normalized();
+        Problem.AddParameterBlock(Center.data(), 3);
+        u64 NumObservations = 0;
+
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+            if(MapPointID == PANTO_ID_NOT_SET || MapPointID >= MapPoints.size() ||
+               !MapPoints.contains(MapPointID) ||
+               !ImagePoint.Point.allFinite())
+            {
+                continue;
+            }
+
+            const Eigen::Vector4d& Point = MapPoints[MapPointID].Point;
+            if(!Point.allFinite() || std::abs(Point.w()) < 1e-12)
+            {
+                // Points at infinity carry no translation information.
+                continue;
+            }
+            const Eigen::Vector3d Xc = Rotation.conjugate() * (Point.head<3>() / Point.w() - Center);
+            if(!Xc.allFinite() || Xc.z() <= 1e-8)
+            {
+                continue;
+            }
+
+            ceres::CostFunction* CostFunction;
+#if defined(CONFIG_STEREO)
+            if(ImagePoint.IsMatched && ImagePoint.RightCameraMatch.allFinite())
+            {
+                CostFunction = OP_StereoTranslationOnlyBundle::Create(
+                        ImagePoint.Point.x(), ImagePoint.Point.y(),
+                        ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(),
+                        Rotation, Point, &OPStereoIntrinsics);
+            }
+            else
+#endif
+            {
+                CostFunction = OP_TranslationOnlyBundle::Create(
+                        ImagePoint.Point.x(), ImagePoint.Point.y(), Rotation, Point, &OPCameraIntrinsics);
+            }
+
+            // Image points currently have no detection-scale covariance; use
+            // the same unit pixel weighting as the other OP visual factors.
+            Problem.AddResidualBlock(CostFunction, &LossFunction, Center.data());
+            ++NumObservations;
+        }
+
+        if(NumObservations < 3)
+        {
+            LG_Log(LogSeverity::ERROR, "[OP Translation] KF %llu has fewer than three usable observations\n",
+                    static_cast<unsigned long long>(KeyFrame.ID));
+            return false;
+        }
+    }
+
+    ceres::Solver::Options Options;
+    Options.max_num_iterations = CERES_MAX_ITER;
+    Options.num_threads = CERES_NUM_THREADS;
+    Options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    Options.linear_solver_type = ceres::DENSE_QR;
+    Options.minimizer_progress_to_stdout = false;
+
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+    if(!Summary.IsSolutionUsable())
+    {
+        LG_Log(LogSeverity::ERROR, "[OP Translation] Optimization failed: %s\n", Summary.BriefReport().c_str());
+        return false;
+    }
+    for(const Eigen::Vector3d& Center : Centers)
+    {
+        if(!Center.allFinite())
+        {
+            return false;
+        }
+    }
+
+    Index = 0;
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        KeyFrame.Camera.Pose.tParametrization = Centers[Index++];
+        CM_SetRtfromParam(&KeyFrame.Camera);
+#if defined(CONFIG_IMU)
+        KEY_UpdateNavState(&KeyFrame);
+#endif
+    }
+    LG_Log(LogSeverity::DBG, "%s\n", Summary.BriefReport().c_str());
+    return true;
+}
+
+#if defined(CONFIG_IMU)
+bool OP_UpdateRotationsFromPreIntegration(typePantoVector<typeKeyFrame>& KeyFrames)
+{
+    if(KeyFrames.active_size() < 2)
+    {
+        return false;
+    }
+
+    std::unordered_map<u64, typeKeyFrame*> KeyFramesByID;
+    std::unordered_map<u64, typeKeyFrame*> Successors;
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        if(KeyFrame.ID == PANTO_ID_NOT_SET || !KeyFramesByID.emplace(KeyFrame.ID, &KeyFrame).second ||
+           KeyFrame.Camera.Intrinsics == nullptr ||
+           !KeyFrame.Camera.Intrinsics->T_BS.allFinite() ||
+           !KeyFrame.Camera.Intrinsics->T_BS.block<3,3>(0,0).isUnitary(1e-6) ||
+           KeyFrame.Camera.Intrinsics->T_BS.block<3,3>(0,0).determinant() < 0.0 ||
+           !KeyFrame.Camera.Pose.Quaternion.coeffs().allFinite() ||
+           std::abs(KeyFrame.Camera.Pose.Quaternion.squaredNorm() - 1.0) > 1e-6 ||
+           !KeyFrame.Camera.Pose.tParametrization.allFinite())
+        {
+            return false;
+        }
+    }
+
+    typeKeyFrame* FirstKeyFrame = nullptr;
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        if(!KeyFramesByID.contains(KeyFrame.PreviousKFID))
+        {
+            if(FirstKeyFrame != nullptr)
+            {
+                return false;
+            }
+            FirstKeyFrame = &KeyFrame;
+        }
+        else if(!Successors.emplace(KeyFrame.PreviousKFID, &KeyFrame).second)
+        {
+            return false;
+        }
+    }
+    if(FirstKeyFrame == nullptr)
+    {
+        return false;
+    }
+
+    // Work in body-to-world rotations, as required by the right-multiplied
+    // IMU preintegration. T_BS maps the (rectified left) camera into the body.
+    const Eigen::Quaterniond QBC(FirstKeyFrame->Camera.Intrinsics->T_BS.block<3,3>(0,0));
+    Eigen::Quaterniond QWB = (FirstKeyFrame->Camera.Pose.Quaternion * QBC.conjugate()).normalized();
+    std::vector<std::pair<typeKeyFrame*, Eigen::Quaterniond>> Rotations;
+    Rotations.emplace_back(FirstKeyFrame, FirstKeyFrame->Camera.Pose.Quaternion);
+    typeKeyFrame* PreviousKeyFrame = FirstKeyFrame;
+
+    while(Successors.contains(PreviousKeyFrame->ID) && Rotations.size() < KeyFrames.active_size())
+    {
+        typeKeyFrame* KeyFrame = Successors.at(PreviousKeyFrame->ID);
+        const typePreIntegrationData& PreIntegration = KeyFrame->PreIntegrationData;
+        const Eigen::Vector3d& GyroBias = PreviousKeyFrame->NavigationState.GyroBias;
+        if(!std::isfinite(PreIntegration.DeltaT) || PreIntegration.DeltaT <= 0.0 ||
+           !PreIntegration.DeltaR.allFinite() || !PreIntegration.DeltaR.isUnitary(1e-6) ||
+           PreIntegration.DeltaR.determinant() < 0.0 || !PreIntegration.JRg.allFinite() ||
+           !PreIntegration.GyroBias.allFinite() || !GyroBias.allFinite())
+        {
+            return false;
+        }
+
+        const Eigen::Vector3d Correction = PreIntegration.JRg * (GyroBias - PreIntegration.GyroBias);
+        if(!Correction.allFinite())
+        {
+            return false;
+        }
+        const Eigen::Matrix3d DeltaRCorrected = PreIntegration.DeltaR * Sophus::SO3d::exp(Correction).matrix();
+        QWB = (QWB * Eigen::Quaterniond(DeltaRCorrected)).normalized();
+        const Eigen::Quaterniond CameraToBody(KeyFrame->Camera.Intrinsics->T_BS.block<3,3>(0,0));
+        const Eigen::Quaterniond QWC = (QWB * CameraToBody).normalized();
+        if(!QWC.coeffs().allFinite())
+        {
+            return false;
+        }
+        Rotations.emplace_back(KeyFrame, QWC);
+        PreviousKeyFrame = KeyFrame;
+    }
+    if(Rotations.size() != KeyFrames.active_size() || Successors.contains(PreviousKeyFrame->ID))
+    {
+        // A disconnected chain or cycle cannot be integrated from one anchor.
+        return false;
+    }
+
+    for(const auto& [KeyFrame, Rotation] : Rotations)
+    {
+        KeyFrame->Camera.Pose.Quaternion = Rotation;
+        // Preserve the visual camera center until translation optimization.
+        CM_SetRtfromParam(&KeyFrame->Camera);
+        KEY_UpdateNavState(KeyFrame);
+    }
+    return true;
+}
+
+bool OP_RotationTranslationDecoupledOptimization(typePantoVector<typeKeyFrame>& KeyFrames,
+        const typePantoVector<typePantoMapPoint>& MapPoints)
+{
+    std::vector<std::pair<typeCameraPose, typeNavigationState>> PreviousStates;
+    PreviousStates.reserve(KeyFrames.active_size());
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        PreviousStates.emplace_back(KeyFrame.Camera.Pose, KeyFrame.NavigationState);
+    }
+
+    if(!OP_UpdateRotationsFromPreIntegration(KeyFrames))
+    {
+        return false;
+    }
+    if(OP_BundleAdjustTranslationOnly(KeyFrames, MapPoints))
+    {
+        return true;
+    }
+
+    std::size_t Index = 0;
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        KeyFrame.Camera.Pose = PreviousStates[Index].first;
+        KeyFrame.NavigationState = PreviousStates[Index++].second;
+    }
+    return false;
+}
+#endif // CONFIG_IMU
+
 bool OP_MAPGyroVelocityBiasGravityAndVelocity( typePantoVector<typeKeyFrame>& LocalMap)
 {
     // Chat gpt
@@ -1791,11 +2048,9 @@ bool OP_MAPGyroVelocityBiasGravityAndVelocity( typePantoVector<typeKeyFrame>& Lo
         Velocities[i] = KeyFrames[i]->NavigationState.Velocity;
     }
 
-    Eigen::Vector3d GyroBias =
-        KeyFrames.front()->NavigationState.GyroBias;
+    Eigen::Vector3d GyroBias = KeyFrames.front()->NavigationState.GyroBias;
 
-    Eigen::Vector3d AccelBias =
-        KeyFrames.front()->NavigationState.AccelorometerBias;
+    Eigen::Vector3d AccelBias = KeyFrames.front()->NavigationState.AccelorometerBias;
 
     /*
      * Identity means the initial gravity estimate is +Z. Replace this with
@@ -1803,19 +2058,13 @@ bool OP_MAPGyroVelocityBiasGravityAndVelocity( typePantoVector<typeKeyFrame>& Lo
      *
      * Eigen stores quaternion coefficients as x,y,z,w.
      */
-    Eigen::Quaterniond GravityWorldZAlignmentRotation =
-        Eigen::Quaterniond::Identity();
+    Eigen::Quaterniond GravityWorldZAlignmentRotation = Eigen::Quaterniond::Identity();
 
     Problem.AddParameterBlock(GyroBias.data(), 3);
     Problem.AddParameterBlock(AccelBias.data(), 3);
 
-    Problem.AddParameterBlock(
-        GravityWorldZAlignmentRotation.coeffs().data(),
-        4);
-
-    Problem.SetManifold(
-        GravityWorldZAlignmentRotation.coeffs().data(),
-        new ceres::EigenQuaternionManifold);
+    Problem.AddParameterBlock(GravityWorldZAlignmentRotation.coeffs().data(), 4);
+    Problem.SetManifold(GravityWorldZAlignmentRotation.coeffs().data(), new ceres::EigenQuaternionManifold);
 
     for(Eigen::Vector3d& Velocity : Velocities)
     {
@@ -1872,25 +2121,16 @@ bool OP_MAPGyroVelocityBiasGravityAndVelocity( typePantoVector<typeKeyFrame>& Lo
             return false;
         }
 
-        const Matrix9 SqrtInfo =
-            LLT.matrixL()
-                .solve(Matrix9::Identity());
+        const Matrix9 SqrtInfo = LLT.matrixL().solve(Matrix9::Identity());
 
         /*
          * These must be body-to-world poses. Change only these four lines
          * if your navigation-state member names differ.
          */
-        const Eigen::Matrix3d& Rwb =
-            KeyFrame.NavigationState.Rwb;
-
-        const Eigen::Matrix3d& RwbNext =
-            KeyFrameNext.NavigationState.Rwb;
-
-        const Eigen::Vector3d& Position =
-            KeyFrame.NavigationState.Position;
-
-        const Eigen::Vector3d& PositionNext =
-            KeyFrameNext.NavigationState.Position;
+        const Eigen::Matrix3d& Rwb = KeyFrame.NavigationState.Rwb;
+        const Eigen::Matrix3d& RwbNext = KeyFrameNext.NavigationState.Rwb;
+        const Eigen::Vector3d& Position = KeyFrame.NavigationState.Position;
+        const Eigen::Vector3d& PositionNext = KeyFrameNext.NavigationState.Position;
 
         ceres::CostFunction* CostFunction =
             OP_MAPGyroVelocityBiasGravityAndVelocity::Create(
