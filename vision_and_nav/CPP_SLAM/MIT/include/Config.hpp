@@ -30,6 +30,16 @@ inline constexpr const char *PANTO_SLAMSTARTMSG =
 
 #define CERES_MAX_ITER 50
 #define CERES_NUM_THREADS 4
+// Library workers are separate from the tracking/mapping and Ceres threads.
+#ifndef BLAS_NUM_THREADS
+#define BLAS_NUM_THREADS 1 // OpenBLAS count; also sets the shared OpenMP runtime default on macOS
+#endif
+#ifndef OPENCV_NUM_THREADS
+#define OPENCV_NUM_THREADS 1 // 1: serial; -1: library default; >1: requested count
+#endif
+#ifndef ACCELERATE_BLAS_SINGLE_THREADED
+#define ACCELERATE_BLAS_SINGLE_THREADED true // false: Apple chooses its BLAS/LAPACK worker count
+#endif
 #define CERES_HUBER_THRESHOLD 2.5
 #define CERES_3D_POINT_GROUP 0
 #define CERES_INERTIAL_AND_POSE_PARAMETER_GROUP 1
@@ -78,11 +88,8 @@ constexpr u64 DENSE_NUM_ROLLING_VOXELS =
 constexpr u64 DENSE_OCCUPIED_MIN_OBSERVATIONS = 2;
 
 #define PANTO_DESCRIPTOR_ANMS false
-// Initializes with Ground truth frame data, to avoid having to code monocular
-// IMU initialization
-#if defined(CONFIG_IMU)
-#define PANTO_GROUNDTRUTH_INIT true
-#else
+// Optional GT seed; stereo-inertial startup can bootstrap from stereo alone.
+#ifndef PANTO_GROUNDTRUTH_INIT
 #define PANTO_GROUNDTRUTH_INIT true
 #endif
 
@@ -125,7 +132,8 @@ constexpr u64 DENSE_OCCUPIED_MIN_OBSERVATIONS = 2;
 #else
 #define PANTO_INIT_MIN_NUM_FRAMES 10
 #endif
-constexpr const char *PANTO_COLMAP_PATH = "./colmap";
+// Keep generated exports separate from viewer scripts and old shared outputs.
+constexpr const char *PANTO_COLMAP_PATH = "./colmap/output";
 constexpr const char *PANTO_COLMAP_PYTHON_SCRIPT_PATH =
     "./colmap/vis_colmap.py";
 constexpr const char *PANTO_LIVE_PYTHON_SCRIPT_PATH =
@@ -144,6 +152,10 @@ constexpr const char *PANTO_PATH_TO_PYTHON_INTERPRETER =
 #define PANTO_INIT_MIN_PARALLAX_DEGREES 1.0
 #define PANTO_TOP_N_KF_FOR_LOCAL_MAP 30
 #define PANTO_MAX_LOCAL_TRACKING_MAP_SIZE 80
+// Bound tracking selection before gathering the selected KFs' map points.
+#define PANTO_TRACKING_OBSERVER_SAMPLES_PER_POINT 32
+#define PANTO_TRACKING_MAX_CANDIDATE_KFS 256
+#define PANTO_TRACKING_NEIGHBOR_PROBES_PER_KF 64
 #define PANTO_PIXEL_CHI_SQUARED_T 5.991
 #define PANTO_PIXEL_CHI_SQUARED_T_SQRT 2.448
 #define PANTO_IMAGEPOINT_RESERVE 1000
@@ -152,7 +164,7 @@ constexpr const char *PANTO_PATH_TO_PYTHON_INTERPRETER =
 
 #if defined(CONFIG_IMU)
 #define PANTO_NUM_TEMPORALLY_CONNECTED_KFS_LOCAL_BA 30
-#define PANTO_MAX_FIXED_KFS_LOCAL_BA 150
+#define PANTO_MAX_FIXED_KFS_LOCAL_BA 30
 #endif
 
 constexpr fp64 PANTO_MINIMUMPARALLAX = 1.0 * M_PI / 180.0;
@@ -165,7 +177,9 @@ using PantoClock = std::chrono::steady_clock;
 // true: replay at dataset timestamps and skip frames when tracking is late.
 // false: consume every dataset frame and serialize each queued keyframe with
 //        its complete local-mapping iteration (including full local BA).
+#ifndef PANTO_DATASET_REALTIME_MODE
 #define PANTO_DATASET_REALTIME_MODE true
+#endif
 #define PANTO_REALTIME_FRAME_QUEUE_CAPACITY 4
 #define PANTO_DATASET_BASE_PATH "./datasets"
 
@@ -330,6 +344,7 @@ constexpr auto panto_gt_path = PANTO_EXPAND_GT_PATH(PANTO_ACTIVE_DATASET);
 const Dataset panto_dataset = Dataset::PANTO_ACTIVE_DATASET;
 
 #define PANTO_STARTUP_FORCED_KEYFRAME_INTERVAL 0.25
+// Total keyframes (including the seed map) required before StereoNEC init.
 #define PANTO_NUM_FORCED_KFS 15
 
 #define PANTO_LOGPATH                                                          \

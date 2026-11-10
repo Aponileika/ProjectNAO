@@ -27,9 +27,16 @@ typedef struct
 
 typedef struct
 {
-    std::vector<typeKeyFrame> KeyFrames;
     std::vector<typePantoMapPoint> MapPoints;
 }typeLocalMapTracking;
+
+struct typeTrackingMapSearchStatistics
+{
+    u64 ObservationProbes = 0;
+    u64 CandidateKeyFrames = 0;
+    u64 NeighborProbes = 0;
+    u64 SelectedKeyFrames = 0;
+};
 
 typedef struct
 {
@@ -154,17 +161,20 @@ void MAP_InitializeFromGT(const typeNavigationState& FirstNavState, const typeNa
 // and, where supplied, the covisibility-graph mutex as one transaction.
 u64 MAP_AppendKeyFrame(typeGlobalMap* GlobalMap, const typeKeyFrame& KeyFrame);
 static const typeKeyFrame* MAP_FindKeyFrameByGeneration(const typeGlobalMap& GlobalMap, const u64 Generation);
-typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const typeKeyFrame& KeyFrame);
+typeLocalMapTracking MAP_CreateLocalMapTracking(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph,
+        const typeKeyFrame& KeyFrame, typeTrackingMapSearchStatistics* SearchStatistics = nullptr);
 typeLocalMap MAP_CreateLocalMap(const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph, const u64 LatestKeyFrameID);
 typeLocalMap MAP_CreateTemporallyGroundedLocalMap(
         const typeGlobalMap& GlobalMap,
         const typeCovisibilityGraph& CovisibilityGraph,
         const u64 LatestKeyFrameID);
 bool MAP_CommitLocalMap(typeGlobalMap* GlobalMap,
-        const typeLocalMap& LocalMap);
+        const typeLocalMap& LocalMap, u64 DiagnosticMappingGeneration = PANTO_ID_NOT_SET);
 void MAP_CommitTrackingStatistics(typeGlobalMap* GlobalMap,
         const typeLocalMapInfo& LocalMapInfo);
-typePantoVector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Map, const typeKeyFrame& LastKeyFrame);
+std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(const typeGlobalMap& Map, const typeKeyFrame& LastKeyFrame);
+std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(
+        const typePantoVector<typePantoMapPoint>& MapPoints, const typeKeyFrame& LastKeyFrame);
 std::vector<typePantoMapPoint> MAP_GetLastFrameMapPoints(
         const std::vector<typePantoMapPoint>& MapPoints,
         const typeKeyFrame& LastKeyFrame);

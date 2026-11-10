@@ -36,5 +36,7 @@ void LG_InitLogger();
 void LG_CloseLogger();
 void LG_EnableDataSummaryLoggingForCurrentThread(bool Enabled);
 void LG_Log(LogSeverity severity, const char* fmt, ...);
+// Emit an explicitly requested DATA diagnostic even when runtime logs are muted.
+void LG_LogData(const char* fmt, ...);
 
 #endif //__LG_LOGGING_HPP_

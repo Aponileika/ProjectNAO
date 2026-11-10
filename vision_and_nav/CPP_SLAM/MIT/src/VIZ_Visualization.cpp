@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cerrno>
 #include <ctime>
 #include <cstring>
 #include <iomanip>
@@ -38,12 +39,40 @@ static typeVIZReplayDenseData VIZPriv_BuildReplayDenseData( const typeDenseMapDa
         const typeKeyFrame& CurrentKeyFrame);
 #endif
 
-static void VIZPriv_WriteTrajectoryFile(
+static bool VIZPriv_WriteTrajectoryFile(
         const std::vector<Eigen::Vector3d>& Trajectory,
         const std::string& Path);
-static void VIZPriv_WriteTimeStampFile(
+static bool VIZPriv_WriteTimeStampFile(
         const std::vector<fp64>& TimeStamps,
         const std::string& Path);
+
+static bool VIZPriv_CreateDirectory(const std::filesystem::path& Path)
+{
+    if(Path.empty())
+    {
+        return true;
+    }
+    std::error_code Error;
+    std::filesystem::create_directories(Path, Error);
+    if(Error)
+    {
+        std::fprintf(stderr, "[VIZ] Cannot create %s: %s\n", Path.c_str(), Error.message().c_str());
+        return false;
+    }
+    return true;
+}
+
+static bool VIZPriv_ResetOutputDirectory(const std::filesystem::path& Path)
+{
+    std::error_code Error;
+    std::filesystem::remove_all(Path, Error);
+    if(Error)
+    {
+        std::fprintf(stderr, "[VIZ] Cannot reset %s: %s\n", Path.c_str(), Error.message().c_str());
+        return false;
+    }
+    return VIZPriv_CreateDirectory(Path);
+}
 
 void VIZ_InitVisualization(void)
 {
@@ -60,36 +89,11 @@ void VIZ_InitVisualization(void)
     const std::string SnapshotPath =
         SparsePath + "/snapshots";
 
-    if(std::filesystem::exists(ImagesPath))
+    if(!VIZPriv_ResetOutputDirectory(ImagesPath) ||
+       !VIZPriv_ResetOutputDirectory(SparsePath) || !VIZPriv_CreateDirectory(SnapshotPath))
     {
-        std::error_code Error;
-        const std::uintmax_t Removed = std::filesystem::remove_all("./colmap/images", Error);
-
-        if(Error)
-        {
-            LG_Log(LogSeverity::ERROR,
-                    "remove_all removed %llu entries but failed: %s\n",
-                    static_cast<unsigned long long>(Removed),
-                    Error.message().c_str());
-        }
+        return;
     }
-
-    if(std::filesystem::exists(SparsePath))
-    {
-        std::error_code Error;
-        const std::uintmax_t Removed = std::filesystem::remove_all("./colmap/sparse", Error);
-
-        if(Error)
-        {
-            LG_Log(LogSeverity::ERROR,
-                    "remove_all removed %llu entries but failed: %s\n",
-                    static_cast<unsigned long long>(Removed),
-                    Error.message().c_str());
-        }
-    }
-
-    std::filesystem::create_directories(ImagesPath);
-    std::filesystem::create_directories(SnapshotPath);
 
     const pid_t PID = fork();
 
@@ -161,18 +165,36 @@ void VIZ_SignalHandler(int Signal)
 
 void VIZ_WriteRealtime(
         const typeGlobalMap& GlobalMap,
-        const std::vector<Eigen::Vector3d>& TrackingTrajectory)
+        const std::vector<Eigen::Vector3d>& TrackingTrajectory,
+        const bool AppendKeyFrames)
 {
     const std::string SnapshotPath =
         std::string(PANTO_COLMAP_PATH) +
         "/sparse/snapshots/" +
         std::to_string(VIZPriv_SnapshotID);
 
-    std::filesystem::create_directories(SnapshotPath);
+    if(!VIZPriv_CreateDirectory(SnapshotPath))
+    {
+        return;
+    }
 
     VIZPriv_WriteCameras(GlobalMap.KeyFrames, SnapshotPath);
     VIZPriv_WriteImages(GlobalMap.KeyFrames, SnapshotPath, false);
-    VIZPriv_WriteTrackingTrajectory(TrackingTrajectory, SnapshotPath);
+    if(!VIZPriv_WriteTrackingTrajectory(TrackingTrajectory, SnapshotPath))
+    {
+        return;
+    }
+
+    // Normal live updates contain only the newest KF. Seed/reset/final
+    // snapshots replace the set, including the final GT-aligned poses.
+    std::ofstream Mode(SnapshotPath + "/keyframes_mode.txt");
+    Mode << (AppendKeyFrames ? "append\n" : "replace\n");
+    Mode.close();
+    if(!Mode)
+    {
+        LG_Log(LogSeverity::ERROR, "[VIZ_WriteRealtime] Cannot write keyframe snapshot mode\n");
+        return;
+    }
 
     LG_Log(LogSeverity::DBG,
             "[VIZ_WriteRealtime] Publishing snapshot %llu from path %s\n",
@@ -346,7 +368,10 @@ bool VIZ_WriteReplay(
 
     const std::string ReplayDirectory =
         std::string(PANTO_COLMAP_PATH) + "/full_binaries";
-    std::filesystem::create_directories(ReplayDirectory);
+    if(!VIZPriv_CreateDirectory(ReplayDirectory))
+    {
+        return false;
+    }
 
     const std::time_t CurrentTime = std::time(nullptr);
     std::tm LocalTime{};
@@ -624,7 +649,10 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Ve
 {
     const std::string SnapshotPath = std::string(PANTO_COLMAP_PATH) + "/sparse/snapshots/" + std::to_string(VIZPriv_SnapshotID);
 
-    std::filesystem::create_directories(SnapshotPath);
+    if(!VIZPriv_CreateDirectory(SnapshotPath))
+    {
+        return;
+    }
 
     VIZPriv_LoadKeyFrameImages(GlobalMap.KeyFrames);
 
@@ -637,7 +665,10 @@ void VIZ_WriteColmap(const typeGlobalMap& GlobalMap, const std::vector<Eigen::Ve
 #else
     VIZPriv_WritePoints(GlobalMap, SnapshotPath);
 #endif
-    VIZPriv_WriteTrackingTrajectory(TrackingTrajectory, SnapshotPath);
+    if(!VIZPriv_WriteTrackingTrajectory(TrackingTrajectory, SnapshotPath))
+    {
+        return;
+    }
 
     LG_Log(LogSeverity::DBG,
             "[VIZ_WriteColmap] Publishing snapshot %llu from path %s\n",
@@ -691,9 +722,12 @@ static void VIZPriv_WriteIMUTestSnapshot(void)
         "/sparse/snapshots/" +
         std::to_string(VIZPriv_SnapshotID);
 
-    std::filesystem::create_directories(SnapshotPath);
+    if(!VIZPriv_CreateDirectory(SnapshotPath) ||
+       !VIZPriv_WriteTrackingTrajectory(VIZPriv_IMUTestTrajectory, SnapshotPath))
+    {
+        return;
+    }
 
-    VIZPriv_WriteTrackingTrajectory(VIZPriv_IMUTestTrajectory, SnapshotPath);
     VIZPriv_PublishSnapshot(VIZPriv_SnapshotID);
 
     if(VIZPriv_SnapshotID >= 5)
@@ -703,7 +737,8 @@ static void VIZPriv_WriteIMUTestSnapshot(void)
             "/sparse/snapshots/" +
             std::to_string(VIZPriv_SnapshotID - 5);
 
-        std::filesystem::remove_all(OldSnapshotPath);
+        std::error_code Error;
+        std::filesystem::remove_all(OldSnapshotPath, Error);
     }
 
     VIZPriv_SnapshotID++;
@@ -723,7 +758,11 @@ void VIZ_SetGroundTruth(const std::vector<Eigen::Vector3d>& GroundTruthTrajector
 {
     assert(GroundTruthTrajectory.size() == GroundTruthTimeStamps.size());
 
-    VIZ_SetGroundTruth(GroundTruthTrajectory);
+    if(!VIZPriv_WriteTrajectoryFile(GroundTruthTrajectory,
+                std::string(PANTO_COLMAP_PATH) + "/sparse/ground_truth.bin"))
+    {
+        return;
+    }
     VIZPriv_WriteTimeStampFile(
             GroundTruthTimeStamps,
             std::string(PANTO_COLMAP_PATH) +
@@ -754,32 +793,44 @@ void VIZ_FlushIMUTest(void)
     VIZPriv_WriteIMUTestSnapshot();
 }
 
-void VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& TrackingTrajectory, const std::string& SnapshotPath)
+bool VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& TrackingTrajectory, const std::string& SnapshotPath)
 {
-    VIZPriv_WriteTrajectoryFile(
+    return VIZPriv_WriteTrajectoryFile(
             TrackingTrajectory, SnapshotPath + "/tracking.bin");
 }
 
-static void VIZPriv_WriteTrajectoryFile(
+static bool VIZPriv_WriteTrajectoryFile(
         const std::vector<Eigen::Vector3d>& Trajectory,
         const std::string& Path)
 {
+    if(!VIZPriv_CreateDirectory(std::filesystem::path(Path).parent_path()))
+    {
+        return false;
+    }
     FILE* fp = fopen(Path.c_str(), "wb");
-
-    assert(fp != nullptr);
+    if(fp == nullptr)
+    {
+        std::fprintf(stderr, "[VIZ] Cannot open %s: %s\n", Path.c_str(), std::strerror(errno));
+        return false;
+    }
 
     const u64 NumPoints = static_cast<u64>(Trajectory.size());
 
-    fwrite(&NumPoints, sizeof(u64), 1, fp);
+    bool Written = fwrite(&NumPoints, sizeof(u64), 1, fp) == 1;
 
     for(const Eigen::Vector3d& Point : Trajectory)
     {
-        fwrite(&Point.x(), sizeof(fp64), 1, fp);
-        fwrite(&Point.y(), sizeof(fp64), 1, fp);
-        fwrite(&Point.z(), sizeof(fp64), 1, fp);
+        Written = Written && fwrite(&Point.x(), sizeof(fp64), 1, fp) == 1;
+        Written = Written && fwrite(&Point.y(), sizeof(fp64), 1, fp) == 1;
+        Written = Written && fwrite(&Point.z(), sizeof(fp64), 1, fp) == 1;
     }
 
-    fclose(fp);
+    const bool Closed = fclose(fp) == 0;
+    if(!Written || !Closed)
+    {
+        std::fprintf(stderr, "[VIZ] Failed to write %s: %s\n", Path.c_str(), std::strerror(errno));
+        return false;
+    }
 
     if(!Trajectory.empty())
     {
@@ -799,26 +850,41 @@ static void VIZPriv_WriteTrajectoryFile(
                 Last.y(),
                 Last.z());
     }
+    return true;
 }
 
-static void VIZPriv_WriteTimeStampFile(const std::vector<fp64>& TimeStamps,
+static bool VIZPriv_WriteTimeStampFile(const std::vector<fp64>& TimeStamps,
         const std::string& Path)
 {
+    if(!VIZPriv_CreateDirectory(std::filesystem::path(Path).parent_path()))
+    {
+        return false;
+    }
     FILE* fp = fopen(Path.c_str(), "wb");
-    assert(fp != nullptr);
+    if(fp == nullptr)
+    {
+        std::fprintf(stderr, "[VIZ] Cannot open %s: %s\n", Path.c_str(), std::strerror(errno));
+        return false;
+    }
 
     const u64 NumTimeStamps = static_cast<u64>(TimeStamps.size());
-    fwrite(&NumTimeStamps, sizeof(u64), 1, fp);
+    bool Written = fwrite(&NumTimeStamps, sizeof(u64), 1, fp) == 1;
 
     if(!TimeStamps.empty())
     {
-        fwrite( TimeStamps.data(),
+        Written = Written && fwrite(TimeStamps.data(),
                 sizeof(fp64),
                 TimeStamps.size(),
-                fp);
+                fp) == TimeStamps.size();
     }
 
-    fclose(fp);
+    const bool Closed = fclose(fp) == 0;
+    if(!Written || !Closed)
+    {
+        std::fprintf(stderr, "[VIZ] Failed to write %s: %s\n", Path.c_str(), std::strerror(errno));
+        return false;
+    }
+    return true;
 }
 
 void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath)
@@ -1438,16 +1504,26 @@ void VIZPriv_PublishSnapshot(const u64& SnapshotID)
         return;
     }
 
-    fprintf(
+    const bool Written = fprintf(
             fp,
             "%llu\n",
-            static_cast<unsigned long long>(SnapshotID));
+            static_cast<unsigned long long>(SnapshotID)) > 0;
 
-    fclose(fp);
+    const bool Closed = fclose(fp) == 0;
+    if(!Written || !Closed)
+    {
+        std::fprintf(stderr, "[VIZ] Failed to write %s: %s\n", TemporaryPath.c_str(), std::strerror(errno));
+        return;
+    }
 
+    std::error_code Error;
     std::filesystem::rename(
             TemporaryPath,
-            LatestPath);
+            LatestPath, Error);
+    if(Error)
+    {
+        std::fprintf(stderr, "[VIZ] Cannot publish %s: %s\n", LatestPath.c_str(), Error.message().c_str());
+    }
 }
 
 void VIZPriv_LoadKeyFrameImages(const typePantoVector<typeKeyFrame>& KeyFrames)

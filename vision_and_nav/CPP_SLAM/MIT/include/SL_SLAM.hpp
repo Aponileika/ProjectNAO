@@ -152,6 +152,7 @@ typedef struct {
     typePosePrediction NextFramePosePrediction;
 
     std::vector<Eigen::Vector3d> TrackingTrajectory;
+    std::vector<Eigen::Quaterniond> TrackingTrajectoryRotations;
     std::vector<fp64> TrackingTrajectoryTimeStamps;
     std::mutex TrackingTrajectoryMutex;
 } typeSLAM;

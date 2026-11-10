@@ -358,99 +358,135 @@ bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap, typeKeyFrameQueue* K
 
 bool OP_EigenValueSolveGyroBias(typePantoVector<typeKeyFrame>& KeyFrames, const typePantoVector<typePantoMapPoint>& MapPoints)
 {
-    static const fp64 cx = OPStereoIntrinsics.cx;
-    static const fp64 cy = OPStereoIntrinsics.cy;
-
-    static const fp64 fx = OPStereoIntrinsics.fx;
-    static const fp64 fy = OPStereoIntrinsics.fx;
-
-    ceres::Problem Problem;
-
-    //Index i contains bearing pairs i -> i + 1
-    std::vector<std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>>> BearingPairs;
-
-    ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
-
-    for(const typeKeyFrame& KF : KeyFrames)
+    if(KeyFrames.active_size() < 2)
     {
-        LG_Log(LogSeverity::DATA, "Unoptimized gyrobias value: (%lf, %lf, %lf)", KF.PreIntegrationData.GyroBias.x(), 
-                KF.PreIntegrationData.GyroBias.y(), KF.PreIntegrationData.GyroBias.z());
+        return false;
+    }
+    Eigen::Vector3d GyroBias = KeyFrames.begin()->NavigationState.GyroBias;
+    if(!GyroBias.allFinite())
+    {
+        return false;
     }
 
-    for(typeKeyFrame& KeyFrame : KeyFrames)
+    ceres::HuberLoss LossFunction(CERES_HUBER_THRESHOLD);
+    ceres::Problem::Options ProblemOptions;
+    ProblemOptions.loss_function_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
+    ceres::Problem Problem(ProblemOptions);
+    u64 NumFactors = 0;
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
     {
-
-        Eigen::Matrix3d Sxx = Eigen::Matrix3d::Zero();
-        Eigen::Matrix3d Syy = Eigen::Matrix3d::Zero();
-        Eigen::Matrix3d Szz = Eigen::Matrix3d::Zero(); 
-        Eigen::Matrix3d Sxy = Eigen::Matrix3d::Zero();
-        Eigen::Matrix3d Syz = Eigen::Matrix3d::Zero(); 
-        Eigen::Matrix3d Szx = Eigen::Matrix3d::Zero();
-
         const u64 NextKFID = KeyFrame.NextKFID;
         if(NextKFID == PANTO_ID_NOT_SET)
         {
-            break;
+            continue;
+        }
+        if(NextKFID >= KeyFrames.size() || !KeyFrames.contains(NextKFID))
+        {
+            return false;
         }
         const typeKeyFrame& NextKeyFrame = KeyFrames[NextKFID];
-
-        BearingPairs.push_back({});
-        BearingPairs.back().reserve(KeyFrame.Points.ImagePoints.active_size());
-        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        const typePreIntegrationData& PreIntegration = NextKeyFrame.PreIntegrationData;
+        if(PreIntegration.DeltaT <= 0.0 || !PreIntegration.DeltaR.allFinite() ||
+           !PreIntegration.JRg.allFinite() || !PreIntegration.GyroBias.allFinite())
         {
-            const u64 MapPointID = ImagePoint.MapPointID;
-            if(MapPointID == PANTO_ID_NOT_SET)
+            return false;
+        }
+
+        // One normal-plane eigenvalue factor per camera and temporal pair.
+        for(const bool RightCamera : {false, true})
+        {
+            Eigen::Matrix3d Sxx = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Syy = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Szz = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Sxy = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Syz = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Szx = Eigen::Matrix3d::Zero();
+            u64 NumPairs = 0;
+
+            for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+            {
+                const u64 MapPointID = ImagePoint.MapPointID;
+                if(MapPointID == PANTO_ID_NOT_SET || MapPointID >= MapPoints.size() ||
+                   !MapPoints.contains(MapPointID))
+                {
+                    continue;
+                }
+                const typePantoMapPoint& MapPoint = MapPoints[MapPointID];
+                for(auto Observation = MapPoint.KeyFrameIDs.begin(); Observation != MapPoint.KeyFrameIDs.end(); ++Observation)
+                {
+                    // Observation arrays share slots; their values are IDs,
+                    // not an array indexed by KeyFrameID.
+                    const std::size_t Slot = Observation.index();
+                    if(*Observation != NextKFID || Slot >= MapPoint.ImagePointIDs.size() ||
+                       !MapPoint.ImagePointIDs.contains(Slot))
+                    {
+                        continue;
+                    }
+                    const u64 ImagePointID = MapPoint.ImagePointIDs[Slot];
+                    if(ImagePointID >= NextKeyFrame.Points.ImagePoints.size() ||
+                       !NextKeyFrame.Points.ImagePoints.contains(ImagePointID))
+                    {
+                        continue;
+                    }
+                    const typePantoImagePoint& NextImagePoint = NextKeyFrame.Points.ImagePoints[ImagePointID];
+                    if(NextImagePoint.MapPointID != MapPointID ||
+                       (RightCamera && (!ImagePoint.IsMatched || !NextImagePoint.IsMatched)))
+                    {
+                        continue;
+                    }
+                    const Eigen::Vector2d& FirstPoint = RightCamera ? ImagePoint.RightCameraMatch : ImagePoint.Point;
+                    const Eigen::Vector2d& SecondPoint = RightCamera ? NextImagePoint.RightCameraMatch : NextImagePoint.Point;
+                    if(!FirstPoint.allFinite() || !SecondPoint.allFinite())
+                    {
+                        continue;
+                    }
+                    const Eigen::Vector3d First = Eigen::Vector3d(
+                            (FirstPoint.x() - OPStereoIntrinsics.cx) / OPStereoIntrinsics.fx,
+                            (FirstPoint.y() - OPStereoIntrinsics.cy) / OPStereoIntrinsics.fy, 1.0).normalized();
+                    const Eigen::Vector3d Second = Eigen::Vector3d(
+                            (SecondPoint.x() - OPStereoIntrinsics.cx) / OPStereoIntrinsics.fx,
+                            (SecondPoint.y() - OPStereoIntrinsics.cy) / OPStereoIntrinsics.fy, 1.0).normalized();
+                    const Eigen::Matrix3d OuterProduct = Second * Second.transpose();
+                    Sxx += First.x() * First.x() * OuterProduct;
+                    Syy += First.y() * First.y() * OuterProduct;
+                    Szz += First.z() * First.z() * OuterProduct;
+                    Sxy += First.x() * First.y() * OuterProduct;
+                    Syz += First.y() * First.z() * OuterProduct;
+                    Szx += First.z() * First.x() * OuterProduct;
+                    ++NumPairs;
+                    break;
+                }
+            }
+            if(NumPairs < 5)
             {
                 continue;
             }
-            if(MapPoints[MapPointID].KeyFrameIDs.contains(NextKFID))
-            {
-                const Eigen::Vector2d& ImagePoint2 = NextKeyFrame.Points.ImagePoints[MapPoints[MapPointID].ImagePointIDs[NextKFID]].Point;
-                BearingPairs.back().push_back(
-                            std::pair(
-                                Eigen::Vector3d((ImagePoint.Point.x() - cx) / fx, (ImagePoint.Point.y() - cy) / fy, 1).normalized(), 
-                                Eigen::Vector3d((ImagePoint2.x() - cx) / fx, (ImagePoint2.y() - cy) / fy, 1).normalized()));
-            }
+            Problem.AddResidualBlock(OP_EigenValueBiasResidual::Create(
+                        PreIntegration.DeltaR, PreIntegration.JRg, TBS,
+                        Sxx, Syy, Szz, Sxy, Syz, Szx, PreIntegration.GyroBias),
+                    &LossFunction, GyroBias.data());
+            ++NumFactors;
         }
-
-        for(const std::pair<Eigen::Vector3d, Eigen::Vector3d>& BearingPair : BearingPairs.back())
-        {
-            const Eigen::Vector3d& First = BearingPair.first;
-            const Eigen::Vector3d& Second = BearingPair.first;
-            const fp64 X = First.x();
-            const fp64 Y = First.y();
-            const fp64 Z = First.z();
-            
-            const Eigen::Matrix3d OuterProductSecond = Second * Second.transpose();
-            Sxx += X * X * OuterProductSecond;
-            Syy += Y * Y * OuterProductSecond;
-            Szz += Z * Z * OuterProductSecond;
-            Sxy += X * Y * OuterProductSecond;
-            Syz += Y * Z * OuterProductSecond;
-            Szx += Z * X * OuterProductSecond;
-        }
-
-        Problem.AddResidualBlock(
-                OP_EigenValueBiasResidual::Create(
-                NextKeyFrame.PreIntegrationData.DeltaR,
-                NextKeyFrame.PreIntegrationData.JRg,
-                TBS,
-                Sxx,
-                Syy,
-                Szz,
-                Sxy,
-                Syz,
-                Szx), 
-                lossfunc,
-                KeyFrame.PreIntegrationData.GyroBias.data());
-
     }
-    for(const typeKeyFrame& KF : KeyFrames)
+    if(NumFactors == 0)
     {
-        LG_Log(LogSeverity::DATA, "Optimized gyrobias value: (%lf, %lf, %lf)", KF.PreIntegrationData.GyroBias.x(), 
-                KF.PreIntegrationData.GyroBias.y(), KF.PreIntegrationData.GyroBias.z());
+        return false;
     }
 
+    ceres::Solver::Options Options;
+    Options.linear_solver_type = ceres::DENSE_QR;
+    Options.max_num_iterations = CERES_MAX_ITER;
+    Options.minimizer_progress_to_stdout = false;
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+    if(!Summary.IsSolutionUsable() || !GyroBias.allFinite())
+    {
+        return false;
+    }
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        KeyFrame.NavigationState.GyroBias = GyroBias;
+    }
     return true;
 }
 
@@ -2052,13 +2088,11 @@ bool OP_MAPGyroVelocityBiasGravityAndVelocity( typePantoVector<typeKeyFrame>& Lo
 
     Eigen::Vector3d AccelBias = KeyFrames.front()->NavigationState.AccelorometerBias;
 
-    /*
-     * Identity means the initial gravity estimate is +Z. Replace this with
-     * your current gravity-direction estimate if one exists.
-     *
-     * Eigen stores quaternion coefficients as x,y,z,w.
-     */
-    Eigen::Quaterniond GravityWorldZAlignmentRotation = Eigen::Quaterniond::Identity();
+    // Seed gravity from the current world frame; Eigen stores x,y,z,w.
+    const Eigen::Vector3d InitialGravity = *IMU_GetGravity();
+    Eigen::Quaterniond GravityWorldZAlignmentRotation = InitialGravity.allFinite() && InitialGravity.norm() > 1e-6
+        ? Eigen::Quaterniond::FromTwoVectors(Eigen::Vector3d::UnitZ(), InitialGravity.normalized())
+        : Eigen::Quaterniond::Identity();
 
     Problem.AddParameterBlock(GyroBias.data(), 3);
     Problem.AddParameterBlock(AccelBias.data(), 3);
@@ -2173,13 +2207,23 @@ bool OP_MAPGyroVelocityBiasGravityAndVelocity( typePantoVector<typeKeyFrame>& Lo
     ceres::Solver::Summary Summary;
     ceres::Solve(Options, &Problem, &Summary);
 
-    if(!Summary.IsSolutionUsable())
+    if(!Summary.IsSolutionUsable() || !GyroBias.allFinite() || !AccelBias.allFinite() ||
+       !GravityWorldZAlignmentRotation.coeffs().allFinite())
     {
         LG_Log( LogSeverity::ERROR,
             "[IMU MAP] Optimization failed: %s\n", Summary.BriefReport().c_str());
 
         return false;
     }
+
+    for(const Eigen::Vector3d& Velocity : Velocities)
+    {
+        if(!Velocity.allFinite())
+        {
+            return false;
+        }
+    }
+    *IMU_GetGravity() = GravityWorldZAlignmentRotation.normalized() * (9.81 * Eigen::Vector3d::UnitZ());
 
     /*
      * Commit the shared biases and individual velocities.

@@ -36,6 +36,38 @@ def make_tracking_colors(num_points: int):
     return np.stack((point_colors[:-1], point_colors[1:]), axis=1)
 
 
+def read_keyframe_mode(root: Path, snapshot_id: int):
+    path = root / "sparse" / "snapshots" / str(snapshot_id) / "keyframes_mode.txt"
+    # Existing exports contain complete snapshots without a mode file.
+    mode = path.read_text().strip() if path.is_file() else "replace"
+    if mode not in ("append", "replace"):
+        raise ValueError(f"unknown keyframe snapshot mode: {mode}")
+    return mode
+
+
+def append_tracking_frames(displayed, incoming, replace):
+    if replace or displayed is None:
+        return np.array(incoming, copy=True)
+    # The producer's history may contain BA corrections. Accept only frames
+    # committed since our previous poll; never rewrite displayed positions.
+    if len(incoming) <= len(displayed):
+        return displayed
+    return np.concatenate((displayed, incoming[len(displayed):]), axis=0)
+
+
+def live_snapshot_replaces_history(root: Path, previous_id, latest_id: int):
+    if read_keyframe_mode(root, latest_id) == "replace":
+        return True
+    if previous_id is None:
+        return False
+    if latest_id < previous_id:
+        return True
+    # A missed map reset must still clear the old run. Inspect only its mode;
+    # do not load or replay any of the missed keyframes.
+    return any(read_keyframe_mode(root, snapshot_id) == "replace"
+               for snapshot_id in range(previous_id + 1, latest_id))
+
+
 def load_live_snapshot(root: Path, snapshot_id: int):
     snapshot_path = root / "sparse" / "snapshots" / str(snapshot_id)
     tracks = read_tracking_binary(snapshot_path / "tracking.bin")
@@ -100,6 +132,7 @@ def main(root_path: str):
         "tracking": None,
         "ground_truth": None,
         "camera_initialized": False,
+        "tracking_positions": None,
     }
 
     @gui_frustum_scale.on_update
@@ -150,7 +183,11 @@ def main(root_path: str):
             visible=gui_show_ground_truth.value,
         )
 
-    def update_tracking(tracks):
+    def update_tracking(tracks, replace):
+        handles["tracking_positions"] = append_tracking_frames(
+            handles["tracking_positions"], tracks, replace
+        )
+        tracks = handles["tracking_positions"]
         if handles["tracking"] is not None:
             handles["tracking"].remove()
             handles["tracking"] = None
@@ -167,10 +204,11 @@ def main(root_path: str):
             visible=gui_show_tracking.value,
         )
 
-    def update_frustums(cameras, images):
-        removed_image_ids = handles["frustums"].keys() - images.keys()
-        for image_id in removed_image_ids:
-            handles["frustums"].pop(image_id).remove()
+    def update_frustums(cameras, images, replace):
+        if replace:
+            removed_image_ids = handles["frustums"].keys() - images.keys()
+            for image_id in removed_image_ids:
+                handles["frustums"].pop(image_id).remove()
 
         for image_id in sorted(images):
             image = images[image_id]
@@ -232,15 +270,16 @@ def main(root_path: str):
         snapshot_id = read_latest_snapshot(root)
         if snapshot_id is not None and snapshot_id != last_snapshot_id:
             try:
-                tracks, cameras, images = load_live_snapshot(
-                    root, snapshot_id
-                )
-                update_tracking(tracks)
-                update_frustums(cameras, images)
+                # Each normal snapshot contains only the just-processed KF.
+                # Skipped KF snapshots are deliberately not replayed.
+                tracks, cameras, images = load_live_snapshot(root, snapshot_id)
+                replace = live_snapshot_replaces_history(root, last_snapshot_id, snapshot_id)
+                update_frustums(cameras, images, replace=replace)
+                update_tracking(tracks, replace=replace)
                 last_snapshot_id = snapshot_id
                 print(
                     f"[VISER] Live snapshot {snapshot_id}: "
-                    f"tracking={len(tracks)}, keyframes={len(images)}"
+                    f"tracking={len(tracks)}, keyframes={len(handles['frustums'])}"
                 )
             except Exception as error:
                 print(

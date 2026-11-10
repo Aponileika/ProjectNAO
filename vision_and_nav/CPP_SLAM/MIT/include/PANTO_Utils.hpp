@@ -53,7 +53,7 @@ class typeSPSCQueue
 
         typeSPSCQueue() = default;
 
-        void enque(const T& DenseData)
+        void enque(T DenseData)
         {
             {
                 // this makes sense, if for some reason the push fails, tracking continues as normal

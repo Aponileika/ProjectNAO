@@ -203,14 +203,12 @@ typeDenseKeyFrameMap DENSEPriv_CalculateDenseKeyFrameMap(const typeDenseData& De
 static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typeDenseLocaMapData& LocalMapData, typeDenseVoxelOccupancyMap& VoxelMap)
 {
     //This assumes no keyframes are culled!
-    const std::vector<typeKeyFrame> LocalMap = LocalMapData.LocalKeyFrames;
-
     std::size_t NumberOfPoints = 0;
 
     std::vector<Eigen::Vector3f> NewWCSMapPoints;
     NewWCSMapPoints.reserve(NumberOfPoints);
 
-    const Eigen::Vector3d VectorVoxelCenter = LocalMapData.LocalKeyFrames.front().Camera.Pose.GetCameraCenter();
+    const Eigen::Vector3d VectorVoxelCenter = LocalMapData.LocalKeyFramePoses.front().Pose.GetCameraCenter();
 
     typeVoxelKey VoxelOrigin = DENSE_GetVoxelKey(VectorVoxelCenter.x() - DENSE_MAP_MAX_DEPTH,
             VectorVoxelCenter.y() - DENSE_MAP_MAX_DEPTH,
@@ -227,15 +225,15 @@ static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typ
 
     const PantoClock::time_point ProjectionStart = PantoClock::now();
 
-    for(const typeKeyFrame& KeyFrame: LocalMapData.LocalKeyFrames)
+    for(const typeDenseKeyFramePose& KeyFrame: LocalMapData.LocalKeyFramePoses)
     {
-        const auto DenseMapIterator = DenseData.KeyFrameMaps.find(KeyFrame.ID);
+        const auto DenseMapIterator = DenseData.KeyFrameMaps.find(KeyFrame.KeyFrameID);
         if(DenseMapIterator == DenseData.KeyFrameMaps.end())
         {
             continue;
         }
 
-        const typeCameraPose& Pose = KeyFrame.Camera.Pose;
+        const typeCameraPose& Pose = KeyFrame.Pose;
         const typeDenseKeyFrameMap& DenseMap = DenseMapIterator->second;
 
         // Assuming Pose is Tcw:
@@ -259,7 +257,7 @@ static void DENSEPriv_WriteDenseWCS(const typeDenseMapData& DenseData, const typ
     // Assuming planar scene
 #if defined(CONFIG_PLANAR)
     const Eigen::Vector3f FloorNormalTransPose = (-(*IMU_GetGravity()).normalized()).transpose().cast<fp32>();
-    const Eigen::Vector3f LatestCameraCenter = CM_GetCameraCenter(LocalMapData.LocalKeyFrames.front().Camera).cast<fp32>();
+    const Eigen::Vector3f LatestCameraCenter = LocalMapData.LocalKeyFramePoses.front().Pose.GetCameraCenter().cast<fp32>();
     const fp32 HeightOfCamera = LatestCameraCenter.z();
 #endif // CONFIG_PLANAR
 

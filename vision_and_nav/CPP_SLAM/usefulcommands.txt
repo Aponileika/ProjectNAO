@@ -1,4 +1,5 @@
 Run with highest priority on mac:
+
 sudo nice -n -10 ./main
 
 create video from sequence, after renaming

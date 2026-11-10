@@ -35,6 +35,7 @@
 #endif
 
 #include "LG_Logging.cpp"
+#include "TH_Threading.cpp"
 #include "CArenaAlloc.c"
 #include "EP_CorrespondingPoints.cpp"
 #include "FR_Frames.cpp"
@@ -56,6 +57,7 @@
 #include "IMU_PreIntegration.cpp"
 #endif
 #include "GT_ReadGroundTruth.cpp"
+#include "GT_Alignment.cpp"
 #if defined(CONFIG_STEREO)
 #include "DENSE_DenseMapping.cpp"
 #endif

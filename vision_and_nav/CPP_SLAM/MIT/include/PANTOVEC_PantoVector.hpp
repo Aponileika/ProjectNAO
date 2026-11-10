@@ -329,11 +329,6 @@ public:
         --ActiveCount;
     }
 
-    bool contains(u64 Index) const
-    {
-        return Occupied[Index];
-    }
-
     T* data() noexcept
     {
         return Data.data();

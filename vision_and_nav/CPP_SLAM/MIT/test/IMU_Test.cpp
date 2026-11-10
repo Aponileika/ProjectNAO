@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "../src/IMU_IMUReader.cpp"
+#include "../src/TH_Threading.cpp"
 #include "../src/IMU_PreIntegration.cpp"
 #include "../src/GT_ReadGroundTruth.cpp"
 #include "../src/LG_Logging.cpp"

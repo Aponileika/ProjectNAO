@@ -23,7 +23,51 @@ typedef struct
     // fp64 DetectionScale;
 }typePantoImagePoint;
 
-typedef struct
+struct typeDescriptorObservation
+{
+    u64 KeyFrameID = PANTO_ID_NOT_SET;
+    u64 ImagePointID = PANTO_ID_NOT_SET;
+    typeDescriptor Descriptor{};
+    bool Active = false;
+    bool Changed = false;
+};
+
+struct typeDescriptorDistanceCache
+{
+    // Slots follow the landmark's sparse observation vectors. Row i stores
+    // distances to slots [0, i); inactive/recycled slots are never reused
+    // without synchronizing their observation identity and descriptor.
+    std::vector<typeDescriptorObservation> Observations;
+    std::vector<std::vector<u16>> Distances;
+    std::vector<std::size_t> ActiveIndices;
+    std::vector<std::size_t> ChangedIndices;
+    std::vector<u16> MedianDistances;
+
+    typeDescriptorDistanceCache() = default;
+    // Tracking/BA copies need the selected descriptor, not its quadratic
+    // history. A copied landmark lazily rebuilds its own cache if modified.
+    typeDescriptorDistanceCache(const typeDescriptorDistanceCache&) {}
+    typeDescriptorDistanceCache& operator=(const typeDescriptorDistanceCache& Other)
+    {
+        if(this != &Other) Clear();
+        return *this;
+    }
+    typeDescriptorDistanceCache(typeDescriptorDistanceCache&&) noexcept = default;
+    typeDescriptorDistanceCache& operator=(typeDescriptorDistanceCache&&) noexcept = default;
+
+    void Clear()
+    {
+        *this = typeDescriptorDistanceCache{};
+    }
+
+    u16 Distance(std::size_t A, std::size_t B) const
+    {
+        assert(A != B && Observations[A].Active && Observations[B].Active);
+        return A > B ? Distances[A][B] : Distances[B][A];
+    }
+};
+
+typedef struct typePantoMapPoint
 {
     Eigen::Vector4d Point;
     typeDescriptor Descriptor;
@@ -35,6 +79,7 @@ typedef struct
     u64 NumVisible;
     u64 NumFound;
     u64 CreationAge;
+    typeDescriptorDistanceCache DescriptorDistances{};
 }typePantoMapPoint;
 
 typedef struct

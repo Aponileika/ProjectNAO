@@ -4,7 +4,7 @@
 #include "KEY_Keyframe.hpp"
 #include "MAP_Mapping.hpp"
 
-void VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& TrackingTrajectory, const std::string& SnapshotPath);
+bool VIZPriv_WriteTrackingTrajectory(const std::vector<Eigen::Vector3d>& TrackingTrajectory, const std::string& SnapshotPath);
 void VIZPriv_WriteCameras(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath);
 void VIZPriv_WriteDistortion(const typePantoVector<typeKeyFrame>& KeyFrames, const std::string& SnapshotPath);
 void VIZPriv_WriteImages(const typePantoVector<typeKeyFrame>& KeyFrames,

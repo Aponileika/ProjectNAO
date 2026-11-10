@@ -81,9 +81,32 @@ typedef struct
 
 typedef struct
 {
+    u64 KeyFrameID;
+    typeCameraPose Pose;
+}typeDenseKeyFramePose;
+
+typedef struct
+{
     typeDenseData DenseData;
-    std::vector<typeKeyFrame> LocalKeyFrames;
+    std::vector<typeDenseKeyFramePose> LocalKeyFramePoses;
 }typeDenseLocaMapData;
+
+inline typeDenseLocaMapData DENSE_CreateLocalMapData(const typeDenseData& DenseData,
+        const typeLocalMap& LocalMap)
+{
+    typeDenseLocaMapData Result{DenseData, {}};
+    Result.LocalKeyFramePoses.reserve(LocalMap.KeyFrames.size() + LocalMap.FixedKeyFrames.size());
+    const auto Append = [&Result](const std::vector<typeKeyFrame>& KeyFrames)
+    {
+        for(const typeKeyFrame& KeyFrame : KeyFrames)
+        {
+            Result.LocalKeyFramePoses.push_back({KeyFrame.ID, KeyFrame.Camera.Pose});
+        }
+    };
+    Append(LocalMap.KeyFrames);
+    Append(LocalMap.FixedKeyFrames);
+    return Result;
+}
 
 typedef struct
 {

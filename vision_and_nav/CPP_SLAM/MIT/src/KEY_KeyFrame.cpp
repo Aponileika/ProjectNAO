@@ -601,11 +601,6 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
 
     const i32 Levels = PANTO_DBOW_LEVELSUP;
 
-    std::vector<typeDescriptor> Descriptors;
-
-    std::vector<i32> ScratchDistances;
-    ScratchDistances.reserve(32);
-
     for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
     {
         const u64 MapPointID = ImagePoint.MapPointID;
@@ -635,29 +630,7 @@ void KEY_SetAsKeyFrame(typeKeyFrame& KeyFrame, typePantoVector<typePantoMapPoint
         MapPoint.KeyFrameIDs.push_back(ID);
         MapPoint.NumObs++;
 
-        Descriptors.clear();
-        Descriptors.reserve(MapPoint.KeyFrameIDs.size());
-
-        for(std::size_t i{}; i < MapPoint.KeyFrameIDs.size(); i++)
-        {
-            if(MapPoint.ImagePointIDs.contains(i))
-            {
-#if defined(DEBUG)
-                assert(MapPoint.KeyFrameIDs.contains(i));
-#endif
-                const u64 ImagePointID = MapPoint.ImagePointIDs[i];
-                const u64 KeyFrameID   = MapPoint.KeyFrameIDs[i];
-
-                Descriptors.push_back(GlobalKeyFrames[KeyFrameID].Points.ImagePoints[ImagePointID].Descriptor);
-            }
-        }
-
-        if(Descriptors.size() == 1)
-        {
-            MapPoint.Descriptor = Descriptors[0];
-            continue;
-        }
-        MapPoint.Descriptor = PT_CalculateNewDescriptor(Descriptors, ScratchDistances);
+        PT_UpdateMapPointDescriptor(MapPoint, GlobalKeyFrames);
     }
     const auto& TimeBeforeVocab = std::chrono::duration<fp64>(PantoClock::now() - StartTimeBeforeVocab).count();
     KEYPriv_AddTimingSample(SetAsKeyFrameNonVocabTransform, TimeBeforeVocab);
@@ -960,6 +933,10 @@ void KEY_UpdateNavState(typeKeyFrame* KeyFrame)
 void KEY_ReIntegrate(typeKeyFrame& NextKeyFrame, const std::vector<typeIMUMeasurement>& MeasurementsFromPreviousToRemoved)
 {
     typePreIntegration NewIntegrationDataForNext(NextKeyFrame.PreIntegrationData.GyroBias, NextKeyFrame.PreIntegrationData.AccelBias);
+    typeNavigationState LinearizationState = NextKeyFrame.NavigationState;
+    LinearizationState.GyroBias = NextKeyFrame.PreIntegrationData.GyroBias;
+    LinearizationState.AccelorometerBias = NextKeyFrame.PreIntegrationData.AccelBias;
+    NewIntegrationDataForNext.Reset(LinearizationState);
 
     std::vector<typeIMUMeasurement> AllIMUMeasurements;
     AllIMUMeasurements.insert(AllIMUMeasurements.end(), MeasurementsFromPreviousToRemoved.begin(),

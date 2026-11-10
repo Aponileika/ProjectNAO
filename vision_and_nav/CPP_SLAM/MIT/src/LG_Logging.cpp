@@ -121,15 +121,8 @@ void LG_EnableDataSummaryLoggingForCurrentThread(const bool Enabled)
     DataSummaryLoggingEnabled = Enabled;
 }
 
-void LG_Log(LogSeverity severity, const char* fmt, ...)
+static void LGPriv_LogMessage(LogSeverity severity, const char* fmt, va_list args)
 {
-    // Runtime logging is intentionally disabled. Only the local-mapping
-    // thread enables its final aggregate DATA summaries.
-    if(severity != LogSeverity::DATA || !DataSummaryLoggingEnabled)
-    {
-        return;
-    }
-
     // Keep initialization, formatting, file output, optional stdout output,
     // and flushing in one transaction. This prevents tracking and local
     // mapping messages from being interleaved within a single log call.
@@ -163,9 +156,6 @@ void LG_Log(LogSeverity severity, const char* fmt, ...)
         return;
     }
 
-    va_list args;
-    va_start(args, fmt);
-
     va_list stdoutArgs;
     va_copy(stdoutArgs, args);
 
@@ -177,7 +167,26 @@ void LG_Log(LogSeverity severity, const char* fmt, ...)
     }
 
     va_end(stdoutArgs);
-    va_end(args);
-
     std::fflush(fp);
+}
+
+void LG_Log(LogSeverity severity, const char* fmt, ...)
+{
+    // Preserve the existing runtime-log suppression and summary opt-in.
+    if(severity != LogSeverity::DATA || !DataSummaryLoggingEnabled)
+    {
+        return;
+    }
+    va_list args;
+    va_start(args, fmt);
+    LGPriv_LogMessage(severity, fmt, args);
+    va_end(args);
+}
+
+void LG_LogData(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    LGPriv_LogMessage(LogSeverity::DATA, fmt, args);
+    va_end(args);
 }

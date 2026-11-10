@@ -325,7 +325,7 @@ cv::Mat __FR_GetFrameWebCam(void)
         std::cerr << "FR_GetFrame failed to get a frame\n";
         return {};
     }
-    std::string path = "./colmap/images/frame" + std::to_string(cap.FrameIndex) + ".png";
+    std::string path = std::string(PANTO_COLMAP_PATH) + "/images/frame" + std::to_string(cap.FrameIndex) + ".png";
     LG_Log(LogSeverity::DBG, "[FR_GetFrame] writing frame file %s\n", path.c_str());
     bool ret = cv::imwrite(path, frame);
     if(!ret)
@@ -538,6 +538,28 @@ static typeDecodedDataSetFrame FRPriv_DecodeDataSetFrame(
 #if defined(CONFIG_STEREO)
     Result.RightGray = cv::imread(RightFramePath, cv::IMREAD_GRAYSCALE);
 #endif
+    if(!Result.Gray.empty()
+#if defined(CONFIG_STEREO)
+            && !Result.RightGray.empty()
+#endif
+      )
+    {
+#if defined(CONFIG_STEREO)
+        const typeStereoCameraCalibration& StereoCalib = *CM_GetStereoCalibration();
+        cv::Mat RectifiedLeft;
+        cv::Mat RectifiedRight;
+        cv::remap(Result.Gray, RectifiedLeft, StereoCalib.Map0X, StereoCalib.Map0Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
+        cv::remap(Result.RightGray, RectifiedRight, StereoCalib.Map1X, StereoCalib.Map1Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
+        Result.Gray = std::move(RectifiedLeft);
+        Result.RightGray = std::move(RectifiedRight);
+        std::thread LeftDescriptorsThread([&Result] { Result.Descriptors = EP_GetDescriptors(Result.Gray); });
+        std::thread RightDescriptorsThread([&Result] { Result.RightDescriptors = EP_GetDescriptors(Result.RightGray); });
+        LeftDescriptorsThread.join();
+        RightDescriptorsThread.join();
+#else
+        Result.Descriptors = EP_GetDescriptors(Result.Gray);
+#endif
+    }
     return Result;
 }
 
@@ -566,10 +588,16 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
 
     const std::filesystem::path SourcePath(Frame.SourcePath);
     const std::filesystem::path WritePath =
-        std::filesystem::path("./colmap/images") / ("frame" + std::to_string(Frame.TimeStamp) + SourcePath.extension().string());
+        std::filesystem::path(PANTO_COLMAP_PATH) / "images" /
+        ("frame" + std::to_string(Frame.TimeStamp) + SourcePath.extension().string());
 
     std::error_code FileError;
-    std::filesystem::create_hard_link(SourcePath, WritePath, FileError);
+    const bool AlreadyLinked = std::filesystem::equivalent(SourcePath, WritePath, FileError);
+    FileError.clear();
+    if(!AlreadyLinked)
+    {
+        std::filesystem::create_hard_link(SourcePath, WritePath, FileError);
+    }
 
     if(FileError)
     {
@@ -584,20 +612,9 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
     if(FileError)
     {
         LG_Log(LogSeverity::ERROR,
-                "[FRPriv_FinalizeDataSetFrame] Failed to link or copy %s to %s: %s\n",
+                "[FRPriv_FinalizeDataSetFrame] Could not cache %s at %s: %s; using source image\n",
                 SourcePath.c_str(), WritePath.c_str(),
                 FileError.message().c_str());
-        return
-        {
-            .Frame = cv::Mat{},
-            .Descriptors{},
-#if defined(CONFIG_STEREO)
-            .RightFrame = cv::Mat{},
-            .RightDescriptors{},
-#endif
-            .TimeStamp = PANTO_TIMESTAMP_NOT_SET,
-            .Path = "",
-        };
     }
 
     return
@@ -609,15 +626,12 @@ static typePantoFrame FRPriv_FinalizeDataSetFrame(
         .RightDescriptors = std::move(Frame.RightDescriptors),
 #endif
         .TimeStamp = Frame.TimeStamp,
-        .Path = WritePath.string(),
+        .Path = (FileError ? SourcePath : WritePath).string(),
     };
 }
 
 static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
 {
-#if defined(CONFIG_STEREO)
-    const static typeStereoCameraCalibration StereoCalib = *CM_GetStereoCalibration();
-#endif //CONFIG_IMU
     while(!StopToken.stop_requested())
     {
         std::string FramePath;
@@ -645,33 +659,6 @@ static void FRPriv_PreloadDataSetFrames(std::stop_token StopToken)
 #endif
                 TimeStamp);
 
-        if(!Frame.Gray.empty()
-#if defined(CONFIG_STEREO)
-                && !Frame.RightGray.empty()
-#endif
-          )
-        {
-#if defined(CONFIG_STEREO)
-            cv::Mat RectifiedLeft;
-            cv::Mat RectifiedRight;
-            cv::remap(Frame.Gray, RectifiedLeft, StereoCalib.Map0X, StereoCalib.Map0Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
-            cv::remap(Frame.RightGray, RectifiedRight, StereoCalib.Map1X, StereoCalib.Map1Y, cv::INTER_LINEAR, cv::BORDER_CONSTANT);
-            Frame.Gray = std::move(RectifiedLeft);
-            Frame.RightGray = std::move(RectifiedRight);
-            std::thread LeftDescriptorsThread([&Frame]
-                    {
-                        Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
-                    });
-            std::thread RightDescriptorsThread([&Frame]
-                    {
-                        Frame.RightDescriptors = EP_GetDescriptors(Frame.RightGray);
-                    });
-            LeftDescriptorsThread.join();
-            RightDescriptorsThread.join();
-#else
-            Frame.Descriptors = EP_GetDescriptors(Frame.Gray);
-#endif // CONFIG_STEREO
-        }
         std::unique_lock<std::mutex> Lock(reader.PreloadMutex);
         if(!reader.PreloadNotFull.wait(
                     Lock,

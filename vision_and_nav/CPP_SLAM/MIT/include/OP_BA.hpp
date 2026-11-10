@@ -340,12 +340,15 @@ struct OP_EigenValueBiasResidual
     Eigen::Matrix3d CameraToBodyRotation;
     Eigen::Matrix3d _GyroJacobian;
     Eigen::Quaterniond PreintegratedRotation;
+    Eigen::Vector3d PreintegrationGyroBias;
     Eigen::Matrix3d Sxx, Syy, Szz, Sxy, Syz, Szx;
 
     OP_EigenValueBiasResidual(const Eigen::Matrix3d& DeltaR, const Eigen::Matrix3d& GyroJacobian,  const Eigen::Matrix4d* TBS, 
             const Eigen::Matrix3d& _Sxx, const Eigen::Matrix3d& _Syy, const Eigen::Matrix3d& _Szz, const Eigen::Matrix3d& _Sxy, 
-            const Eigen::Matrix3d& _Syz, const Eigen::Matrix3d& _Szx) : 
-        _GyroJacobian(GyroJacobian), BodyToCameraRotation(TBS->block<3,3>(0,0)), PreintegratedRotation(Eigen::Quaterniond(DeltaR)),
+            const Eigen::Matrix3d& _Syz, const Eigen::Matrix3d& _Szx,
+            const Eigen::Vector3d& _PreintegrationGyroBias) :
+        BodyToCameraRotation(TBS->block<3,3>(0,0).transpose()), _GyroJacobian(GyroJacobian),
+        PreintegratedRotation(Eigen::Quaterniond(DeltaR)), PreintegrationGyroBias(_PreintegrationGyroBias),
         Sxx(_Sxx), Syy(_Syy), Szz(_Szz), Sxy(_Sxy), Syz(_Syz), Szx(_Szx)
     {
         CameraToBodyRotation = BodyToCameraRotation.transpose();
@@ -362,7 +365,8 @@ struct OP_EigenValueBiasResidual
                     PreintegratedRotation.template cast<T>());
 
             const Sophus::SO3<T> BiasCorrectedGamma =
-                Gamma * Sophus::SO3<T>::exp( _GyroJacobian.template cast<T>() * Bias);
+                Gamma * Sophus::SO3<T>::exp( _GyroJacobian.template cast<T>() *
+                        (Bias - PreintegrationGyroBias.template cast<T>()));
 
             const Eigen::Matrix<T, 3, 3> CameraRotation =
                 BodyToCameraRotation.template cast<T>() *
@@ -449,30 +453,42 @@ struct OP_EigenValueBiasResidual
             const T discriminantTerm =
                 b * b - T(3) * c;
 
+            if(discriminantTerm <= T(1e-24))
+            {
+                Residuals[0] = T(0);
+                return true;
+            }
             const T t = T(4) * discriminantTerm *
                 discriminantTerm *
                 discriminantTerm;
 
-            const T alpha = ceres::acos(s / ceres::sqrt(t));
+            // Roundoff at repeated eigenvalues must not send acos or its
+            // derivative outside their domain.
+            const T CosAlpha = s / ceres::sqrt(t);
+            const T ClampedCosAlpha = CosAlpha < T(-1.0 + 1e-12) ? T(-1.0 + 1e-12) :
+                (CosAlpha > T(1.0 - 1e-12) ? T(1.0 - 1e-12) : CosAlpha);
+            const T alpha = ceres::acos(ClampedCosAlpha);
             const T beta = alpha / T(3);
 
-            const T r = T(0.5) * ceres::sqrt(t);
-            const T w = ceres::pow(r, 1.0 / 3.0);
+            const T w = ceres::sqrt(discriminantTerm);
 
-            Residuals[0] =
+            const T LambdaMin =
                 (-b - T(2) * w * ceres::cos(beta)) / T(3);
+            // Ceres squares residuals; minimize lambda_min, not its square.
+            Residuals[0] = ceres::sqrt((LambdaMin > T(0) ? LambdaMin : T(0)) + T(1e-12));
 
             return true;
         }
 
     static ceres::CostFunction* Create(const Eigen::Matrix3d& DeltaR, const Eigen::Matrix3d& GyroJacobian, const Eigen::Matrix4d* TBS,
             const Eigen::Matrix3d& _Sxx, const Eigen::Matrix3d& _Syy, const Eigen::Matrix3d& _Szz, const Eigen::Matrix3d& _Sxy, 
-            const Eigen::Matrix3d& _Syz, const Eigen::Matrix3d& _Szx
+            const Eigen::Matrix3d& _Syz, const Eigen::Matrix3d& _Szx,
+            const Eigen::Vector3d& _PreintegrationGyroBias
             )
     {
         return new ceres::AutoDiffCostFunction<OP_EigenValueBiasResidual, 1, 3>(
                 new OP_EigenValueBiasResidual(DeltaR, GyroJacobian, TBS,
-                                              _Sxx, _Syy, _Szz, _Sxy, _Syz, _Szx
+                                              _Sxx, _Syy, _Szz, _Sxy, _Syz, _Szx, _PreintegrationGyroBias
                     ));
     }
 };
@@ -591,9 +607,9 @@ struct OP_MAPGyroVelocityBiasGravityAndVelocity
 
             Eigen::Map<Eigen::Matrix<T, 9, 1>> Res(Residuals);
 
-            Res.template segment<3>(0) = PositionResidual;
+            Res.template segment<3>(0) = RotationResidual;
             Res.template segment<3>(3) = VelocityResidual;
-            Res.template segment<3>(6) = RotationResidual;
+            Res.template segment<3>(6) = PositionResidual;
 
             Res = SqrtInformation.template cast<T>() * Res;
 

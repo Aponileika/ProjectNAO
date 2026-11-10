@@ -1,4 +1,5 @@
 #include "../include/CM_Camera.hpp"
+#include "TH_Threading.hpp"
 
 static bool IntrinsicsSet = false;
 
@@ -180,6 +181,9 @@ static void CMPriv_SetStereoCalibration()
 void CM_SetIntrinsics()
 {
     if(IntrinsicsSet)return;
+    // OP's static intrinsics can trigger calibration before main(). Configure
+    // library pools here, before stereoRectify or any frame workers run.
+    TH_InitializeLibraries();
     LG_Log(LogSeverity::DBG, "Setting intrinsics\n");
 #if defined(CONFIG_STEREO)
     CMPriv_SetStereoCalibration();
