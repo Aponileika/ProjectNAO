@@ -33,8 +33,7 @@ typedef struct
     std::vector<std::pair<u64, u64>> NonZeroOccupancy;
 }typeVIZReplayDenseData;
 
-static std::vector<typeKeyFrame> VIZPriv_GetReplayLocalKeyFrames( const typeGlobalMap& GlobalMap, const typeCovisibilityGraph& CovisibilityGraph,
-        const typeKeyFrame& CurrentKeyFrame);
+static std::vector<typeKeyFrame> VIZPriv_GetReplayLocalKeyFrames(const typeLocalMap& LocalMap);
 static typeVIZReplayDenseData VIZPriv_BuildReplayDenseData( const typeDenseMapData& DenseMap, const std::vector<typeKeyFrame>& LocalKeyFrames,
         const typeKeyFrame& CurrentKeyFrame);
 #endif
@@ -207,15 +206,8 @@ void VIZ_WriteRealtime(
 
 #if defined(CONFIG_STEREO)
 static std::vector<typeKeyFrame> VIZPriv_GetReplayLocalKeyFrames(
-        const typeGlobalMap& GlobalMap,
-        const typeCovisibilityGraph& CovisibilityGraph,
-        const typeKeyFrame& CurrentKeyFrame)
+        const typeLocalMap& LocalMap)
 {
-    const typeLocalMap LocalMap = MAP_CreateTemporallyGroundedLocalMap(
-            GlobalMap,
-            CovisibilityGraph,
-            CurrentKeyFrame.ID);
-
     std::vector<typeKeyFrame> Result;
     Result.reserve(
             LocalMap.KeyFrames.size() +
@@ -411,11 +403,14 @@ bool VIZ_WriteReplay(
         return true;
     };
 
-    // replay.bin v1 is little-endian and consists of:
+    // replay.bin v2 is little-endian and consists of:
     //   file header, independently-sized keyframe blocks, index, footer.
     // The footer stores the index offset so a reader can seek/reverse without
     // scanning every block. Occupancy entries store only nonzero counts; all
     // omitted cells in the declared rolling cube have count zero.
+    // Each block adds a sparse-point count after the dense-point count, and
+    // stores world-space sparse XYZ (fp64) after dense XYZ (fp32), before
+    // occupancy. Both clouds use the same temporally grounded local map.
     std::vector<u8> Header;
     const auto AppendHeaderBytes = [&Header](const void* Data, const std::size_t Size)
     {
@@ -424,7 +419,7 @@ bool VIZ_WriteReplay(
         std::memcpy(Header.data() + Offset, Data, Size);
     };
     const char FileMagic[8] = {'P', 'A', 'N', 'T', 'O', 'V', 'I', 'Z'};
-    const u32 Version = 1;
+    const u32 Version = 2;
     const u32 Flags = 0x3U; // bit 0: little-endian, bit 1: sparse occupancy.
     const u64 NumBlocks = static_cast<u64>(ReplayKeyFrames.size());
     AppendHeaderBytes(FileMagic, sizeof(FileMagic));
@@ -459,11 +454,13 @@ bool VIZ_WriteReplay(
             TrackingIndex++;
         }
 
-        const std::vector<typeKeyFrame> LocalKeyFrames =
-            VIZPriv_GetReplayLocalKeyFrames(
+        const typeLocalMap LocalMap =
+            MAP_CreateTemporallyGroundedLocalMap(
                     GlobalMap,
                     CovisibilityGraph,
-                    KeyFrame);
+                    KeyFrame.ID);
+        const std::vector<typeKeyFrame> LocalKeyFrames =
+            VIZPriv_GetReplayLocalKeyFrames(LocalMap);
         const typeVIZReplayDenseData ReplayDenseData =
             VIZPriv_BuildReplayDenseData(
                     DenseMap,
@@ -490,12 +487,14 @@ bool VIZ_WriteReplay(
                 TrackingIndex - FirstTrackingIndex);
         const u64 NumDensePoints = static_cast<u64>(
                 ReplayDenseData.DensePoints.size());
+        const u64 NumSparsePoints = static_cast<u64>(LocalMap.MapPoints.size());
         const u64 NumNonZeroOccupancy = static_cast<u64>(
                 ReplayDenseData.NonZeroOccupancy.size());
         AppendBytes(&KeyFrameID, sizeof(KeyFrameID));
         AppendBytes(&KeyFrameTimeStamp, sizeof(KeyFrameTimeStamp));
         AppendBytes(&NumTrackingSamples, sizeof(NumTrackingSamples));
         AppendBytes(&NumDensePoints, sizeof(NumDensePoints));
+        AppendBytes(&NumSparsePoints, sizeof(NumSparsePoints));
         AppendBytes(&ReplayDenseData.OccupancyOrigin.X, sizeof(i32));
         AppendBytes(&ReplayDenseData.OccupancyOrigin.Y, sizeof(i32));
         AppendBytes(&ReplayDenseData.OccupancyOrigin.Z, sizeof(i32));
@@ -566,6 +565,12 @@ bool VIZ_WriteReplay(
         for(const Eigen::Vector3f& DensePoint : ReplayDenseData.DensePoints)
         {
             AppendBytes(DensePoint.data(), 3 * sizeof(fp32));
+        }
+
+        for(const typePantoMapPoint& MapPoint : LocalMap.MapPoints)
+        {
+            const Eigen::Vector3d Point = PROJ_Homog2Cart(MapPoint.Point);
+            AppendBytes(Point.data(), 3 * sizeof(fp64));
         }
 
         for(const auto& [VoxelIndex, ObservationCount] :

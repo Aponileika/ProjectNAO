@@ -24,11 +24,12 @@ FILE_MAGIC = b"PANTOVIZ"
 BLOCK_MAGIC = b"PVBLOCK1"
 INDEX_MAGIC = b"PVINDEX1"
 FOOTER_MAGIC = b"PVEND001"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 FILE_HEADER = struct.Struct("<8sIIQ")
 BLOCK_PREFIX = struct.Struct("<8sQ")
-BLOCK_DATA_HEADER = struct.Struct("<QdQQiiifQQQ")
+BLOCK_DATA_HEADER_V1 = struct.Struct("<QdQQiiifQQQ")
+BLOCK_DATA_HEADER = struct.Struct("<QdQQQiiifQQQ")
 CAMERA_HEADER = struct.Struct("<iQQ")
 INDEX_HEADER = struct.Struct("<8sQ")
 INDEX_ENTRY = struct.Struct("<QdQQ")
@@ -72,6 +73,7 @@ class ReplayBlockMetadata:
     keyframe_id: int
     timestamp: float
     num_dense_points: int
+    num_sparse_points: int
     origin_key: np.ndarray
     voxel_size: float
     voxels_per_side: int
@@ -83,6 +85,7 @@ class ReplayBlockMetadata:
     tracking_timestamps: np.ndarray
     tracking_points: np.ndarray
     dense_offset: int
+    sparse_offset: int
     occupancy_offset: int
 
 
@@ -125,11 +128,12 @@ class ReplayFile:
             )
             if magic != FILE_MAGIC:
                 raise RuntimeError(f"invalid replay magic {magic!r}")
-            if version != FORMAT_VERSION:
+            if version not in (1, FORMAT_VERSION):
                 raise RuntimeError(
                     f"unsupported replay version {version}; "
-                    f"expected {FORMAT_VERSION}"
+                    f"expected 1 or {FORMAT_VERSION}"
                 )
+            self.version = version
             if not flags & 0x1:
                 raise RuntimeError("replay is not marked little-endian")
             if not flags & 0x2:
@@ -192,11 +196,19 @@ class ReplayFile:
                     f"invalid block prefix for keyframe {entry.keyframe_id}"
                 )
 
+            header = (
+                BLOCK_DATA_HEADER if self.version >= 2 else BLOCK_DATA_HEADER_V1
+            )
+            values = header.unpack(read_exact(file, header.size, "block header"))
+            if self.version == 1:
+                # Older files have no sparse-point count or payload.
+                values = values[:4] + (0,) + values[4:]
             (
                 keyframe_id,
                 timestamp,
                 num_tracking_samples,
                 num_dense_points,
+                num_sparse_points,
                 origin_x,
                 origin_y,
                 origin_z,
@@ -204,9 +216,7 @@ class ReplayFile:
                 voxels_per_side,
                 occupied_threshold,
                 num_nonzero_occupancy,
-            ) = BLOCK_DATA_HEADER.unpack(
-                read_exact(file, BLOCK_DATA_HEADER.size, "block header")
-            )
+            ) = values
 
             if keyframe_id != entry.keyframe_id or timestamp != entry.timestamp:
                 raise RuntimeError("block contents do not match replay index")
@@ -256,7 +266,8 @@ class ReplayFile:
                 tracking_points = np.empty((0, 3), dtype=np.float64)
 
             dense_offset = file.tell()
-            occupancy_offset = dense_offset + num_dense_points * 3 * 4
+            sparse_offset = dense_offset + num_dense_points * 3 * 4
+            occupancy_offset = sparse_offset + num_sparse_points * 3 * 8
             expected_end = (
                 occupancy_offset + num_nonzero_occupancy * 2 * 8
             )
@@ -292,6 +303,7 @@ class ReplayFile:
             keyframe_id=keyframe_id,
             timestamp=timestamp,
             num_dense_points=num_dense_points,
+            num_sparse_points=num_sparse_points,
             origin_key=np.array(
                 [origin_x, origin_y, origin_z], dtype=np.int32
             ),
@@ -305,24 +317,30 @@ class ReplayFile:
             tracking_timestamps=tracking_timestamps,
             tracking_points=tracking_points,
             dense_offset=dense_offset,
+            sparse_offset=sparse_offset,
             occupancy_offset=occupancy_offset,
         )
 
-    def read_dynamic_data(self, step: int):
-        block = self.blocks[step]
-        with self.path.open("rb") as file:
-            file.seek(block.dense_offset)
-            dense_data = read_exact(
-                file,
-                block.num_dense_points * 3 * 4,
-                "dense points",
+    def read_dynamic_data(self, step: int, dense: bool = True):
+        if not dense and self.version < 2:
+            raise ValueError(
+                "This v1 replay contains no sparse points. "
+                "Generate a new replay with the updated SLAM exporter."
             )
-            if block.num_dense_points:
-                dense_points = np.frombuffer(
-                    dense_data, dtype="<f4"
-                ).reshape(block.num_dense_points, 3).copy()
-            else:
-                dense_points = np.empty((0, 3), dtype=np.float32)
+        block = self.blocks[step]
+        num_points = block.num_dense_points if dense else block.num_sparse_points
+        point_dtype = "<f4" if dense else "<f8"
+        point_size = 4 if dense else 8
+        with self.path.open("rb") as file:
+            file.seek(block.dense_offset if dense else block.sparse_offset)
+            point_data = read_exact(
+                file,
+                num_points * 3 * point_size,
+                "dense points" if dense else "sparse points",
+            )
+            points = np.frombuffer(
+                point_data, dtype=point_dtype
+            ).reshape(num_points, 3).copy()
 
             file.seek(block.occupancy_offset)
             occupancy_data = read_exact(
@@ -356,9 +374,9 @@ class ReplayFile:
             "indices": indices,
             "counts": counts,
         }
-        return dense_points, occupancy
+        return points, occupancy
 
-    def state_for_step(self, step: int):
+    def state_for_step(self, step: int, dense: bool = True):
         if not 0 <= step < len(self.blocks):
             raise IndexError(step)
 
@@ -377,12 +395,12 @@ class ReplayFile:
         }
         track_end = self.tracking_end_indices[step]
         tracks = self.all_tracking_points[:track_end]
-        dense_points, occupancy = self.read_dynamic_data(step)
+        points, occupancy = self.read_dynamic_data(step, dense=dense)
 
         black = np.zeros(3, dtype=np.uint8)
         points3d = {
             point_id: SimpleNamespace(xyz=point, rgb=black)
-            for point_id, point in enumerate(dense_points)
+            for point_id, point in enumerate(points)
         }
 
         return tracks, cameras, images, points3d, distortions, occupancy
@@ -406,12 +424,17 @@ def find_replay(root: Path, requested_path: str | None) -> Path:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def main(root_path: str, replay_path: str | None = None):
+def main(root_path: str, replay_path: str | None = None, dense: bool = True):
     root = Path(root_path)
     replay_file_path = find_replay(root, replay_path)
     replay = ReplayFile(replay_file_path)
     if not replay.blocks:
         raise RuntimeError(f"{replay_file_path} contains no keyframe blocks")
+    if not dense and replay.version < 2:
+        raise ValueError(
+            "This v1 replay contains no sparse points. "
+            "Generate a new replay with the updated SLAM exporter."
+        )
 
     print(f"root path = {root.resolve()}")
     print(f"images path = {(root / 'images').resolve()}")
@@ -449,6 +472,15 @@ def main(root_path: str, replay_path: str | None = None):
         disabled=True,
     )
 
+    gui_dense_mode = server.gui.add_checkbox(
+        "Dense mode", initial_value=dense,
+        disabled=replay.version < 2,
+        hint=(
+            "On: dense reconstruction. Off: sparse local-map landmarks."
+            if replay.version >= 2 else
+            "This older replay contains dense points only."
+        ),
+    )
     gui_point_size = server.gui.add_slider(
         "Point size", min=0.001, max=1.0, step=0.001,
         initial_value=initial_point_size,
@@ -498,7 +530,8 @@ def main(root_path: str, replay_path: str | None = None):
         "**Image points:** replay keyframes do not contain 2D observations."
     )
     server.gui.add_markdown(
-        "**Occupancy:** the <span style='color:#28d250'>green</span> "
+        "**Occupancy (from dense reconstruction in both point modes):** "
+        "the <span style='color:#28d250'>green</span> "
         "wireframe is the rolling map boundary; "
         "<span style='color:#eb3232'>red</span> voxels have three or more "
         "observations."
@@ -654,7 +687,13 @@ def main(root_path: str, replay_path: str | None = None):
         "requested_step": 0,
         "playing": False,
         "deadline": None,
+        "refresh_requested": False,
     }
+
+    @gui_dense_mode.on_update
+    def _(_):
+        with playback_lock:
+            playback["refresh_requested"] = True
 
     @gui_play.on_click
     def _(_):
@@ -694,7 +733,7 @@ def main(root_path: str, replay_path: str | None = None):
         with playback_lock:
             playback["deadline"] = None
 
-    def render_step(step: int):
+    def render_step(step: int, dense_mode: bool):
         (
             tracks,
             cameras,
@@ -702,7 +741,7 @@ def main(root_path: str, replay_path: str | None = None):
             points3d,
             distortions,
             occupancy,
-        ) = replay.state_for_step(step)
+        ) = replay.state_for_step(step, dense=dense_mode)
 
         update_visualization(
             server,
@@ -733,12 +772,14 @@ def main(root_path: str, replay_path: str | None = None):
         block = replay.blocks[step]
         gui_replay_status.value = (
             f"{step + 1}/{len(replay.blocks)} | "
-            f"KF {block.keyframe_id} | t={block.timestamp:.6f}"
+            f"KF {block.keyframe_id} | t={block.timestamp:.6f} | "
+            f"{'Dense' if dense_mode else 'Sparse'}"
         )
         print(
             f"[VISER] Replay step {step + 1}/{len(replay.blocks)}: "
             f"KF {block.keyframe_id}, t={block.timestamp:.6f}, "
             f"dense={block.num_dense_points}, "
+            f"sparse={block.num_sparse_points}, "
             f"occupied entries={block.num_nonzero_occupancy}"
         )
 
@@ -747,10 +788,13 @@ def main(root_path: str, replay_path: str | None = None):
         with playback_lock:
             requested_step = playback["requested_step"]
             current_step = playback["current_step"]
+            refresh_requested = playback["refresh_requested"]
+            playback["refresh_requested"] = False
+            dense_mode = gui_dense_mode.value
 
-        if requested_step != current_step:
+        if requested_step != current_step or refresh_requested:
             try:
-                render_step(requested_step)
+                render_step(requested_step, dense_mode)
             except Exception as error:
                 print(
                     f"[VISER] Failed to render replay step "
@@ -792,7 +836,7 @@ def main(root_path: str, replay_path: str | None = None):
         time.sleep(0.02 if not should_advance else 0.0)
 
 
-if __name__ == "__main__":
+def parse_arguments(argv=None):
     parser = argparse.ArgumentParser(
         description="Replay a PantoSLAM full binary in Viser."
     )
@@ -805,5 +849,19 @@ if __name__ == "__main__":
             "ROOT/full_binaries. Relative paths are resolved from ROOT."
         ),
     )
-    arguments = parser.parse_args()
-    main(arguments.root, arguments.replay)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--dense", dest="dense", action="store_true",
+        help="Start with dense reconstruction points (default).",
+    )
+    mode.add_argument(
+        "--no-dense", "--sparse", dest="dense", action="store_false",
+        help="Start with sparse local-map landmarks; requires a v2 replay.",
+    )
+    parser.set_defaults(dense=True)
+    return parser.parse_args(argv)
+
+
+if __name__ == "__main__":
+    arguments = parse_arguments()
+    main(arguments.root, arguments.replay, dense=arguments.dense)

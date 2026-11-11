@@ -161,7 +161,9 @@ static void TestFinalAlignmentAndExports()
                 PantoSLAM.TrackingTrajectory, PantoSLAM.TrackingTrajectoryTimeStamps), "aligned post-run replay written");
     const auto ReplayPath = std::filesystem::directory_iterator(Root / "full_binaries")->path();
     std::ifstream Replay(ReplayPath, std::ios::binary);
-    Replay.seekg(24); // PANTOVIZ v1 header
+    Replay.seekg(8);
+    Require(ReadBinary<u32>(Replay) == 2, "replay v2 stores both point clouds");
+    Replay.seekg(24); // PANTOVIZ file header
     char Magic[8]{};
     Replay.read(Magic, sizeof(Magic));
     Require(std::memcmp(Magic, "PVBLOCK1", 8) == 0, "replay first keyframe block");
@@ -170,7 +172,12 @@ static void TestFinalAlignmentAndExports()
     (void)ReadBinary<fp64>(Replay); // camera timestamp
     const u64 NumTracking = ReadBinary<u64>(Replay);
     const u64 NumDense = ReadBinary<u64>(Replay);
-    Require(NumTracking > 0 && NumDense > 0, "replay contains trajectory and camera-local dense sample");
+    const u64 NumSparse = ReadBinary<u64>(Replay);
+    const typeLocalMap ReplayLocalMap = MAP_CreateTemporallyGroundedLocalMap(
+            *PantoSLAM.GlobalMap, *PantoSLAM.CovisibilityGraph, Frame.ID);
+    Require(NumTracking > 0 && NumDense > 0,
+            "replay contains trajectory and camera-local dense sample");
+    Require(NumSparse == ReplayLocalMap.MapPoints.size(), "sparse replay uses the non-dense local map");
     Replay.seekg(3 * sizeof(i32) + sizeof(fp32) + 3 * sizeof(u64) + sizeof(i32) +
             2 * sizeof(u64) + 10 * sizeof(fp64), std::ios::cur); // voxel and camera calibration
     const fp64 ReplayQw = ReadBinary<fp64>(Replay);
@@ -188,6 +195,44 @@ static void TestFinalAlignmentAndExports()
     const fp32 Z = ReadBinary<fp32>(Replay);
     const Eigen::Vector3d ExpectedDense = Frame.Camera.Pose.Quaternion * Eigen::Vector3d(0, 0, 2) + Frame.Camera.Pose.tParametrization;
     Require((Eigen::Vector3d(X, Y, Z) - ExpectedDense).norm() < 1e-5, "saved dense geometry follows aligned camera pose");
+    Replay.seekg(static_cast<std::streamoff>((NumDense - 1) * 3 * sizeof(fp32)), std::ios::cur);
+    for(const typePantoMapPoint& MapPoint : ReplayLocalMap.MapPoints)
+    {
+        Require(ReadPosition(Replay).isApprox(PROJ_Homog2Cart(MapPoint.Point), 1e-12),
+                "saved sparse geometry retains aligned world coordinates");
+    }
+
+    // The root is a fixed IMU anchor with no optimizable map points. Check
+    // every block, including later local maps with actual sparse landmarks.
+    Replay.seekg(24);
+    u64 TotalSparse = 0;
+    for(std::size_t BlockIndex = 0; BlockIndex < PantoSLAM.GlobalMap->KeyFrames.active_size(); ++BlockIndex)
+    {
+        const std::streampos BlockStart = Replay.tellg();
+        Replay.seekg(8, std::ios::cur); // block magic
+        const u64 BlockSize = ReadBinary<u64>(Replay);
+        const u64 KeyFrameID = ReadBinary<u64>(Replay);
+        (void)ReadBinary<fp64>(Replay); // timestamp
+        const u64 TrackingCount = ReadBinary<u64>(Replay);
+        const u64 DenseCount = ReadBinary<u64>(Replay);
+        const u64 SparseCount = ReadBinary<u64>(Replay);
+        const typeLocalMap LocalMap = MAP_CreateTemporallyGroundedLocalMap(
+                *PantoSLAM.GlobalMap, *PantoSLAM.CovisibilityGraph, KeyFrameID);
+        Require(SparseCount == LocalMap.MapPoints.size(), "every replay block contains its local sparse map");
+        Replay.seekg(3 * sizeof(i32) + sizeof(fp32) + 3 * sizeof(u64) + sizeof(i32) +
+                2 * sizeof(u64) + 17 * sizeof(fp64), std::ios::cur); // voxel data, calibration and pose
+        const u64 ImageNameSize = ReadBinary<u64>(Replay);
+        Replay.seekg(static_cast<std::streamoff>(ImageNameSize + TrackingCount * 4 * sizeof(fp64) +
+                    DenseCount * 3 * sizeof(fp32)), std::ios::cur);
+        for(const typePantoMapPoint& MapPoint : LocalMap.MapPoints)
+        {
+            Require(ReadPosition(Replay).isApprox(PROJ_Homog2Cart(MapPoint.Point), 1e-12),
+                    "every saved sparse landmark retains its aligned world coordinates");
+        }
+        TotalSparse += SparseCount;
+        Replay.seekg(BlockStart + static_cast<std::streamoff>(BlockSize));
+    }
+    Require(TotalSparse > 0, "post-run replay contains sparse landmarks");
 }
 
 int main()
