@@ -1,0 +1,7 @@
+# Dependencies for colmap/vis_live.py, colmap/vis_replay.py, and colmap/vis_colmap.py.
+# Install from the repository root: python -m pip install -r requirements.txt
+numpy
+viser
+imageio
+# ImageIO backend for reading saved PNG/JPEG camera images.
+Pillow

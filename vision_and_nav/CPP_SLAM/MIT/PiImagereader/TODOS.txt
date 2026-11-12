@@ -1,0 +1,2 @@
+-   Add a second camera to the pi, follow the smart solution of syncing with libcamera functionality.
+-   Make this program recieve both frames.

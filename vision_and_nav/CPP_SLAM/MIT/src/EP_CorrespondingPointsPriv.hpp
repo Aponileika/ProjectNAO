@@ -1,0 +1,28 @@
+#ifndef __EP_CORRESPONDINGPOINTSPRIV_HPP
+#define __EP_CORRESPONDINGPOINTSPRIV_HPP
+#include "../include/EP_CorrespondingPoints.hpp"
+#include "CArenaAlloc.h"
+#include "CM_Camera.hpp"
+#include "LG_Logging.hpp"
+#include "PANTO_Utils.hpp"
+#include <Eigen/Dense>
+#include <opencv2/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
+#include <opencv2/opencv.hpp>
+
+struct AKAZEExtract {
+  cv::Ptr<cv::AKAZE> akaze;
+  cv::BFMatcher matcher;
+  fp64 threshold;
+  fp64 matchratio;
+#if defined(DESCRIPTOR_TYPE_TEBLID)
+  cv::Ptr<cv::xfeatures2d::TEBLID> Teblid;
+#endif
+};
+
+cv::Mat __EP_CrossProdMat(cv::Mat x);
+void __EP_InitAkaze(void);
+void __EP_destroy(void);
+DescRet __EP_GetDesc(const cv::Mat& img);
+std::vector<cv::KeyPoint> __EP_Anms(std::vector<cv::KeyPoint>& KeyPoints, const i32 ImageColumns, const i32 ImageRows);
+#endif // __EP_CORRESPONDINGPOINTSPRIV_HPP
