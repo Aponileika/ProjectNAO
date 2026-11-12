@@ -1,0 +1,2241 @@
+#include "../include/OP_BA.hpp"
+#include "CM_Camera.hpp"
+#include "Config.hpp"
+#include "IMU_PreIntegration.hpp"
+#include "LG_Logging.hpp"
+#include "PANTOVEC_PantoVector.hpp"
+
+/*see https://ceres-solver.googlesource.com/ceres-solver/+/master/examples/simple_bundle_adjuster.cc
+ *and https://ceres-solver.readthedocs.io/latest/nnls_tutorial.html
+ *for details into ceres nonlinear solving for BA
+ *For the current simple implementation https://ceres-solver.googlesource.com/ceres-solver/+/master/examples/simple_bundle_adjuster.cc
+ *Is also nice to follow
+ * */
+
+//read only intrinsics for residual calculation
+#if defined(CONFIG_STEREO)
+static const struct typeOPStereoIntrinsics OPStereoIntrinsics(*CM_GetStereoCalibration());
+#endif
+static const struct typeOPCameraIntrinsics OPCameraIntrinsics(CM_GetIntrinsics()->K);
+static const Eigen::Matrix4d* TBS = &CM_GetIntrinsics()->T_BS;
+
+void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem);
+void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
+        ceres::Problem& Problem);
+void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem);
+void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
+        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering);
+
+void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
+        ceres::Problem& Problem, typeKeyFrame* NewKeyFrame,
+        typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering);
+void __OP_BuildProblemTrackingLocalVisualOnly(typeLocalMapTracking& TrackingMap,
+        ceres::Problem& Problem, typeKeyFrame* NewKeyFrame,
+        typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering);
+
+void __OP_BuildProblemLocal(typeLocalMap& LocalMap, ceres::Problem& Problem, ceres::ParameterBlockOrdering& Ordering);
+void __OP_BuildProblemLocalVisualOnly(typeLocalMap& LocalMap, ceres::Problem& Problem, ceres::ParameterBlockOrdering& Ordering);
+
+bool OP_BundleAdjust(typeGlobalMap& Map, typeOptimizationTarget Target,
+        const typeLocalMap& LocalMap, typeKeyFrame* NewKeyFrame,
+        typeKeyFrame* PreviousFrame, typeKeyFrameQueue* KeyFrameQueue)
+{
+    (void)LocalMap;
+    (void)KeyFrameQueue;
+    ceres::Problem Problem;
+    ceres::Solver::Options options;
+    options.max_num_iterations = CERES_MAX_ITER;
+    options.minimizer_progress_to_stdout = false;
+    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+
+    options.num_threads = CERES_NUM_THREADS;
+
+    auto Ordering = std::make_shared<ceres::ParameterBlockOrdering>();
+
+    switch(Target)
+    {
+        case OptimizationTypePoseAndPoints:
+            __OP_BuildProblem(Map, Problem);
+            options.linear_solver_type = ceres::SPARSE_SCHUR;
+            break;
+        case OptimizationTypePointsOnly:
+            __OP_BuildProblemPointsOnly(Map, Problem);
+            options.linear_solver_type = ceres::SPARSE_SCHUR;
+            break;
+        case OptimizationTypePose:
+            __OP_BuildProblemPoseOnly(Map, Problem);
+            options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+            break;
+        case OptimizationTypeTracking:
+            __OP_BuildProblemTracking(Map, Problem, NewKeyFrame, PreviousFrame, *Ordering);
+            options.linear_solver_type = ceres::DENSE_QR;
+            if(CERES_EXPLICIT_ORDERING)
+            {
+                options.linear_solver_ordering = Ordering;
+            }
+            break;
+        case OptimizationTypeLocal:
+            LG_Log(LogSeverity::ERROR,
+                    "[OP_BundleAdjust] Local BA requires OP_BundleAdjustLocal\n");
+            return false;
+    }
+
+    ceres::Solver::Summary Summary;
+    ceres::Solve(options, &Problem, &Summary);
+
+    if(Target == OptimizationTypeTracking)
+    {
+        CM_SetRtfromParam(&(NewKeyFrame->Camera));
+#if defined(CONFIG_IMU)
+        KEY_UpdateNavState(NewKeyFrame);
+#endif
+    }
+
+    else
+    {
+        for(typeKeyFrame& KeyFrame : Map.KeyFrames)
+        {
+            CM_SetRtfromParam(&KeyFrame.Camera);
+#if defined(CONFIG_IMU)
+            KEY_UpdateNavState(&KeyFrame);
+#endif
+        }
+    }
+
+    LG_Log(LogSeverity::DBG, "%s\n", Summary.FullReport().c_str());
+
+    return true;
+}
+
+bool OP_BundleAdjustTracking(typeLocalMapTracking& TrackingMap, typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame)
+{
+    assert(NewKeyFrame != nullptr);
+
+    ceres::Problem Problem;
+    ceres::Solver::Options Options;
+    Options.max_num_iterations = CERES_MAX_ITER;
+    Options.minimizer_progress_to_stdout = false;
+    Options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    Options.num_threads = CERES_NUM_THREADS;
+    Options.linear_solver_type = ceres::DENSE_QR;
+
+    auto Ordering = std::make_shared<ceres::ParameterBlockOrdering>();
+
+    __OP_BuildProblemTrackingLocal(TrackingMap, Problem, NewKeyFrame, PreviousFrame, *Ordering);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Options.linear_solver_ordering = Ordering;
+    }
+
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+
+    CM_SetRtfromParam(&NewKeyFrame->Camera);
+#if defined(CONFIG_IMU)
+    KEY_UpdateNavState(NewKeyFrame);
+#endif
+
+    LG_Log(LogSeverity::DBG, "%s\n", Summary.FullReport().c_str());
+    return true;
+}
+
+bool OP_BundleAdjustTrackingVisualOnly(typeLocalMapTracking& TrackingMap, typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame)
+{
+    assert(NewKeyFrame != nullptr);
+
+    ceres::Problem Problem;
+    ceres::Solver::Options Options;
+    Options.max_num_iterations = CERES_MAX_ITER;
+    Options.minimizer_progress_to_stdout = false;
+    Options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    Options.num_threads = CERES_NUM_THREADS;
+    Options.linear_solver_type = ceres::DENSE_QR;
+
+    auto Ordering = std::make_shared<ceres::ParameterBlockOrdering>();
+
+    __OP_BuildProblemTrackingLocalVisualOnly(TrackingMap, Problem, NewKeyFrame, PreviousFrame, *Ordering);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Options.linear_solver_ordering = Ordering;
+    }
+
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+
+    CM_SetRtfromParam(&NewKeyFrame->Camera);
+#if defined(CONFIG_IMU)
+    KEY_UpdateNavState(NewKeyFrame);
+#endif
+
+    LG_Log(LogSeverity::DBG, "%s\n", Summary.FullReport().c_str());
+    return true;
+}
+
+bool OP_BundleAdjustLocal(typeLocalMap& LocalMap, typeKeyFrameQueue* KeyFrameQueue)
+{
+    assert(KeyFrameQueue != nullptr);
+
+    auto Ordering = std::make_shared<ceres::ParameterBlockOrdering>();
+
+    ceres::Problem Problem;
+
+    __OP_BuildProblemLocal(LocalMap, Problem, *Ordering);
+
+
+    u64 Generation = 0;
+    if(PANTO_DATASET_REALTIME_MODE && !KeyFrameQueue->PrepareForBA(Generation))
+    {
+        return false;
+    }
+
+    OP_LocalBAAbortCallback AbortCallback(KeyFrameQueue->KeyFrameGen, Generation);
+
+    ceres::Solver::Options Options;
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Options.linear_solver_ordering = Ordering;
+    }
+    Options.max_num_iterations = CERES_MAX_ITER;
+    Options.minimizer_progress_to_stdout = false;
+    Options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    Options.num_threads = CERES_NUM_THREADS;
+    Options.linear_solver_type = ceres::DENSE_SCHUR;
+
+    if(PANTO_DATASET_REALTIME_MODE)
+    {
+        Options.callbacks.push_back(&AbortCallback);
+    }
+
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+
+    const bool Interrupted = PANTO_DATASET_REALTIME_MODE &&
+        (AbortCallback.WasAborted || KeyFrameQueue->KeyFrameGen.load(std::memory_order_relaxed) != Generation);
+    if(!Summary.IsSolutionUsable() || Summary.termination_type == ceres::FAILURE) 
+    {
+        LG_Log(LogSeverity::ERROR,
+                "Local ba result rejected: %s\n",
+                Summary.BriefReport().c_str());
+        return false;
+    }
+
+    if(Interrupted)
+    {
+        LG_Log(LogSeverity::DATA,
+                "Local ba interrupted; committing partial solution\n");
+    }
+
+    for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        if(!KeyFrame.Camera.Pose.Quaternion.coeffs().allFinite() ||
+           !KeyFrame.Camera.Pose.tParametrization.allFinite()
+#if defined(CONFIG_IMU)
+           || !KeyFrame.NavigationState.Velocity.allFinite()
+           || !KeyFrame.NavigationState.GyroBias.allFinite()
+           || !KeyFrame.NavigationState.AccelorometerBias.allFinite()
+#endif
+          )
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "Local ba result rejected: non-finite keyframe state\n");
+            return false;
+        }
+    }
+    for(const typePantoMapPoint& MapPoint : LocalMap.MapPoints)
+    {
+        if(!MapPoint.Point.allFinite())
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "Local ba result rejected: non-finite map point\n");
+            return false;
+        }
+    }
+
+    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        CM_SetRtfromParam(&KeyFrame.Camera);
+#if defined(CONFIG_IMU)
+        KEY_UpdateNavState(&KeyFrame);
+#endif
+    }
+
+    LG_Log(LogSeverity::DBG, "%s\n", Summary.FullReport().c_str());
+    return true;
+}
+
+bool OP_BundleAdjustLocalVisualOnly(typeLocalMap& LocalMap, typeKeyFrameQueue* KeyFrameQueue)
+{
+    assert(KeyFrameQueue != nullptr);
+
+    auto Ordering = std::make_shared<ceres::ParameterBlockOrdering>();
+
+    ceres::Problem Problem;
+
+    __OP_BuildProblemLocalVisualOnly(LocalMap, Problem, *Ordering);
+
+    u64 Generation = 0;
+    if(PANTO_DATASET_REALTIME_MODE && !KeyFrameQueue->PrepareForBA(Generation))
+    {
+        return false;
+    }
+
+    OP_LocalBAAbortCallback AbortCallback(KeyFrameQueue->KeyFrameGen, Generation);
+
+    ceres::Solver::Options Options;
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Options.linear_solver_ordering = Ordering;
+    }
+    Options.max_num_iterations = CERES_MAX_ITER;
+    Options.minimizer_progress_to_stdout = false;
+    Options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    Options.num_threads = CERES_NUM_THREADS;
+    Options.linear_solver_type = ceres::DENSE_SCHUR;
+
+    if(PANTO_DATASET_REALTIME_MODE)
+    {
+        Options.callbacks.push_back(&AbortCallback);
+    }
+
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+
+    const bool Interrupted = PANTO_DATASET_REALTIME_MODE &&
+        (AbortCallback.WasAborted || KeyFrameQueue->KeyFrameGen.load(std::memory_order_relaxed) != Generation);
+    if(!Summary.IsSolutionUsable() || Summary.termination_type == ceres::FAILURE) 
+    {
+        LG_Log(LogSeverity::ERROR,
+                "Local ba result rejected: %s\n",
+                Summary.BriefReport().c_str());
+        return false;
+    }
+
+    if(Interrupted)
+    {
+        LG_Log(LogSeverity::DATA,
+                "Local ba interrupted; committing partial solution\n");
+    }
+
+    for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        if(!KeyFrame.Camera.Pose.Quaternion.coeffs().allFinite() ||
+           !KeyFrame.Camera.Pose.tParametrization.allFinite()
+#if defined(CONFIG_IMU)
+           || !KeyFrame.NavigationState.Velocity.allFinite()
+           || !KeyFrame.NavigationState.GyroBias.allFinite()
+           || !KeyFrame.NavigationState.AccelorometerBias.allFinite()
+#endif
+          )
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "Local ba result rejected: non-finite keyframe state\n");
+            return false;
+        }
+    }
+    for(const typePantoMapPoint& MapPoint : LocalMap.MapPoints)
+    {
+        if(!MapPoint.Point.allFinite())
+        {
+            LG_Log(LogSeverity::ERROR,
+                    "Local ba result rejected: non-finite map point\n");
+            return false;
+        }
+    }
+
+    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        CM_SetRtfromParam(&KeyFrame.Camera);
+#if defined(CONFIG_IMU)
+        KEY_UpdateNavState(&KeyFrame);
+#endif
+    }
+
+    LG_Log(LogSeverity::DBG, "%s\n", Summary.FullReport().c_str());
+    return true;
+}
+
+bool OP_EigenValueSolveGyroBias(typePantoVector<typeKeyFrame>& KeyFrames, const typePantoVector<typePantoMapPoint>& MapPoints)
+{
+    if(KeyFrames.active_size() < 2)
+    {
+        return false;
+    }
+    Eigen::Vector3d GyroBias = KeyFrames.begin()->NavigationState.GyroBias;
+    if(!GyroBias.allFinite())
+    {
+        return false;
+    }
+
+    ceres::HuberLoss LossFunction(CERES_HUBER_THRESHOLD);
+    ceres::Problem::Options ProblemOptions;
+    ProblemOptions.loss_function_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
+    ceres::Problem Problem(ProblemOptions);
+    u64 NumFactors = 0;
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        const u64 NextKFID = KeyFrame.NextKFID;
+        if(NextKFID == PANTO_ID_NOT_SET)
+        {
+            continue;
+        }
+        if(NextKFID >= KeyFrames.size() || !KeyFrames.contains(NextKFID))
+        {
+            return false;
+        }
+        const typeKeyFrame& NextKeyFrame = KeyFrames[NextKFID];
+        const typePreIntegrationData& PreIntegration = NextKeyFrame.PreIntegrationData;
+        if(PreIntegration.DeltaT <= 0.0 || !PreIntegration.DeltaR.allFinite() ||
+           !PreIntegration.JRg.allFinite() || !PreIntegration.GyroBias.allFinite())
+        {
+            return false;
+        }
+
+        // One normal-plane eigenvalue factor per camera and temporal pair.
+        for(const bool RightCamera : {false, true})
+        {
+            Eigen::Matrix3d Sxx = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Syy = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Szz = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Sxy = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Syz = Eigen::Matrix3d::Zero();
+            Eigen::Matrix3d Szx = Eigen::Matrix3d::Zero();
+            u64 NumPairs = 0;
+
+            for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+            {
+                const u64 MapPointID = ImagePoint.MapPointID;
+                if(MapPointID == PANTO_ID_NOT_SET || MapPointID >= MapPoints.size() ||
+                   !MapPoints.contains(MapPointID))
+                {
+                    continue;
+                }
+                const typePantoMapPoint& MapPoint = MapPoints[MapPointID];
+                for(auto Observation = MapPoint.KeyFrameIDs.begin(); Observation != MapPoint.KeyFrameIDs.end(); ++Observation)
+                {
+                    // Observation arrays share slots; their values are IDs,
+                    // not an array indexed by KeyFrameID.
+                    const std::size_t Slot = Observation.index();
+                    if(*Observation != NextKFID || Slot >= MapPoint.ImagePointIDs.size() ||
+                       !MapPoint.ImagePointIDs.contains(Slot))
+                    {
+                        continue;
+                    }
+                    const u64 ImagePointID = MapPoint.ImagePointIDs[Slot];
+                    if(ImagePointID >= NextKeyFrame.Points.ImagePoints.size() ||
+                       !NextKeyFrame.Points.ImagePoints.contains(ImagePointID))
+                    {
+                        continue;
+                    }
+                    const typePantoImagePoint& NextImagePoint = NextKeyFrame.Points.ImagePoints[ImagePointID];
+                    if(NextImagePoint.MapPointID != MapPointID ||
+                       (RightCamera && (!ImagePoint.IsMatched || !NextImagePoint.IsMatched)))
+                    {
+                        continue;
+                    }
+                    const Eigen::Vector2d& FirstPoint = RightCamera ? ImagePoint.RightCameraMatch : ImagePoint.Point;
+                    const Eigen::Vector2d& SecondPoint = RightCamera ? NextImagePoint.RightCameraMatch : NextImagePoint.Point;
+                    if(!FirstPoint.allFinite() || !SecondPoint.allFinite())
+                    {
+                        continue;
+                    }
+                    const Eigen::Vector3d First = Eigen::Vector3d(
+                            (FirstPoint.x() - OPStereoIntrinsics.cx) / OPStereoIntrinsics.fx,
+                            (FirstPoint.y() - OPStereoIntrinsics.cy) / OPStereoIntrinsics.fy, 1.0).normalized();
+                    const Eigen::Vector3d Second = Eigen::Vector3d(
+                            (SecondPoint.x() - OPStereoIntrinsics.cx) / OPStereoIntrinsics.fx,
+                            (SecondPoint.y() - OPStereoIntrinsics.cy) / OPStereoIntrinsics.fy, 1.0).normalized();
+                    const Eigen::Matrix3d OuterProduct = Second * Second.transpose();
+                    Sxx += First.x() * First.x() * OuterProduct;
+                    Syy += First.y() * First.y() * OuterProduct;
+                    Szz += First.z() * First.z() * OuterProduct;
+                    Sxy += First.x() * First.y() * OuterProduct;
+                    Syz += First.y() * First.z() * OuterProduct;
+                    Szx += First.z() * First.x() * OuterProduct;
+                    ++NumPairs;
+                    break;
+                }
+            }
+            if(NumPairs < 5)
+            {
+                continue;
+            }
+            Problem.AddResidualBlock(OP_EigenValueBiasResidual::Create(
+                        PreIntegration.DeltaR, PreIntegration.JRg, TBS,
+                        Sxx, Syy, Szz, Sxy, Syz, Szx, PreIntegration.GyroBias),
+                    &LossFunction, GyroBias.data());
+            ++NumFactors;
+        }
+    }
+    if(NumFactors == 0)
+    {
+        return false;
+    }
+
+    ceres::Solver::Options Options;
+    Options.linear_solver_type = ceres::DENSE_QR;
+    Options.max_num_iterations = CERES_MAX_ITER;
+    Options.minimizer_progress_to_stdout = false;
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+    if(!Summary.IsSolutionUsable() || !GyroBias.allFinite())
+    {
+        return false;
+    }
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        KeyFrame.NavigationState.GyroBias = GyroBias;
+    }
+    return true;
+}
+
+void __OP_BuildProblemPointsOnly(typeGlobalMap& Map,
+        ceres::Problem& Problem)
+{
+    // GT initialization supplies both camera poses in metric world
+    // coordinates. Keep both cameras fixed and refine only the triangulated
+    // points; otherwise a two-view BA can move the second GT pose and destroy
+    // the baseline/parallax that was used to accept the initialization.
+    for(typeKeyFrame& KeyFrame : Map.KeyFrames)
+    {
+        typeCameraPose& Camera = KeyFrame.Camera.Pose;
+        Problem.AddParameterBlock(Camera.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold(Camera.Quaternion.coeffs().data(),
+                new ceres::EigenQuaternionManifold());
+        Problem.AddParameterBlock(Camera.tParametrization.data(), 3);
+        Problem.SetParameterBlockConstant(Camera.Quaternion.coeffs().data());
+        Problem.SetParameterBlockConstant(Camera.tParametrization.data());
+    }
+
+    for(typePantoMapPoint& MapPoint : Map.MapPoints)
+    {
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        Problem.SetManifold(MapPoint.Point.data(),
+                new ceres::SphereManifold<4>());
+    }
+
+    for(typeKeyFrame& KeyFrame : Map.KeyFrames)
+    {
+        typeCameraPose& Camera = KeyFrame.Camera.Pose;
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            if(ImagePoint.MapPointID == PANTO_ID_NOT_SET ||
+               !Map.MapPoints.contains(ImagePoint.MapPointID))
+            {
+                continue;
+            }
+
+            typePantoMapPoint& MapPoint =
+                Map.MapPoints[ImagePoint.MapPointID];
+
+#if defined(CONFIG_STEREO)
+            if(ImagePoint.IsMatched)
+            {
+                Problem.AddResidualBlock(
+                        OP_StereoReprojectionError::Create(
+                            ImagePoint.Point.x(),
+                            ImagePoint.Point.y(),
+                            ImagePoint.RightCameraMatch.x(),
+                            ImagePoint.RightCameraMatch.y(),
+                            &OPStereoIntrinsics),
+                        new ceres::HuberLoss(CERES_HUBER_THRESHOLD),
+                        Camera.Quaternion.coeffs().data(),
+                        Camera.tParametrization.data(),
+                        MapPoint.Point.data());
+            }
+            else
+            {
+                Problem.AddResidualBlock(
+                        OP_ReprojectionError::Create(
+                            ImagePoint.Point.x(),
+                            ImagePoint.Point.y(),
+                            &OPCameraIntrinsics),
+                        new ceres::HuberLoss(CERES_HUBER_THRESHOLD),
+                        Camera.Quaternion.coeffs().data(),
+                        Camera.tParametrization.data(),
+                        MapPoint.Point.data());
+            }
+#else
+            Problem.AddResidualBlock(
+                    OP_ReprojectionError::Create(
+                        ImagePoint.Point.x(),
+                        ImagePoint.Point.y(),
+                        &OPCameraIntrinsics),
+                    new ceres::HuberLoss(CERES_HUBER_THRESHOLD),
+                    Camera.Quaternion.coeffs().data(),
+                    Camera.tParametrization.data(),
+                    MapPoint.Point.data());
+#endif // CONFIG_STEREO
+        }
+    }
+}
+
+void __OP_BuildProblem(typeGlobalMap& Map, ceres::Problem& Problem)
+{
+    /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
+     *Optimizing on manifolds seemingly has many benefits, one of them is that
+     *Quaternions are naturally constrained to be normalized, another is that
+     *The dimension of the optimization is reduced to its natural size,
+     *I am unsure but I think this means that if we have 3DOF but 4 parameters
+     *the optimization is reduced to the natural size of optimizing with 3DOF, whatever that means?
+    */
+#if defined(CONFIG_IMU)
+    const Eigen::Vector3d Grav = *IMU_GetGravity();
+#endif
+
+    // Add every camera, and every navigation state for VI optimization,
+    // before creating residuals between keyframes.
+    for (typeKeyFrame& KeyFrame : Map.KeyFrames) 
+    {
+        typeCameraPose& Parameters = KeyFrame.Camera.Pose;
+
+        Problem.AddParameterBlock(Parameters.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold(Parameters.Quaternion.coeffs().data(),
+                             new ceres::EigenQuaternionManifold());
+
+        Problem.AddParameterBlock(Parameters.tParametrization.data(), 3);
+
+#if defined(CONFIG_IMU)
+        typeNavigationState& NavigationState = KeyFrame.NavigationState;
+        Problem.AddParameterBlock(NavigationState.Velocity.data(), 3);
+        Problem.AddParameterBlock(NavigationState.GyroBias.data(), 3);
+        Problem.AddParameterBlock(
+                NavigationState.AccelorometerBias.data(), 3);
+#endif
+
+        if (KeyFrame.ID == 0) 
+        {
+            Problem.SetParameterBlockConstant(Parameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant(Parameters.tParametrization.data());
+#if defined(CONFIG_IMU)
+            Problem.SetParameterBlockConstant(NavigationState.Velocity.data());
+            Problem.SetParameterBlockConstant(NavigationState.GyroBias.data());
+            Problem.SetParameterBlockConstant(
+                    NavigationState.AccelorometerBias.data());
+#endif
+        }
+    }
+
+    for(typePantoMapPoint& MapPoint : Map.MapPoints)
+    {
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
+    }
+
+    for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
+    {
+        typeCameraPose& Parameters = KeyFrame.Camera.Pose;
+
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+            if(MapPointID != PANTO_ID_NOT_SET)
+            {
+                const fp64 PointX = ImagePoint.Point.x();
+                const fp64 PointY = ImagePoint.Point.y();
+
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
+
+                ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+
+                Problem.AddResidualBlock(costfunc,
+                                          lossfunc,
+                                          Parameters.Quaternion.coeffs().data(),
+                                          Parameters.tParametrization.data(),
+                                          Map.MapPoints[MapPointID].Point.data());
+            }
+        }
+
+#if defined(CONFIG_IMU)
+        if(KeyFrame.ID == 0)
+        {
+            continue;
+        }
+
+        assert(KeyFrame.PreviousKFID != PANTO_ID_NOT_SET);
+        assert(Map.KeyFrames.contains(KeyFrame.PreviousKFID));
+
+        typeKeyFrame& PreviousKeyFrame =
+            Map.KeyFrames[KeyFrame.PreviousKFID];
+        typeCameraPose& PreviousCameraParameters =
+            PreviousKeyFrame.Camera.Pose;
+        typeNavigationState& PreviousNavigationState =
+            PreviousKeyFrame.NavigationState;
+        typeNavigationState& NavigationState = KeyFrame.NavigationState;
+        typePreIntegrationData& PreIntegrationData =
+            KeyFrame.PreIntegrationData;
+
+        const Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(
+                PreIntegrationData.Covariance);
+        const Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
+        const Eigen::Matrix<fp64, 15, 15> SqrtInfo =
+            L.triangularView<Eigen::Lower>().solve(
+                    Eigen::Matrix<fp64, 15, 15>::Identity());
+
+        ceres::CostFunction* IMUCostFunction = OP_IMUResidual::Create(
+                PreIntegrationData,
+                SqrtInfo,
+                Grav,
+                TBS);
+
+        Problem.AddResidualBlock(
+                IMUCostFunction,
+                nullptr,
+                PreviousCameraParameters.Quaternion.coeffs().data(),
+                PreviousCameraParameters.tParametrization.data(),
+                PreviousNavigationState.Velocity.data(),
+                PreviousNavigationState.GyroBias.data(),
+                PreviousNavigationState.AccelorometerBias.data(),
+                Parameters.Quaternion.coeffs().data(),
+                Parameters.tParametrization.data(),
+                NavigationState.Velocity.data(),
+                NavigationState.GyroBias.data(),
+                NavigationState.AccelorometerBias.data());
+#endif
+    }
+}
+
+void __OP_BuildProblemPoseOnly(typeGlobalMap& Map, ceres::Problem& Problem)
+{
+    /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
+     *Optimizing on manifolds seemingly has many benefits, one of them is that
+     *Quaternions are naturally constrained to be normalized, another is that
+     *The dimension of the optimization is reduced to its natural size,
+     *I am unsure but I think this means that if we have 3DOF but 4 parameters
+     *the optimization is reduced to the natural size of optimizing with 3DOF, whatever that means?
+    */
+    //We need to add the camera parameters first so we can
+    //Set the first camera constant
+
+#if defined(CONFIG_IMU)
+    const Eigen::Vector3d Grav = *IMU_GetGravity();
+#endif
+
+    for (typeKeyFrame& KeyFrame : Map.KeyFrames) 
+    {
+        const u64 KeyFrameID = KeyFrame.ID;
+
+        assert(Map.KeyFrames.contains(KeyFrameID));
+
+        typeCameraPose& CameraParameters = Map.KeyFrames[KeyFrameID].Camera.Pose;
+#if defined(CONFIG_IMU)
+        typeNavigationState& IMUParameters = Map.KeyFrames[KeyFrameID].NavigationState;
+#endif
+
+        Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
+        Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
+
+#if defined(CONFIG_IMU)
+        Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
+        Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
+        Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
+#endif
+
+        if(KeyFrameID == 0) 
+        {
+            Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
+#if defined(CONFIG_IMU)
+            Problem.SetParameterBlockConstant(IMUParameters.Velocity.data());
+            Problem.SetParameterBlockConstant(IMUParameters.GyroBias.data());
+            Problem.SetParameterBlockConstant(IMUParameters.AccelorometerBias.data());
+#endif
+            continue;
+        }
+
+#if defined(CONFIG_IMU)
+        typeKeyFrame& PreviousKeyFrame = Map.KeyFrames[Map.KeyFrames[KeyFrameID].PreviousKFID];
+
+        typeCameraPose& PreviousCameraParameters =   PreviousKeyFrame.Camera.Pose;
+        typeNavigationState& PreviousIMUParameters = PreviousKeyFrame.NavigationState;
+
+        Problem.AddParameterBlock(PreviousCameraParameters.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold(PreviousCameraParameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
+        Problem.AddParameterBlock(PreviousCameraParameters.tParametrization.data(), 3);
+
+        Problem.AddParameterBlock(PreviousIMUParameters.Velocity.data(), 3);
+        Problem.AddParameterBlock(PreviousIMUParameters.GyroBias.data(), 3);
+        Problem.AddParameterBlock(PreviousIMUParameters.AccelorometerBias.data(), 3);
+#endif
+    }
+
+    for(typePantoMapPoint& MapPoint : Map.MapPoints)
+    {
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        Problem.SetParameterBlockConstant(MapPoint.Point.data());
+    }
+
+    // Add the parameters for IMU, velocity, and biases, pose is shared.
+    // Calculate sqrtinfo S where S^T * S = P^-1, using cholesky decomp:
+    // P = LL^T, S = L^-1, since S^T * S = L^(-T) * L ^(-1) = P^-1,
+    
+    ceres::LossFunction* lossfunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+
+    for(typeKeyFrame& KeyFrame : Map.KeyFrames) 
+    {
+        typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+            if(MapPointID != PANTO_ID_NOT_SET)
+            {
+                const fp64 PointX = ImagePoint.Point.x();
+                const fp64 PointY = ImagePoint.Point.y();
+
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
+
+                Problem.AddResidualBlock(costfunc,
+                                          lossfunc,
+                                          CameraParameters.Quaternion.coeffs().data(),
+                                          CameraParameters.tParametrization.data(),
+                                          Map.MapPoints[MapPointID].Point.data());
+            }
+        }
+        if(KeyFrame.ID == 0)
+        {
+            continue;
+        }
+
+#if defined(CONFIG_IMU)
+        typeNavigationState& IMUParameters = KeyFrame.NavigationState;
+        typeCameraPose& PreviousCameraParameters = Map.KeyFrames[KeyFrame.PreviousKFID].Camera.Pose;
+        typeNavigationState& PreviousIMUParameters = Map.KeyFrames[KeyFrame.PreviousKFID].NavigationState;
+        typePreIntegrationData& PreviousData = KeyFrame.PreIntegrationData;
+
+        const Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(PreviousData.Covariance);
+        const Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
+        const Eigen::Matrix<fp64, 15, 15> SqrtInfo = L.triangularView<Eigen::Lower>().solve(
+                Eigen::Matrix<fp64, 15, 15>::Identity());
+        ceres::CostFunction* CostFuncIMU = OP_IMUResidual::Create(PreviousData, SqrtInfo, Grav, TBS);
+
+
+        Problem.AddResidualBlock(CostFuncIMU,
+                                    nullptr,
+                                    PreviousCameraParameters.Quaternion.coeffs().data(),
+                                    PreviousCameraParameters.tParametrization.data(),
+                                    PreviousIMUParameters.Velocity.data(),
+                                    PreviousIMUParameters.GyroBias.data(),
+                                    PreviousIMUParameters.AccelorometerBias.data(),
+
+                                    CameraParameters.Quaternion.coeffs().data(),
+                                    CameraParameters.tParametrization.data(),
+                                    IMUParameters.Velocity.data(),
+                                    IMUParameters.GyroBias.data(),
+                                    IMUParameters.AccelorometerBias.data()
+                                    );
+#endif
+    }
+}
+
+void __OP_BuildProblemTracking(typeGlobalMap& Map, ceres::Problem& Problem,
+        typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering)
+{
+    /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
+     *Optimizing on manifolds seemingly has many benefits, one of them is that
+     *Quaternions are naturally constrained to be normalized, another is that
+     *The dimension of the optimization is reduced to its natural size,
+     *I am unsure but I think this means that if we have 3DOF but 4 parameters
+     *the optimization is reduced to the natural size of optimizing with 3DOF, whatever that means?
+    */
+    //We need to add the camera parameters first so we can
+    //Set the first camera constant
+
+    typeKeyFrame* KeyFrame = NewKeyFrame;
+    typeCameraPose& CameraParameters = KeyFrame->Camera.Pose;
+
+#if defined(CONFIG_IMU)
+    const Eigen::Vector3d Grav = *IMU_GetGravity();
+    typeNavigationState& IMUParameters = KeyFrame->NavigationState;
+
+    assert(PreviousFrame != nullptr);
+    typeKeyFrame& PreviousKeyFrame = *PreviousFrame;
+    typeCameraPose& PreviousCameraParameters = PreviousKeyFrame.Camera.Pose;
+    typeNavigationState& PreviousIMUParameters = PreviousKeyFrame.NavigationState;
+    typePreIntegrationData& PreviousData = KeyFrame->PreIntegrationData;
+#else
+    (void)PreviousFrame;
+#endif
+
+    Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
+    Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(),
+                         new ceres::EigenQuaternionManifold());
+    Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
+
+
+#if defined(CONFIG_IMU)
+    Problem.AddParameterBlock(IMUParameters.Velocity.data(), 3);
+    Problem.AddParameterBlock(IMUParameters.GyroBias.data(), 3);
+    Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.Velocity.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.GyroBias.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
+
+    Problem.AddParameterBlock(PreviousCameraParameters.Quaternion.coeffs().data(), 4);
+    Problem.SetManifold(PreviousCameraParameters.Quaternion.coeffs().data(),
+                         new ceres::EigenQuaternionManifold());
+
+    Problem.AddParameterBlock(PreviousCameraParameters.tParametrization.data(), 3);
+
+
+    Problem.AddParameterBlock(PreviousIMUParameters.Velocity.data(), 3);
+    Problem.AddParameterBlock(PreviousIMUParameters.GyroBias.data(), 3);
+    Problem.AddParameterBlock(PreviousIMUParameters.AccelorometerBias.data(), 3);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(PreviousCameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousCameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.Velocity.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.GyroBias.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
+
+    Problem.SetParameterBlockConstant(PreviousCameraParameters.Quaternion.coeffs().data());
+    Problem.SetParameterBlockConstant(PreviousCameraParameters.tParametrization.data());
+    Problem.SetParameterBlockConstant(PreviousIMUParameters.Velocity.data());
+    Problem.SetParameterBlockConstant(PreviousIMUParameters.GyroBias.data());
+    Problem.SetParameterBlockConstant(PreviousIMUParameters.AccelorometerBias.data());
+#endif
+
+    u64 NumAssociatedMapPoints = 0;
+
+    for(const typePantoImagePoint& ImagePoint : KeyFrame->Points.ImagePoints)
+    {
+        if(ImagePoint.MapPointID != PANTO_ID_NOT_SET &&
+           Map.MapPoints.contains(ImagePoint.MapPointID))
+        {
+            NumAssociatedMapPoints++;
+        }
+    }
+
+    LG_Log( LogSeverity::DBG, "[__OP_BuildProblemTracking] KeyFrame has %llu associated map points\n", static_cast<unsigned long long>(NumAssociatedMapPoints));
+
+    ceres::LossFunction* LossFunc =
+        new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+
+    for (typePantoImagePoint& ImagePoint : KeyFrame->Points.ImagePoints)
+    {
+        const u64 MapPointID = ImagePoint.MapPointID;
+        if(MapPointID != PANTO_ID_NOT_SET && Map.MapPoints.contains(MapPointID))
+        {
+            typePantoMapPoint& MapPoint = Map.MapPoints[MapPointID];
+
+            Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+            if(CERES_EXPLICIT_ORDERING)
+            {
+                Ordering.AddElementToGroup(MapPoint.Point.data(), CERES_3D_POINT_GROUP);
+            }
+            Problem.SetParameterBlockConstant(MapPoint.Point.data());
+
+#if defined(CONFIG_STEREO)
+            ceres::CostFunction* CostFunc;
+            if(ImagePoint.IsMatched)
+            {
+                CostFunc = OP_StereoReprojectionError::Create(
+                            ImagePoint.Point.x(),
+                            ImagePoint.Point.y(),
+                            ImagePoint.RightCameraMatch.x(),
+                            ImagePoint.RightCameraMatch.y(),
+                            &OPStereoIntrinsics);
+            }
+            else
+            {
+                CostFunc = OP_ReprojectionError::Create(
+                            ImagePoint.Point.x(),
+                            ImagePoint.Point.y(),
+                            &OPCameraIntrinsics);
+            }
+#else
+            ceres::CostFunction* CostFunc =
+                OP_ReprojectionError::Create(
+                        ImagePoint.Point.x(),
+                        ImagePoint.Point.y(),
+                        &OPCameraIntrinsics);
+#endif
+
+            Problem.AddResidualBlock(
+                    CostFunc,
+                    LossFunc,
+                    CameraParameters.Quaternion.coeffs().data(),
+                    CameraParameters.tParametrization.data(),
+                    MapPoint.Point.data());
+        }
+    }
+
+#if defined(CONFIG_IMU)
+    const Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(PreviousData.Covariance);
+    const Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
+    const Eigen::Matrix<fp64, 15, 15> SqrtInfo = L.triangularView<Eigen::Lower>().solve(
+            Eigen::Matrix<fp64, 15, 15>::Identity());
+    ceres::CostFunction* CostFuncIMU = OP_IMUResidual::Create(PreviousData, SqrtInfo, Grav, TBS);
+
+    Problem.AddResidualBlock(CostFuncIMU,
+            nullptr,
+            PreviousCameraParameters.Quaternion.coeffs().data(),
+            PreviousCameraParameters.tParametrization.data(),
+            PreviousIMUParameters.Velocity.data(),
+            PreviousIMUParameters.GyroBias.data(),
+            PreviousIMUParameters.AccelorometerBias.data(),
+
+            CameraParameters.Quaternion.coeffs().data(),
+            CameraParameters.tParametrization.data(),
+            IMUParameters.Velocity.data(),
+            IMUParameters.GyroBias.data(),
+            IMUParameters.AccelorometerBias.data()
+            );
+#endif
+}
+
+void __OP_BuildProblemTrackingLocal(typeLocalMapTracking& TrackingMap,
+        ceres::Problem& Problem, typeKeyFrame* NewKeyFrame, typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering)
+{
+    typeCameraPose& CameraParameters = NewKeyFrame->Camera.Pose;
+
+    Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
+    Problem.SetManifold(
+            CameraParameters.Quaternion.coeffs().data(),
+            new ceres::EigenQuaternionManifold());
+    Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
+
+#if defined(CONFIG_IMU)
+    assert(PreviousFrame != nullptr);
+    const Eigen::Vector3d Grav = *IMU_GetGravity();
+    typeNavigationState& IMUParameters = NewKeyFrame->NavigationState;
+    typeCameraPose& PreviousCameraParameters = PreviousFrame->Camera.Pose;
+    typeNavigationState& PreviousIMUParameters =
+        PreviousFrame->NavigationState;
+
+    Problem.AddParameterBlock(IMUParameters.Velocity.data(),          3);
+    Problem.AddParameterBlock(IMUParameters.GyroBias.data(),          3);
+    Problem.AddParameterBlock(IMUParameters.AccelorometerBias.data(), 3);
+
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(IMUParameters.Velocity.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.GyroBias.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(IMUParameters.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
+
+    Problem.AddParameterBlock( PreviousCameraParameters.Quaternion.coeffs().data(), 4);
+    Problem.SetManifold( PreviousCameraParameters.Quaternion.coeffs().data(),
+            new ceres::EigenQuaternionManifold());
+
+    Problem.AddParameterBlock( PreviousCameraParameters.tParametrization.data(), 3);
+
+
+    Problem.AddParameterBlock(PreviousIMUParameters.Velocity.data(), 3);
+    Problem.AddParameterBlock(PreviousIMUParameters.GyroBias.data(), 3);
+    Problem.AddParameterBlock( PreviousIMUParameters.AccelorometerBias.data(), 3);
+
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(PreviousCameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousCameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.Velocity.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.GyroBias.data(),          CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(PreviousIMUParameters.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
+
+    Problem.SetParameterBlockConstant(
+            PreviousCameraParameters.Quaternion.coeffs().data());
+    Problem.SetParameterBlockConstant(
+            PreviousCameraParameters.tParametrization.data());
+    Problem.SetParameterBlockConstant(PreviousIMUParameters.Velocity.data());
+    Problem.SetParameterBlockConstant(PreviousIMUParameters.GyroBias.data());
+    Problem.SetParameterBlockConstant(
+            PreviousIMUParameters.AccelorometerBias.data());
+#else
+    (void)PreviousFrame;
+#endif
+
+    std::unordered_map<u64, typePantoMapPoint*> MapPointsByID;
+    MapPointsByID.reserve(TrackingMap.MapPoints.size());
+    for(typePantoMapPoint& MapPoint : TrackingMap.MapPoints)
+    {
+        MapPointsByID.emplace(MapPoint.ID, &MapPoint);
+    }
+
+    ceres::LossFunction* LossFunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+
+    u64 NumAssociatedMapPoints = 0;
+    for(typePantoImagePoint& ImagePoint : NewKeyFrame->Points.ImagePoints)
+    {
+        const auto MapPointIt = MapPointsByID.find(ImagePoint.MapPointID);
+        if(MapPointIt == MapPointsByID.end())
+        {
+            continue;
+        }
+
+        typePantoMapPoint& MapPoint = *MapPointIt->second;
+
+        NumAssociatedMapPoints++;
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(MapPoint.Point.data(), CERES_3D_POINT_GROUP);
+        }
+        Problem.SetParameterBlockConstant(MapPoint.Point.data());
+#if defined(CONFIG_STEREO)
+        ceres::CostFunction* CostFunc;
+        if(ImagePoint.IsMatched)
+        {
+            CostFunc = OP_StereoReprojectionError::Create(
+                    ImagePoint.Point.x(), ImagePoint.Point.y(),
+                    ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(),
+                    &OPStereoIntrinsics);
+        }
+        else
+        {
+            CostFunc = OP_ReprojectionError::Create(
+                    ImagePoint.Point.x(), ImagePoint.Point.y(),
+                    &OPCameraIntrinsics);
+        }
+#else
+        ceres::CostFunction* CostFunc = OP_ReprojectionError::Create(
+                ImagePoint.Point.x(), ImagePoint.Point.y(),
+                &OPCameraIntrinsics);
+#endif
+
+        Problem.AddResidualBlock(
+                CostFunc, LossFunc,
+                CameraParameters.Quaternion.coeffs().data(),
+                CameraParameters.tParametrization.data(),
+                MapPoint.Point.data());
+    }
+
+    LG_Log(LogSeverity::DBG,
+            "[__OP_BuildProblemTrackingLocal] KeyFrame has %llu associated map points\n",
+            static_cast<unsigned long long>(NumAssociatedMapPoints));
+
+#if defined(CONFIG_IMU)
+    typePreIntegrationData& PreviousData = NewKeyFrame->PreIntegrationData;
+    const Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(
+            PreviousData.Covariance);
+    const Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
+    const Eigen::Matrix<fp64, 15, 15> SqrtInfo =
+        L.triangularView<Eigen::Lower>().solve(
+                Eigen::Matrix<fp64, 15, 15>::Identity());
+    ceres::CostFunction* CostFuncIMU = OP_IMUResidual::Create(
+            PreviousData, SqrtInfo, Grav, TBS);
+
+    Problem.AddResidualBlock(
+            CostFuncIMU, nullptr,
+            PreviousCameraParameters.Quaternion.coeffs().data(),
+            PreviousCameraParameters.tParametrization.data(),
+            PreviousIMUParameters.Velocity.data(),
+            PreviousIMUParameters.GyroBias.data(),
+            PreviousIMUParameters.AccelorometerBias.data(),
+            CameraParameters.Quaternion.coeffs().data(),
+            CameraParameters.tParametrization.data(),
+            IMUParameters.Velocity.data(),
+            IMUParameters.GyroBias.data(),
+            IMUParameters.AccelorometerBias.data());
+#endif
+}
+
+void __OP_BuildProblemTrackingLocalVisualOnly(typeLocalMapTracking& TrackingMap,
+        ceres::Problem& Problem, typeKeyFrame* NewKeyFrame,
+        typeKeyFrame* PreviousFrame, ceres::ParameterBlockOrdering& Ordering)
+{
+    typeCameraPose& CameraParameters = NewKeyFrame->Camera.Pose;
+
+    Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
+    Problem.SetManifold(
+            CameraParameters.Quaternion.coeffs().data(),
+            new ceres::EigenQuaternionManifold());
+    Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
+
+    (void)PreviousFrame;
+
+    std::unordered_map<u64, typePantoMapPoint*> MapPointsByID;
+    MapPointsByID.reserve(TrackingMap.MapPoints.size());
+    for(typePantoMapPoint& MapPoint : TrackingMap.MapPoints)
+    {
+        MapPointsByID.emplace(MapPoint.ID, &MapPoint);
+    }
+
+    ceres::LossFunction* LossFunc = new ceres::HuberLoss(CERES_HUBER_THRESHOLD);
+
+    u64 NumAssociatedMapPoints = 0;
+    for(typePantoImagePoint& ImagePoint : NewKeyFrame->Points.ImagePoints)
+    {
+        const auto MapPointIt = MapPointsByID.find(ImagePoint.MapPointID);
+        if(MapPointIt == MapPointsByID.end())
+        {
+            continue;
+        }
+
+        typePantoMapPoint& MapPoint = *MapPointIt->second;
+
+        NumAssociatedMapPoints++;
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(MapPoint.Point.data(), CERES_3D_POINT_GROUP);
+        }
+        Problem.SetParameterBlockConstant(MapPoint.Point.data());
+#if defined(CONFIG_STEREO)
+        ceres::CostFunction* CostFunc;
+        if(ImagePoint.IsMatched)
+        {
+            CostFunc = OP_StereoReprojectionError::Create(
+                    ImagePoint.Point.x(), ImagePoint.Point.y(),
+                    ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(),
+                    &OPStereoIntrinsics);
+        }
+        else
+        {
+            CostFunc = OP_ReprojectionError::Create(
+                    ImagePoint.Point.x(), ImagePoint.Point.y(),
+                    &OPCameraIntrinsics);
+        }
+#else
+        ceres::CostFunction* CostFunc = OP_ReprojectionError::Create(
+                ImagePoint.Point.x(), ImagePoint.Point.y(),
+                &OPCameraIntrinsics);
+#endif
+
+        Problem.AddResidualBlock(
+                CostFunc, LossFunc,
+                CameraParameters.Quaternion.coeffs().data(),
+                CameraParameters.tParametrization.data(),
+                MapPoint.Point.data());
+    }
+
+    LG_Log(LogSeverity::DBG,
+            "[__OP_BuildProblemTrackingLocal] KeyFrame has %llu associated map points\n",
+            static_cast<unsigned long long>(NumAssociatedMapPoints));
+}
+
+void __OP_BuildProblemLocal(typeLocalMap& LocalMap,
+        ceres::Problem& Problem, ceres::ParameterBlockOrdering& Ordering)
+{
+    /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
+     *Optimizing on manifolds seemingly has many benefits, one of them is that
+     *Quaternions are naturally constrained to be normalized, another is that
+     *The dimension of the optimization is reduced to its natural size,
+     *I am unsure but I think this means that if we have 3DOF but 4 parameters
+     *the optimization is reduced to the natural size of optimizing with 3DOF, whatever that means?
+    */
+
+    std::unordered_map<u64, typeKeyFrame*> KeyFramesByID;
+    KeyFramesByID.reserve( LocalMap.KeyFrames.size() + LocalMap.FixedKeyFrames.size());
+
+    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        KeyFramesByID.emplace(KeyFrame.ID, &KeyFrame);
+    }
+    for(typeKeyFrame& KeyFrame : LocalMap.FixedKeyFrames)
+    {
+        KeyFramesByID.emplace(KeyFrame.ID, &KeyFrame);
+    }
+
+    std::unordered_map<u64, typePantoMapPoint*> MapPointsByID;
+    MapPointsByID.reserve(LocalMap.MapPoints.size());
+    for(typePantoMapPoint& MapPoint : LocalMap.MapPoints)
+    {
+        MapPointsByID.emplace(MapPoint.ID, &MapPoint);
+    }
+
+    std::unordered_set<u64> FixedKeyFrameIDs;
+
+#if defined(CONFIG_IMU)
+    const Eigen::Vector3d Grav = *IMU_GetGravity();
+#endif
+
+    // Add all optimized states once.
+    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        typeCameraPose& Camera = KeyFrame.Camera.Pose;
+
+        Problem.AddParameterBlock(Camera.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold(
+                Camera.Quaternion.coeffs().data(),
+                new ceres::EigenQuaternionManifold());
+
+        Problem.AddParameterBlock(Camera.tParametrization.data(), 3);
+
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(Camera.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(Camera.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        }
+
+#if defined(CONFIG_IMU)
+        typeNavigationState& Nav = KeyFrame.NavigationState;
+        Problem.AddParameterBlock(Nav.Velocity.data(), 3);
+        Problem.AddParameterBlock(Nav.GyroBias.data(), 3);
+        Problem.AddParameterBlock(Nav.AccelorometerBias.data(), 3);
+
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(Nav.Velocity.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(Nav.GyroBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(Nav.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        }
+#endif
+    }
+
+    u64 countFixed = 0;
+#if defined(CONFIG_IMU)
+    std::unordered_set<u64> OptimizedKeyFrameIDs;
+    OptimizedKeyFrameIDs.reserve(LocalMap.KeyFrames.size());
+    for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        OptimizedKeyFrameIDs.insert(KeyFrame.ID);
+    }
+
+    u64 AnchorID = PANTO_ID_NOT_SET;
+    for(const typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        if(KeyFrame.PreviousKFID != PANTO_ID_NOT_SET &&
+           !OptimizedKeyFrameIDs.contains(KeyFrame.PreviousKFID))
+        {
+            AnchorID = KeyFrame.PreviousKFID;
+            break;
+        }
+    }
+    assert(AnchorID != PANTO_ID_NOT_SET);
+    assert(KeyFramesByID.contains(AnchorID));
+
+    typeKeyFrame& Anchor = *KeyFramesByID.at(AnchorID);
+
+    Problem.AddParameterBlock(Anchor.Camera.Pose.Quaternion.coeffs().data(), 4);
+    Problem.SetManifold(Anchor.Camera.Pose.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
+    Problem.AddParameterBlock(Anchor.Camera.Pose.tParametrization.data(), 3);
+
+
+    Problem.AddParameterBlock(LocalMap.IMUAnchor.Velocity.data(), 3);
+    Problem.AddParameterBlock(LocalMap.IMUAnchor.GyroBias.data(), 3);
+    Problem.AddParameterBlock(LocalMap.IMUAnchor.AccelorometerBias.data(), 3);
+
+    if(CERES_EXPLICIT_ORDERING)
+    {
+        Ordering.AddElementToGroup(Anchor.Camera.Pose.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(Anchor.Camera.Pose.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(LocalMap.IMUAnchor.Velocity.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(LocalMap.IMUAnchor.GyroBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        Ordering.AddElementToGroup(LocalMap.IMUAnchor.AccelorometerBias.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+    }
+
+    Problem.SetParameterBlockConstant(Anchor.Camera.Pose.Quaternion.coeffs().data());
+    Problem.SetParameterBlockConstant(Anchor.Camera.Pose.tParametrization.data());
+    Problem.SetParameterBlockConstant(LocalMap.IMUAnchor.Velocity.data());
+    Problem.SetParameterBlockConstant(LocalMap.IMUAnchor.GyroBias.data());
+    Problem.SetParameterBlockConstant(LocalMap.IMUAnchor.AccelorometerBias.data());
+    FixedKeyFrameIDs.insert(AnchorID);
+    countFixed++;
+#endif
+
+    for(typeKeyFrame& KeyFrame : LocalMap.FixedKeyFrames)
+    {
+        const u64 KeyFrameID = KeyFrame.ID;
+
+#if defined(CONFIG_IMU)
+        if(KeyFrameID == AnchorID)
+        {
+            continue;
+        }
+#endif
+        typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+
+        Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
+        Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
+
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        }
+
+        Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
+        Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
+
+        FixedKeyFrameIDs.insert(KeyFrameID);
+        countFixed++;
+    }
+
+    LG_Log(LogSeverity::DBG, "[__OP_BuildProblemLocal] Has %llu fixed keyframes",  countFixed);
+
+
+#if !defined(CONFIG_IMU)
+    if(FixedKeyFrameIDs.size() < 2)
+    {
+        for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+        {
+            if(FixedKeyFrameIDs.contains(KeyFrame.ID))
+            {
+                continue;
+            }
+            typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+
+            Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
+
+            if(CERES_EXPLICIT_ORDERING)
+            {
+                Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+                Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            }
+
+            FixedKeyFrameIDs.insert(KeyFrame.ID);
+
+            if(FixedKeyFrameIDs.size() == 2)
+            {
+                break;
+            }
+        }
+    }
+#endif // CONFIG_IMU
+
+    std::unordered_set<u64> LocalMapPointIDs;
+
+    for(typePantoMapPoint& MapPoint : LocalMap.MapPoints)
+    {
+
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
+        LocalMapPointIDs.insert(MapPoint.ID);
+
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(MapPoint.Point.data(), CERES_3D_POINT_GROUP);
+        }
+    }
+
+    ceres::LossFunction* lossfunc = new ceres::HuberLoss( CERES_HUBER_THRESHOLD);
+
+    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+#if defined(CONFIG_IMU)
+        typeNavigationState& IMUParameters = KeyFrame.NavigationState;
+#endif
+
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+
+            if(MapPointID != PANTO_ID_NOT_SET &&
+               LocalMapPointIDs.contains(MapPointID))
+            {
+                typePantoMapPoint& MapPoint = *MapPointsByID.at(MapPointID);
+
+                const fp64 PointX = ImagePoint.Point.x();
+                const fp64 PointY = ImagePoint.Point.y();
+
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
+
+
+                Problem.AddResidualBlock(costfunc, lossfunc,
+                        CameraParameters.Quaternion.coeffs().data(),
+                        CameraParameters.tParametrization.data(),
+                        MapPoint.Point.data());
+            }
+        }
+
+        if(KeyFrame.ID == 0)
+        {
+            continue;
+        }
+
+#if defined(CONFIG_IMU)
+        assert(KeyFramesByID.contains(KeyFrame.PreviousKFID));
+        typeKeyFrame& PreviousKeyFrame =
+            *KeyFramesByID.at(KeyFrame.PreviousKFID);
+
+        typeCameraPose& PreviousCameraParameters = PreviousKeyFrame.Camera.Pose;
+        typeNavigationState& PreviousIMUParameters =
+            PreviousKeyFrame.ID == AnchorID
+                ? LocalMap.IMUAnchor
+                : PreviousKeyFrame.NavigationState;
+        typePreIntegrationData& PreviousData = KeyFrame.PreIntegrationData;
+
+        const Eigen::LLT<Eigen::Matrix<fp64, 15, 15>> LLT(PreviousData.Covariance);
+        const Eigen::Matrix<fp64, 15, 15> L = LLT.matrixL();
+        Eigen::Matrix<fp64, 15, 15> SqrtInfo = L.triangularView<Eigen::Lower>().solve(
+                Eigen::Matrix<fp64, 15, 15>::Identity());
+
+        ceres::LossFunction* IMULoss = nullptr;
+        if(PreviousKeyFrame.ID == AnchorID)
+        {
+            // Match ORB-SLAM3's treatment of the inertial edge crossing the
+            // fixed-window boundary: information *= 1e-2, therefore the
+            // square-root information used here must be multiplied by 0.1.
+            SqrtInfo *= 0.1;
+            IMULoss = new ceres::HuberLoss(std::sqrt(16.92));
+        }
+
+        ceres::CostFunction* CostFuncIMU = OP_IMUResidual::Create(PreviousData, SqrtInfo, Grav, TBS);
+
+        Problem.AddResidualBlock(CostFuncIMU,
+                IMULoss,
+                PreviousCameraParameters.Quaternion.coeffs().data(),
+                PreviousCameraParameters.tParametrization.data(),
+                PreviousIMUParameters.Velocity.data(),
+                PreviousIMUParameters.GyroBias.data(),
+                PreviousIMUParameters.AccelorometerBias.data(),
+
+                CameraParameters.Quaternion.coeffs().data(),
+                CameraParameters.tParametrization.data(),
+                IMUParameters.Velocity.data(),
+                IMUParameters.GyroBias.data(),
+                IMUParameters.AccelorometerBias.data()
+            );
+#endif
+    }
+
+    for(typeKeyFrame& KeyFrame : LocalMap.FixedKeyFrames)
+    {
+        typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+
+            if(MapPointID != PANTO_ID_NOT_SET &&
+               LocalMapPointIDs.contains(MapPointID))
+            {
+                typePantoMapPoint& MapPoint = *MapPointsByID.at(MapPointID);
+
+                const fp64 PointX = ImagePoint.Point.x();
+
+                const fp64 PointY = ImagePoint.Point.y();
+
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
+
+                Problem.AddResidualBlock(costfunc, lossfunc,
+                        CameraParameters.Quaternion.coeffs().data(),
+                        CameraParameters.tParametrization.data(),
+                        MapPoint.Point.data());
+            }
+        }
+    }
+}
+
+void __OP_BuildProblemLocalVisualOnly(typeLocalMap& LocalMap, ceres::Problem& Problem, ceres::ParameterBlockOrdering& Ordering)
+{
+    /*See https://ceres-solver.readthedocs.io/latest/nnls_modeling.html#manifold
+     *Optimizing on manifolds seemingly has many benefits, one of them is that
+     *Quaternions are naturally constrained to be normalized, another is that
+     *The dimension of the optimization is reduced to its natural size,
+     *I am unsure but I think this means that if we have 3DOF but 4 parameters
+     *the optimization is reduced to the natural size of optimizing with 3DOF, whatever that means?
+    */
+
+    std::unordered_map<u64, typeKeyFrame*> KeyFramesByID;
+    KeyFramesByID.reserve( LocalMap.KeyFrames.size() + LocalMap.FixedKeyFrames.size());
+
+    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        KeyFramesByID.emplace(KeyFrame.ID, &KeyFrame);
+    }
+    for(typeKeyFrame& KeyFrame : LocalMap.FixedKeyFrames)
+    {
+        KeyFramesByID.emplace(KeyFrame.ID, &KeyFrame);
+    }
+
+    std::unordered_map<u64, typePantoMapPoint*> MapPointsByID;
+    MapPointsByID.reserve(LocalMap.MapPoints.size());
+    for(typePantoMapPoint& MapPoint : LocalMap.MapPoints)
+    {
+        MapPointsByID.emplace(MapPoint.ID, &MapPoint);
+    }
+
+    std::unordered_set<u64> FixedKeyFrameIDs;
+
+    // Add all optimized states once.
+    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        typeCameraPose& Camera = KeyFrame.Camera.Pose;
+
+        Problem.AddParameterBlock(Camera.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold( Camera.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
+
+        Problem.AddParameterBlock(Camera.tParametrization.data(), 3);
+
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(Camera.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(Camera.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        }
+    }
+
+    u64 countFixed = 0;
+
+    for(typeKeyFrame& KeyFrame : LocalMap.FixedKeyFrames)
+    {
+        const u64 KeyFrameID = KeyFrame.ID;
+
+        typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+
+        Problem.AddParameterBlock(CameraParameters.Quaternion.coeffs().data(), 4);
+        Problem.SetManifold(CameraParameters.Quaternion.coeffs().data(), new ceres::EigenQuaternionManifold());
+        Problem.AddParameterBlock(CameraParameters.tParametrization.data(), 3);
+
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+        }
+
+        Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
+        Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
+
+        FixedKeyFrameIDs.insert(KeyFrameID);
+        countFixed++;
+    }
+
+    LG_Log(LogSeverity::DBG, "[__OP_BuildProblemLocal] Has %llu fixed keyframes",  countFixed);
+
+
+    if(FixedKeyFrameIDs.size() < 2)
+    {
+        for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+        {
+            if(FixedKeyFrameIDs.contains(KeyFrame.ID))
+            {
+                continue;
+            }
+            typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+
+            Problem.SetParameterBlockConstant(CameraParameters.Quaternion.coeffs().data());
+            Problem.SetParameterBlockConstant(CameraParameters.tParametrization.data());
+
+            if(CERES_EXPLICIT_ORDERING)
+            {
+                Ordering.AddElementToGroup(CameraParameters.Quaternion.coeffs().data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+                Ordering.AddElementToGroup(CameraParameters.tParametrization.data(), CERES_INERTIAL_AND_POSE_PARAMETER_GROUP);
+            }
+
+            FixedKeyFrameIDs.insert(KeyFrame.ID);
+
+            if(FixedKeyFrameIDs.size() == 2)
+            {
+                break;
+            }
+        }
+    }
+
+    std::unordered_set<u64> LocalMapPointIDs;
+
+    for(typePantoMapPoint& MapPoint : LocalMap.MapPoints)
+    {
+
+        Problem.AddParameterBlock(MapPoint.Point.data(), 4);
+        Problem.SetManifold(MapPoint.Point.data(), new ceres::SphereManifold<4>());
+        LocalMapPointIDs.insert(MapPoint.ID);
+
+        if(CERES_EXPLICIT_ORDERING)
+        {
+            Ordering.AddElementToGroup(MapPoint.Point.data(), CERES_3D_POINT_GROUP);
+        }
+    }
+
+    ceres::LossFunction* lossfunc = new ceres::HuberLoss( CERES_HUBER_THRESHOLD);
+
+    for(typeKeyFrame& KeyFrame : LocalMap.KeyFrames)
+    {
+        typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+
+            if(MapPointID != PANTO_ID_NOT_SET &&
+               LocalMapPointIDs.contains(MapPointID))
+            {
+                typePantoMapPoint& MapPoint = *MapPointsByID.at(MapPointID);
+
+                const fp64 PointX = ImagePoint.Point.x();
+                const fp64 PointY = ImagePoint.Point.y();
+
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
+
+
+                Problem.AddResidualBlock(costfunc, lossfunc,
+                        CameraParameters.Quaternion.coeffs().data(),
+                        CameraParameters.tParametrization.data(),
+                        MapPoint.Point.data());
+            }
+        }
+
+        if(KeyFrame.ID == 0)
+        {
+            continue;
+        }
+    }
+
+    for(typeKeyFrame& KeyFrame : LocalMap.FixedKeyFrames)
+    {
+        typeCameraPose& CameraParameters = KeyFrame.Camera.Pose;
+
+        for(typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+
+            if(MapPointID != PANTO_ID_NOT_SET &&
+               LocalMapPointIDs.contains(MapPointID))
+            {
+                typePantoMapPoint& MapPoint = *MapPointsByID.at(MapPointID);
+
+                const fp64 PointX = ImagePoint.Point.x();
+
+                const fp64 PointY = ImagePoint.Point.y();
+
+#if defined(CONFIG_STEREO)
+                ceres::CostFunction* costfunc;
+                if(ImagePoint.IsMatched)
+                {
+                    costfunc = OP_StereoReprojectionError::Create(PointX, PointY, 
+                            ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(), &OPStereoIntrinsics);
+                }
+                else
+                {
+                    costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+                }
+#else
+                ceres::CostFunction* costfunc = OP_ReprojectionError::Create(PointX, PointY, &OPCameraIntrinsics);
+#endif // CONFIG_STEREO
+
+                Problem.AddResidualBlock(costfunc, lossfunc,
+                        CameraParameters.Quaternion.coeffs().data(),
+                        CameraParameters.tParametrization.data(),
+                        MapPoint.Point.data());
+            }
+        }
+    }
+}
+
+// Stereo-NEC Step 3 uses fixed structure and fixed rotations, leaving one
+// independent three-parameter camera-center block per keyframe.
+bool OP_BundleAdjustTranslationOnly(typePantoVector<typeKeyFrame>& KeyFrames,
+        const typePantoVector<typePantoMapPoint>& MapPoints)
+{
+    if(KeyFrames.empty())
+    {
+        return false;
+    }
+
+    // Stage centers so an unusable solve cannot leave partially updated poses.
+    std::vector<Eigen::Vector3d> Centers;
+    Centers.reserve(KeyFrames.active_size());
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        const typeCameraPose& Pose = KeyFrame.Camera.Pose;
+        if(!Pose.Quaternion.coeffs().allFinite() ||
+           std::abs(Pose.Quaternion.squaredNorm() - 1.0) > 1e-6 ||
+           !Pose.tParametrization.allFinite()
+#if defined(CONFIG_IMU)
+           || KeyFrame.Camera.Intrinsics == nullptr
+           || !KeyFrame.Camera.Intrinsics->T_BS.allFinite()
+#endif
+          )
+        {
+            return false;
+        }
+        Centers.push_back(Pose.tParametrization);
+    }
+
+    ceres::HuberLoss LossFunction(CERES_HUBER_THRESHOLD);
+    ceres::Problem::Options ProblemOptions;
+    ProblemOptions.loss_function_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
+    ceres::Problem Problem(ProblemOptions);
+    std::size_t Index = 0;
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        Eigen::Vector3d& Center = Centers[Index++];
+        const Eigen::Quaterniond Rotation = KeyFrame.Camera.Pose.Quaternion.normalized();
+        Problem.AddParameterBlock(Center.data(), 3);
+        u64 NumObservations = 0;
+
+        for(const typePantoImagePoint& ImagePoint : KeyFrame.Points.ImagePoints)
+        {
+            const u64 MapPointID = ImagePoint.MapPointID;
+            if(MapPointID == PANTO_ID_NOT_SET || MapPointID >= MapPoints.size() ||
+               !MapPoints.contains(MapPointID) ||
+               !ImagePoint.Point.allFinite())
+            {
+                continue;
+            }
+
+            const Eigen::Vector4d& Point = MapPoints[MapPointID].Point;
+            if(!Point.allFinite() || std::abs(Point.w()) < 1e-12)
+            {
+                // Points at infinity carry no translation information.
+                continue;
+            }
+            const Eigen::Vector3d Xc = Rotation.conjugate() * (Point.head<3>() / Point.w() - Center);
+            if(!Xc.allFinite() || Xc.z() <= 1e-8)
+            {
+                continue;
+            }
+
+            ceres::CostFunction* CostFunction;
+#if defined(CONFIG_STEREO)
+            if(ImagePoint.IsMatched && ImagePoint.RightCameraMatch.allFinite())
+            {
+                CostFunction = OP_StereoTranslationOnlyBundle::Create(
+                        ImagePoint.Point.x(), ImagePoint.Point.y(),
+                        ImagePoint.RightCameraMatch.x(), ImagePoint.RightCameraMatch.y(),
+                        Rotation, Point, &OPStereoIntrinsics);
+            }
+            else
+#endif
+            {
+                CostFunction = OP_TranslationOnlyBundle::Create(
+                        ImagePoint.Point.x(), ImagePoint.Point.y(), Rotation, Point, &OPCameraIntrinsics);
+            }
+
+            // Image points currently have no detection-scale covariance; use
+            // the same unit pixel weighting as the other OP visual factors.
+            Problem.AddResidualBlock(CostFunction, &LossFunction, Center.data());
+            ++NumObservations;
+        }
+
+        if(NumObservations < 3)
+        {
+            LG_Log(LogSeverity::ERROR, "[OP Translation] KF %llu has fewer than three usable observations\n",
+                    static_cast<unsigned long long>(KeyFrame.ID));
+            return false;
+        }
+    }
+
+    ceres::Solver::Options Options;
+    Options.max_num_iterations = CERES_MAX_ITER;
+    Options.num_threads = CERES_NUM_THREADS;
+    Options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    Options.linear_solver_type = ceres::DENSE_QR;
+    Options.minimizer_progress_to_stdout = false;
+
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+    if(!Summary.IsSolutionUsable())
+    {
+        LG_Log(LogSeverity::ERROR, "[OP Translation] Optimization failed: %s\n", Summary.BriefReport().c_str());
+        return false;
+    }
+    for(const Eigen::Vector3d& Center : Centers)
+    {
+        if(!Center.allFinite())
+        {
+            return false;
+        }
+    }
+
+    Index = 0;
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        KeyFrame.Camera.Pose.tParametrization = Centers[Index++];
+        CM_SetRtfromParam(&KeyFrame.Camera);
+#if defined(CONFIG_IMU)
+        KEY_UpdateNavState(&KeyFrame);
+#endif
+    }
+    LG_Log(LogSeverity::DBG, "%s\n", Summary.BriefReport().c_str());
+    return true;
+}
+
+#if defined(CONFIG_IMU)
+bool OP_UpdateRotationsFromPreIntegration(typePantoVector<typeKeyFrame>& KeyFrames)
+{
+    if(KeyFrames.active_size() < 2)
+    {
+        return false;
+    }
+
+    std::unordered_map<u64, typeKeyFrame*> KeyFramesByID;
+    std::unordered_map<u64, typeKeyFrame*> Successors;
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        if(KeyFrame.ID == PANTO_ID_NOT_SET || !KeyFramesByID.emplace(KeyFrame.ID, &KeyFrame).second ||
+           KeyFrame.Camera.Intrinsics == nullptr ||
+           !KeyFrame.Camera.Intrinsics->T_BS.allFinite() ||
+           !KeyFrame.Camera.Intrinsics->T_BS.block<3,3>(0,0).isUnitary(1e-6) ||
+           KeyFrame.Camera.Intrinsics->T_BS.block<3,3>(0,0).determinant() < 0.0 ||
+           !KeyFrame.Camera.Pose.Quaternion.coeffs().allFinite() ||
+           std::abs(KeyFrame.Camera.Pose.Quaternion.squaredNorm() - 1.0) > 1e-6 ||
+           !KeyFrame.Camera.Pose.tParametrization.allFinite())
+        {
+            return false;
+        }
+    }
+
+    typeKeyFrame* FirstKeyFrame = nullptr;
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        if(!KeyFramesByID.contains(KeyFrame.PreviousKFID))
+        {
+            if(FirstKeyFrame != nullptr)
+            {
+                return false;
+            }
+            FirstKeyFrame = &KeyFrame;
+        }
+        else if(!Successors.emplace(KeyFrame.PreviousKFID, &KeyFrame).second)
+        {
+            return false;
+        }
+    }
+    if(FirstKeyFrame == nullptr)
+    {
+        return false;
+    }
+
+    // Work in body-to-world rotations, as required by the right-multiplied
+    // IMU preintegration. T_BS maps the (rectified left) camera into the body.
+    const Eigen::Quaterniond QBC(FirstKeyFrame->Camera.Intrinsics->T_BS.block<3,3>(0,0));
+    Eigen::Quaterniond QWB = (FirstKeyFrame->Camera.Pose.Quaternion * QBC.conjugate()).normalized();
+    std::vector<std::pair<typeKeyFrame*, Eigen::Quaterniond>> Rotations;
+    Rotations.emplace_back(FirstKeyFrame, FirstKeyFrame->Camera.Pose.Quaternion);
+    typeKeyFrame* PreviousKeyFrame = FirstKeyFrame;
+
+    while(Successors.contains(PreviousKeyFrame->ID) && Rotations.size() < KeyFrames.active_size())
+    {
+        typeKeyFrame* KeyFrame = Successors.at(PreviousKeyFrame->ID);
+        const typePreIntegrationData& PreIntegration = KeyFrame->PreIntegrationData;
+        const Eigen::Vector3d& GyroBias = PreviousKeyFrame->NavigationState.GyroBias;
+        if(!std::isfinite(PreIntegration.DeltaT) || PreIntegration.DeltaT <= 0.0 ||
+           !PreIntegration.DeltaR.allFinite() || !PreIntegration.DeltaR.isUnitary(1e-6) ||
+           PreIntegration.DeltaR.determinant() < 0.0 || !PreIntegration.JRg.allFinite() ||
+           !PreIntegration.GyroBias.allFinite() || !GyroBias.allFinite())
+        {
+            return false;
+        }
+
+        const Eigen::Vector3d Correction = PreIntegration.JRg * (GyroBias - PreIntegration.GyroBias);
+        if(!Correction.allFinite())
+        {
+            return false;
+        }
+        const Eigen::Matrix3d DeltaRCorrected = PreIntegration.DeltaR * Sophus::SO3d::exp(Correction).matrix();
+        QWB = (QWB * Eigen::Quaterniond(DeltaRCorrected)).normalized();
+        const Eigen::Quaterniond CameraToBody(KeyFrame->Camera.Intrinsics->T_BS.block<3,3>(0,0));
+        const Eigen::Quaterniond QWC = (QWB * CameraToBody).normalized();
+        if(!QWC.coeffs().allFinite())
+        {
+            return false;
+        }
+        Rotations.emplace_back(KeyFrame, QWC);
+        PreviousKeyFrame = KeyFrame;
+    }
+    if(Rotations.size() != KeyFrames.active_size() || Successors.contains(PreviousKeyFrame->ID))
+    {
+        // A disconnected chain or cycle cannot be integrated from one anchor.
+        return false;
+    }
+
+    for(const auto& [KeyFrame, Rotation] : Rotations)
+    {
+        KeyFrame->Camera.Pose.Quaternion = Rotation;
+        // Preserve the visual camera center until translation optimization.
+        CM_SetRtfromParam(&KeyFrame->Camera);
+        KEY_UpdateNavState(KeyFrame);
+    }
+    return true;
+}
+
+bool OP_RotationTranslationDecoupledOptimization(typePantoVector<typeKeyFrame>& KeyFrames,
+        const typePantoVector<typePantoMapPoint>& MapPoints)
+{
+    std::vector<std::pair<typeCameraPose, typeNavigationState>> PreviousStates;
+    PreviousStates.reserve(KeyFrames.active_size());
+    for(const typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        PreviousStates.emplace_back(KeyFrame.Camera.Pose, KeyFrame.NavigationState);
+    }
+
+    if(!OP_UpdateRotationsFromPreIntegration(KeyFrames))
+    {
+        return false;
+    }
+    if(OP_BundleAdjustTranslationOnly(KeyFrames, MapPoints))
+    {
+        return true;
+    }
+
+    std::size_t Index = 0;
+    for(typeKeyFrame& KeyFrame : KeyFrames)
+    {
+        KeyFrame.Camera.Pose = PreviousStates[Index].first;
+        KeyFrame.NavigationState = PreviousStates[Index++].second;
+    }
+    return false;
+}
+#endif // CONFIG_IMU
+
+bool OP_MAPGyroVelocityBiasGravityAndVelocity( typePantoVector<typeKeyFrame>& LocalMap)
+{
+    // Chat gpt
+    using Matrix9 = Eigen::Matrix<fp64, 9, 9>;
+
+    std::vector<typeKeyFrame*> KeyFrames;
+    KeyFrames.reserve(LocalMap.active_size());
+
+    for(typeKeyFrame& KeyFrame : LocalMap)
+    {
+        KeyFrames.push_back(&KeyFrame);
+    }
+
+    if(KeyFrames.size() < 2)
+    {
+        return false;
+    }
+
+    ceres::Problem Problem;
+
+    /*
+     * Keep optimization variables in separate contiguous storage so their
+     * addresses remain valid for the lifetime of the Ceres problem.
+     */
+    std::vector<Eigen::Vector3d> Velocities(KeyFrames.size());
+
+    for(std::size_t i = 0; i < KeyFrames.size(); ++i)
+    {
+        Velocities[i] = KeyFrames[i]->NavigationState.Velocity;
+    }
+
+    Eigen::Vector3d GyroBias = KeyFrames.front()->NavigationState.GyroBias;
+
+    Eigen::Vector3d AccelBias = KeyFrames.front()->NavigationState.AccelorometerBias;
+
+    // Seed gravity from the current world frame; Eigen stores x,y,z,w.
+    const Eigen::Vector3d InitialGravity = *IMU_GetGravity();
+    Eigen::Quaterniond GravityWorldZAlignmentRotation = InitialGravity.allFinite() && InitialGravity.norm() > 1e-6
+        ? Eigen::Quaterniond::FromTwoVectors(Eigen::Vector3d::UnitZ(), InitialGravity.normalized())
+        : Eigen::Quaterniond::Identity();
+
+    Problem.AddParameterBlock(GyroBias.data(), 3);
+    Problem.AddParameterBlock(AccelBias.data(), 3);
+
+    Problem.AddParameterBlock(GravityWorldZAlignmentRotation.coeffs().data(), 4);
+    Problem.SetManifold(GravityWorldZAlignmentRotation.coeffs().data(), new ceres::EigenQuaternionManifold);
+
+    for(Eigen::Vector3d& Velocity : Velocities)
+    {
+        Problem.AddParameterBlock(Velocity.data(), 3);
+    }
+
+    for(std::size_t i = 0; i + 1 < KeyFrames.size(); ++i)
+    {
+        typeKeyFrame& KeyFrame = *KeyFrames[i];
+        typeKeyFrame& KeyFrameNext = *KeyFrames[i + 1];
+
+        /*
+         * This assumes that a keyframe stores the preintegration from its
+         * previous keyframe to itself.
+         */
+        const typePreIntegrationData& PreIntegrationData =
+            KeyFrameNext.PreIntegrationData;
+
+        if(PreIntegrationData.DeltaT <= 0.0)
+        {
+            LG_Log(
+                LogSeverity::ERROR,
+                "[IMU MAP] Invalid preintegration interval\n");
+
+            return false;
+        }
+
+        /*
+         * Covariance ordering:
+         *
+         * [rotation, velocity, position, gyro bias, accel bias]
+         *
+         * This factor has only the first nine residuals.
+         */
+        Matrix9 Covariance9 =
+            PreIntegrationData.Covariance.topLeftCorner<9, 9>();
+
+        /*
+         * Avoid numerical LLT failures from extremely small eigenvalues.
+         */
+        Covariance9.diagonal().array() += 1e-12;
+
+        const Eigen::LLT<Matrix9> LLT(Covariance9);
+
+        if(LLT.info() != Eigen::Success)
+        {
+            LG_Log(
+                LogSeverity::ERROR,
+                "[IMU MAP] Covariance LLT failed for KF pair "
+                "%llu -> %llu\n",
+                static_cast<unsigned long long>(KeyFrame.ID),
+                static_cast<unsigned long long>(KeyFrameNext.ID));
+
+            return false;
+        }
+
+        const Matrix9 SqrtInfo = LLT.matrixL().solve(Matrix9::Identity());
+
+        /*
+         * These must be body-to-world poses. Change only these four lines
+         * if your navigation-state member names differ.
+         */
+        const Eigen::Matrix3d& Rwb = KeyFrame.NavigationState.Rwb;
+        const Eigen::Matrix3d& RwbNext = KeyFrameNext.NavigationState.Rwb;
+        const Eigen::Vector3d& Position = KeyFrame.NavigationState.Position;
+        const Eigen::Vector3d& PositionNext = KeyFrameNext.NavigationState.Position;
+
+        ceres::CostFunction* CostFunction =
+            OP_MAPGyroVelocityBiasGravityAndVelocity::Create(
+                Rwb,
+                RwbNext,
+                Position,
+                PositionNext,
+                PreIntegrationData.DeltaT,
+                PreIntegrationData.DeltaPosition,
+                PreIntegrationData.DeltaVelocity,
+                PreIntegrationData.DeltaR,
+                PreIntegrationData.GyroBias,
+                PreIntegrationData.AccelBias,
+                PreIntegrationData.JPg,
+                PreIntegrationData.JPa,
+                PreIntegrationData.JVg,
+                PreIntegrationData.JVa,
+                PreIntegrationData.JRg,
+                SqrtInfo);
+
+        Problem.AddResidualBlock(
+            CostFunction,
+            nullptr,
+            Velocities[i].data(),
+            Velocities[i + 1].data(),
+            GravityWorldZAlignmentRotation.coeffs().data(),
+            GyroBias.data(),
+            AccelBias.data());
+    }
+
+    ceres::Solver::Options Options;
+    Options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    Options.linear_solver_type = ceres::DENSE_NORMAL_CHOLESKY;
+    Options.max_num_iterations = 30;
+    Options.function_tolerance = 1e-8;
+    Options.gradient_tolerance = 1e-10;
+    Options.parameter_tolerance = 1e-10;
+    Options.minimizer_progress_to_stdout = false;
+
+    ceres::Solver::Summary Summary;
+    ceres::Solve(Options, &Problem, &Summary);
+
+    if(!Summary.IsSolutionUsable() || !GyroBias.allFinite() || !AccelBias.allFinite() ||
+       !GravityWorldZAlignmentRotation.coeffs().allFinite())
+    {
+        LG_Log( LogSeverity::ERROR,
+            "[IMU MAP] Optimization failed: %s\n", Summary.BriefReport().c_str());
+
+        return false;
+    }
+
+    for(const Eigen::Vector3d& Velocity : Velocities)
+    {
+        if(!Velocity.allFinite())
+        {
+            return false;
+        }
+    }
+    *IMU_GetGravity() = GravityWorldZAlignmentRotation.normalized() * (9.81 * Eigen::Vector3d::UnitZ());
+
+    /*
+     * Commit the shared biases and individual velocities.
+     */
+    for(std::size_t i = 0; i < KeyFrames.size(); ++i)
+    {
+        KeyFrames[i]->NavigationState.Velocity = Velocities[i];
+
+        KeyFrames[i]->NavigationState.GyroBias = GyroBias;
+
+        KeyFrames[i]->NavigationState.AccelorometerBias = AccelBias;
+    }
+
+    return true;
+}

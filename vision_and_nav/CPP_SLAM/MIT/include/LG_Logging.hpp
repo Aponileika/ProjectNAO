@@ -1,0 +1,42 @@
+#ifndef __LG_LOGGING_HPP_
+#define __LG_LOGGING_HPP_
+#include <iostream>
+#include <string>
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <filesystem>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#include "Config.hpp"
+#include "CArenaAlloc.h"
+#include "PANTOVEC_PantoVector.hpp"
+
+struct Logger
+{
+    std::string DebugPath;
+    std::string DataPath;
+    std::string ErrorPath;
+    FILE* Debugfp;
+    FILE* Datafp;
+    FILE* Errorfp;
+};
+
+enum class LogSeverity : u8
+{
+    DBG = 0, // Everything is fine
+    ERROR = 1, // Must reset SLAM
+    DATA = 2 // Must reset SLAM
+};
+
+
+void LG_InitLogger();
+void LG_CloseLogger();
+void LG_EnableDataSummaryLoggingForCurrentThread(bool Enabled);
+void LG_Log(LogSeverity severity, const char* fmt, ...);
+// Emit an explicitly requested DATA diagnostic even when runtime logs are muted.
+void LG_LogData(const char* fmt, ...);
+
+#endif //__LG_LOGGING_HPP_

@@ -1,0 +1,49 @@
+# Compiled executables and intermediate files.
+a.out
+*.o
+*.dSYM/
+/main
+/imu_test
+/op_step3_test
+/no_gt_init_test
+/viz_export_test
+/gt_alignment_test
+/threading_test
+/threading_test_custom
+/map_lock_test
+/descriptor_cache_test
+/descriptor_cache_sanitizer_test
+/tracking_snapshot_test
+/MIT/PiImagereader/PantoReceiver
+/MIT/DBOW3VocabBuilding/main
+
+# Local environments, caches, and editor metadata.
+*.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+/.clangd
+/.cache/
+/compile_commands.json
+
+# Downloaded dependencies, datasets, and runtime logs.
+/vendor/
+/datasets/
+/logs/
+
+# Generated COLMAP data and replay exports; keep viewer scripts trackable.
+/colmap/output/
+/colmap/images/
+/colmap/sparse/
+/colmap/full_binaries/
+
+# Generated receiver frames and vocabulary-training inputs/outputs.
+/MIT/PiImagereader/data/
+/MIT/PiImagereader/demo_pointcloud/
+/MIT/DBOW3VocabBuilding/images/
+/MIT/DBOW3VocabBuilding/PantoVocabulary.yml.gz
+
+# Generated media and point clouds.
+*.mp4
+*.png
+*.ply
