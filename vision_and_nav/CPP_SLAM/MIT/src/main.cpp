@@ -48,7 +48,7 @@
 #include "PT_PantoImagePoints.cpp"
 #include "PT_PantoMapPoints.cpp"
 #include "MAP_Mapping.cpp"
-#include "DBOW3_DeepBagofWords.cpp"
+#include "DBOW3_DeepBagOfWords.cpp"
 #include "INIT_InitializeSLAM.cpp"
 #include "GRAPH_PantoGraph.cpp"
 #include "VIZ_Visualization.cpp"
