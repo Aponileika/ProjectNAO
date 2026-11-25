@@ -157,8 +157,14 @@ static void TestFinalAlignmentAndExports()
     DenseFrame.MapPoints.resize(3, 1);
     DenseFrame.MapPoints.col(0) = Eigen::Vector3f(0, 0, 2);
     DenseMap.KeyFrameMaps.emplace(0, DenseFrame);
+    const auto ReplayDirectory = Root / "full_binaries";
+    std::filesystem::create_directories(ReplayDirectory);
+    std::ofstream(ReplayDirectory / "old.bin") << "old replay";
+    std::ofstream(ReplayDirectory / "old_1.bin") << "another old replay";
     Require(VIZ_WriteReplay(*PantoSLAM.GlobalMap, *PantoSLAM.CovisibilityGraph, DenseMap,
                 PantoSLAM.TrackingTrajectory, PantoSLAM.TrackingTrajectoryTimeStamps), "aligned post-run replay written");
+    Require(std::distance(std::filesystem::directory_iterator(ReplayDirectory), std::filesystem::directory_iterator{}) == 1,
+            "full save replaces all older replay binaries");
     const auto ReplayPath = std::filesystem::directory_iterator(Root / "full_binaries")->path();
     std::ifstream Replay(ReplayPath, std::ios::binary);
     Replay.seekg(8);
@@ -233,6 +239,11 @@ static void TestFinalAlignmentAndExports()
         Replay.seekg(BlockStart + static_cast<std::streamoff>(BlockSize));
     }
     Require(TotalSparse > 0, "post-run replay contains sparse landmarks");
+    Replay.close();
+    Require(VIZ_WriteReplay(*PantoSLAM.GlobalMap, *PantoSLAM.CovisibilityGraph, DenseMap,
+                PantoSLAM.TrackingTrajectory, PantoSLAM.TrackingTrajectoryTimeStamps), "second full save succeeds");
+    Require(std::distance(std::filesystem::directory_iterator(ReplayDirectory), std::filesystem::directory_iterator{}) == 1,
+            "repeated full save retains exactly one binary");
 }
 
 int main()
@@ -321,10 +332,12 @@ int main()
         }
     });
     std::thread Mapper(SLPriv_LocalMappingThread, std::ref(LocalMappingData));
-    SLPriv_TrackingThread(TrackingData, 100, PreIntegrationBetweenKF, TrackingLost, NumProcessedLoops, SkippedFrames);
+    const i32 NumTrackingFrames = std::max<i32>(100, static_cast<i32>(std::ceil(
+                PANTO_NUM_FORCED_KFS * PANTO_STARTUP_FORCED_KEYFRAME_INTERVAL * PANTO_CAMERA_RATE_HZ)) + 20);
+    SLPriv_TrackingThread(TrackingData, NumTrackingFrames, PreIntegrationBetweenKF, TrackingLost, NumProcessedLoops, SkippedFrames);
     Mapper.join();
     DenseConsumer.join();
-    Require(!TrackingLost && NumProcessedLoops == 100, "dataset tracking completes without GT");
+    Require(!TrackingLost && NumProcessedLoops == NumTrackingFrames, "dataset tracking completes without GT");
     Require(TrackingWaitLogCount == static_cast<u64>(NumProcessedLoops), "one map-wait DATA summary per tracking loop");
     Require(MappingLockCount > 0 && MappingLockCount == MappingUnlockCount, "all mapping map acquisitions log paired releases");
     Require(MappingTopologyLogged && MappingCommitLogged && MappingCullingLogged, "mapping lock logs identify every processing stage");

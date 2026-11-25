@@ -6,7 +6,12 @@ Install the visualization dependencies from the repository root:
 python -m pip install -r requirements.txt
 ```
 
-Open the newest replay in `colmap/output/full_binaries` with dense points (the default):
+Each full replay save removes previous `.bin` files in
+`colmap/output/full_binaries` before writing the new timestamped binary, so only
+one full replay is kept. Move any replay you want to keep outside that directory
+before saving another run.
+
+Open the saved replay with dense points (the default):
 
 ```sh
 python colmap/vis_replay.py colmap/output

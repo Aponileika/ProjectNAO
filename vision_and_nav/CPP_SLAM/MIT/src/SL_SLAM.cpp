@@ -19,6 +19,7 @@
 #include <functional>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <unordered_set>
 
@@ -30,22 +31,41 @@ void SLPriv_ResetMapAndTracking(void);
 void SLPriv_InitializeMap(void);
 
 static bool SLPriv_ShouldInsertKeyFrame(const bool VisualOnly,
-        const typeKeyFrameInformation& Information, const fp64 TimeStamp, const fp64 LastKFTime)
+        const typeKeyFrameInformation& Information, const fp64 TimeStamp, const fp64 LastKFTime, const u64 FramesSinceLastKF)
 {
     if(VisualOnly)
     {
         return TimeStamp - LastKFTime >= PANTO_STARTUP_FORCED_KEYFRAME_INTERVAL;
     }
+    if((FramesSinceLastKF % PANTO_FORCED_KF_FRAME_INTERVAL) == 0)
+    {
+        return true;
+    }
     return KEY_IsKeyFrame(Information);
 }
 
 #if defined(CONFIG_IMU) && defined(CONFIG_STEREO)
+// Written by local mapping and read by the run summary after the worker joins.
+static std::optional<fp64> SLPriv_LastInertialInitializationSeconds;
+
+static void SLPriv_LogInertialInitializationTiming()
+{
+    if(SLPriv_LastInertialInitializationSeconds)
+    {
+        LG_LogData("[SLAMTiming] Full inertial initialization (last attempt) = %.6f s\n",
+                *SLPriv_LastInertialInitializationSeconds);
+    }
+    else
+    {
+        LG_LogData("[SLAMTiming] Full inertial initialization: not attempted\n");
+    }
+}
+
 // Caller holds the map/graph locks, after committing visual BA for the newest
 // keyframe. Publish the new mode only after all initialization stages succeed.
 static bool SLPriv_TryInitializeInertialMap(typeGlobalMap& Map, std::atomic_bool& VisualOnlyMode)
 {
-    if(!VisualOnlyMode.load(std::memory_order_acquire) ||
-       Map.KeyFrames.active_size() < PANTO_NUM_FORCED_KFS)
+    if(!VisualOnlyMode.load(std::memory_order_acquire) || Map.KeyFrames.active_size() < PANTO_NUM_FORCED_KFS)
     {
         return false;
     }
@@ -57,9 +77,12 @@ static bool SLPriv_TryInitializeInertialMap(typeGlobalMap& Map, std::atomic_bool
     }
     const Eigen::Vector3d PreviousGravity = *IMU_GetGravity();
 
+    const PantoClock::time_point InitializationStartTime = PantoClock::now();
     const bool Initialized = OP_EigenValueSolveGyroBias(Map.KeyFrames, Map.MapPoints) &&
         OP_MAPGyroVelocityBiasGravityAndVelocity(Map.KeyFrames) &&
         OP_RotationTranslationDecoupledOptimization(Map.KeyFrames, Map.MapPoints);
+    SLPriv_LastInertialInitializationSeconds =
+        std::chrono::duration<fp64>(PantoClock::now() - InitializationStartTime).count();
     if(!Initialized)
     {
         std::size_t Index = 0;
@@ -166,8 +189,7 @@ class typeTrackingScopedTimer
         PantoClock::time_point Start;
 };
 
-void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
-        typePreIntegration& PreIntegrationBetweenKF, bool& TrackingLost, i32& NumProcessedLoops,
+void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops, typePreIntegration& PreIntegrationBetweenKF, bool& TrackingLost, i32& NumProcessedLoops,
         u64& NumLateFramesSkipped);
 void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap);
 static std::vector<typeGroundTruth> GroundTruth;
@@ -1168,6 +1190,9 @@ void SL_PantoSLAM(i32 num_loops)
 {
     LG_Log(LogSeverity::DBG, "PantoSLAM");
 
+#if defined(CONFIG_IMU) && defined(CONFIG_STEREO)
+    SLPriv_LastInertialInitializationSeconds.reset();
+#endif
     typeTimingStatistics VisualizationUpdateTiming{};
 
 #if !defined(DEBUG)
@@ -1211,6 +1236,9 @@ void SL_PantoSLAM(i32 num_loops)
     {
         LG_Log(LogSeverity::ERROR,
                 "[SL_PantoSLAM] Initialization produced no keyframes\n");
+#if defined(CONFIG_IMU) && defined(CONFIG_STEREO)
+        SLPriv_LogInertialInitializationTiming();
+#endif
 #if !defined(DEBUG)
         std::cout << "SLAM initialization failed; press Enter to close the visualization.\n";
         std::cin.get();
@@ -1372,6 +1400,9 @@ void SL_PantoSLAM(i32 num_loops)
     }
 
     LG_EnableDataSummaryLoggingForCurrentThread(true);
+#if defined(CONFIG_IMU) && defined(CONFIG_STEREO)
+    SLPriv_LogInertialInitializationTiming();
+#endif
     if(!FinalAlignmentAttempted)
     {
         SLPriv_AlignMapToGroundTruth();
@@ -1405,8 +1436,7 @@ void SL_PantoSLAM(i32 num_loops)
 #endif
 }
 
-void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
-        typePreIntegration& PreIntegrationBetweenKF, bool& TrackingLost, i32& NumProcessedLoops,
+void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops, typePreIntegration& PreIntegrationBetweenKF, bool& TrackingLost, i32& NumProcessedLoops,
         u64& NumLateFramesSkipped)
 {
     TH_SetUserInitiatedQoS("tracking");
@@ -1466,6 +1496,8 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 
     fp64 LastKFTime = TrackingData.PreviousFrameData.PreviousFrame.Camera.TimeStamp;
 
+    u64 FramesSinceLastKF = 0;
+
     while(NumProcessedLoops < num_loops)
     {
         fp64 NextFrameTimeStamp = PANTO_TIMESTAMP_NOT_SET;
@@ -1503,6 +1535,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
 
                     NumProcessedLoops++;
                     NumLateFramesSkipped++;
+                    FramesSinceLastKF++;
                     LG_Log(LogSeverity::DATA, "[SLAMFramePacing] Skipped frame at %.9f s; late by %.6f s\n", SkippedTimeStamp, Lateness);
                     continue;
                 }
@@ -1519,6 +1552,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
         TrackingData.TrackingStats = typeTrackingStatistics{};
         MapLockTiming.Enabled = true;
         NumProcessedLoops++;
+        FramesSinceLastKF++;
         typeTrackingScopedTimer IterationTimer(
                 Statistics(typeTrackingTimingStage::IterationTotal));
 #if defined(CONFIG_IMU)
@@ -1707,9 +1741,7 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             const bool StateRevisionSinceLastFrame = TrackingData.GlobalMap->MapStateRevision != LastSeenStateRevision;
             if(StateRevisionSinceLastFrame)
             {
-                typeTrackingScopedTimer Timer(
-                        Statistics(typeTrackingTimingStage::
-                            GetPreviousFrameMapPoints));
+                typeTrackingScopedTimer Timer(Statistics(typeTrackingTimingStage::GetPreviousFrameMapPoints));
                 TrackingData.PreviousFrameData.PreviousFrameMapPoints =
                     MAP_GetLastFrameMapPoints(*TrackingData.GlobalMap, TrackingData.PreviousFrameData.PreviousFrame);
             }
@@ -2033,10 +2065,11 @@ void SLPriv_TrackingThread(typeTrackingData& TrackingData, const i32 num_loops,
             typeTrackingScopedTimer Timer(
                     Statistics(typeTrackingTimingStage::IsKeyFrame));
             IsKeyFrame = SLPriv_ShouldInsertKeyFrame(VisualOnly, KeyFrameInfo,
-                    TrackingData.NewFrame.Camera.TimeStamp, LastKFTime);
+                    TrackingData.NewFrame.Camera.TimeStamp, LastKFTime, FramesSinceLastKF);
         }
-        if(IsKeyFrame || ((NumProcessedLoops % 10) == 0))
+        if(IsKeyFrame)
         {
+            FramesSinceLastKF = 0;
             LastKFTime = TrackingData.NewFrame.Camera.TimeStamp;
 #if defined(CONFIG_IMU)
             // Let the local mapping thread get the KF <-> KF preintegration data.
@@ -2366,9 +2399,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
             // The frame waited in the queue while local mapping was free to
             // cull map points referenced by its tracking snapshot.
             {
-                typeLocalMappingScopedTimer Timer(
-                        Statistics(typeLocalMappingTimingStage::
-                            RemoveMissingAssociations));
+                typeLocalMappingScopedTimer Timer(Statistics(typeLocalMappingTimingStage::RemoveMissingAssociations));
                 SLPriv_RemoveMissingMapPointAssociations(NewKeyFrame, *LocalMap.GlobalMap);
             }
 
@@ -2436,9 +2467,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
 #endif
 
             {
-                typeLocalMappingScopedTimer Timer(
-                        Statistics(typeLocalMappingTimingStage::
-                            CullRecentMapPoints));
+                typeLocalMappingScopedTimer Timer(Statistics(typeLocalMappingTimingStage::CullRecentMapPoints));
                 const typeTrackingStatistics& TrackingStats = LocalMap.TrackingStatQueue->consume();
                 for(const auto& [MapPointID, NumFound] : TrackingStats.NumFound)
                 {
@@ -2519,8 +2548,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
 #if defined(CONFIG_STEREO)
         // This local snapshot belongs to the mapper. Build the pose-only
         // payload and acquire the queue mutex after releasing the map/graph.
-        LocalMap.DenseQueue->enque(DENSE_CreateLocalMapData(
-                    {ID, NewKeyFrame.Frame.Frame, NewKeyFrame.Frame.RightFrame}, LocalMap.LocalMap));
+        LocalMap.DenseQueue->enque(DENSE_CreateLocalMapData({ID, NewKeyFrame.Frame.Frame, NewKeyFrame.Frame.RightFrame}, LocalMap.LocalMap));
 #endif
 
         LG_Log(LogSeverity::DBG, "[SLAMLoop] Created %llu new map points\n", static_cast<u64>(NewPointIndexes.size()));
@@ -2584,8 +2612,7 @@ void SLPriv_LocalMappingThread(typeLocalMapData& LocalMap)
                 {
                     // Refresh the snapshot before publishing trajectory poses;
                     // its previous copy contains the visual-only BA result.
-                    LocalMap.LocalMap = MAP_CreateLocalMap(*LocalMap.GlobalMap,
-                            *LocalMap.CovisibilityGraph, ID);
+                    LocalMap.LocalMap = MAP_CreateLocalMap(*LocalMap.GlobalMap, *LocalMap.CovisibilityGraph, ID);
                     for(const typeKeyFrame& KeyFrame : LocalMap.GlobalMap->KeyFrames)
                     {
                         SLPriv_UpdateTrackingTrajectoryPose(KeyFrame.Camera.TimeStamp, KeyFrame.Camera);

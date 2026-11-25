@@ -320,7 +320,7 @@ static void TestInitializationFlow()
     for(u64 Frame = 1; Frame <= 20; ++Frame)
     {
         const fp64 TimeStamp = 10.0 + 0.05 * Frame;
-        const bool Insert = SLPriv_ShouldInsertKeyFrame(true, Information, TimeStamp, LastKFTime);
+        const bool Insert = SLPriv_ShouldInsertKeyFrame(true, Information, TimeStamp, LastKFTime, Frame);
         Require(Insert == (Frame % 5 == 0), "startup inserts only at fixed timestamp intervals");
         if(Insert)
         {
@@ -329,16 +329,20 @@ static void TestInitializationFlow()
         }
     }
     Require(Insertions == 4 && BootStrapData.NumFrames == 0, "startup bypasses normal keyframe heuristic");
-    Require(SLPriv_ShouldInsertKeyFrame(false, Information, LastKFTime, LastKFTime), "normal keyframe heuristic resumes after init");
+    Require(SLPriv_ShouldInsertKeyFrame(false, Information, LastKFTime, LastKFTime, 1), "normal keyframe heuristic resumes after init");
 
     InertialInitFixture Fixture;
     std::atomic_bool VisualOnly{true};
     const typeKeyFrame LastFrame = Fixture.Map.KeyFrames.back();
     Fixture.Map.KeyFrames.remove(LastFrame.ID);
+    SLPriv_LastInertialInitializationSeconds.reset();
     Require(!SLPriv_TryInitializeInertialMap(Fixture.Map, VisualOnly), "init waits below configured total KF count");
+    Require(!SLPriv_LastInertialInitializationSeconds, "collecting keyframes does not record an init attempt");
     Require(VisualOnly && Fixture.Map.BundleRevision == 0, "collecting window preserves visual mode");
     Fixture.Map.KeyFrames.push_back(LastFrame);
     Require(SLPriv_TryInitializeInertialMap(Fixture.Map, VisualOnly), "all StereoNEC stages run at configured KF count");
+    Require(SLPriv_LastInertialInitializationSeconds && *SLPriv_LastInertialInitializationSeconds > 0.0,
+            "successful init records optimizer execution time");
     Require(!VisualOnly && Fixture.Map.BundleRevision == 1, "successful init publishes one inertial transition");
     Require((*IMU_GetGravity() - Fixture.Gravity).norm() < 1e-4, "refined gravity published");
     for(std::size_t i = 0; i < Fixture.TrueStates.size(); ++i)
@@ -349,15 +353,21 @@ static void TestInitializationFlow()
         Require(State.Rwb.isApprox(Fixture.TrueStates[i].Rwb, 1e-5), "init integrates corrected rotations");
     }
     Fixture.Map.KeyFrames[1].PreIntegrationData.DeltaT = 0.0;
+    const auto SuccessfulInitializationSeconds = SLPriv_LastInertialInitializationSeconds;
     Require(!SLPriv_TryInitializeInertialMap(Fixture.Map, VisualOnly), "completed init never repeats");
+    Require(SLPriv_LastInertialInitializationSeconds == SuccessfulInitializationSeconds,
+            "completed init keeps the last measured time");
     Require(!VisualOnly && Fixture.Map.BundleRevision == 1, "completed mode and revision remain unchanged");
 
     InertialInitFixture FailureFixture;
+    const auto RetryPoints = FailureFixture.Map.KeyFrames.back().Points;
     FailureFixture.Map.KeyFrames.back().Points.ImagePoints.clear();
     const auto PreviousFrames = FailureFixture.Map.KeyFrames;
     const Eigen::Vector3d PreviousGravity = *IMU_GetGravity();
     VisualOnly = true;
+    SLPriv_LastInertialInitializationSeconds = -1.0;
     Require(!SLPriv_TryInitializeInertialMap(FailureFixture.Map, VisualOnly), "failed final init stage rejected");
+    Require(*SLPriv_LastInertialInitializationSeconds > 0.0, "failed attempt replaces the previous measurement");
     Require(VisualOnly && FailureFixture.Map.BundleRevision == 0, "failed init stays visual without publishing revision");
     Require(*IMU_GetGravity() == PreviousGravity, "failed init restores gravity");
     for(std::size_t i = 0; i < FailureFixture.Map.KeyFrames.size(); ++i)
@@ -369,6 +379,10 @@ static void TestInitializationFlow()
         Require(FailureFixture.Map.KeyFrames[i].NavigationState.Velocity == PreviousFrames[i].NavigationState.Velocity,
                 "failed init restores velocities");
     }
+    FailureFixture.Map.KeyFrames.back().Points = RetryPoints;
+    SLPriv_LastInertialInitializationSeconds = -1.0;
+    Require(SLPriv_TryInitializeInertialMap(FailureFixture.Map, VisualOnly), "init succeeds on retry");
+    Require(*SLPriv_LastInertialInitializationSeconds > 0.0, "retry replaces the failed attempt time");
 }
 
 static void TestVisualReferenceCorrection()

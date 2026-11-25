@@ -73,6 +73,32 @@ static bool VIZPriv_ResetOutputDirectory(const std::filesystem::path& Path)
     return VIZPriv_CreateDirectory(Path);
 }
 
+#if defined(CONFIG_STEREO)
+static bool VIZPriv_RemovePreviousReplays(const std::filesystem::path& Path)
+{
+    // Free disk space before writing another full replay. Preserve other files
+    // and directories, and refuse a new save if an old binary cannot be removed.
+    try
+    {
+        for(const auto& Entry : std::filesystem::directory_iterator(Path))
+        {
+            if(Entry.path().extension() == ".bin" && Entry.is_regular_file())
+            {
+                std::filesystem::remove(Entry.path());
+            }
+        }
+    }
+    catch(const std::filesystem::filesystem_error& Error)
+    {
+        LG_Log(LogSeverity::ERROR,
+                "[VIZ_WriteReplay] Cannot remove previous replay binaries: %s\n",
+                Error.what());
+        return false;
+    }
+    return true;
+}
+#endif
+
 void VIZ_InitVisualization(void)
 {
     VIZ_ResetMapVisualization();
@@ -360,7 +386,8 @@ bool VIZ_WriteReplay(
 
     const std::string ReplayDirectory =
         std::string(PANTO_COLMAP_PATH) + "/full_binaries";
-    if(!VIZPriv_CreateDirectory(ReplayDirectory))
+    if(!VIZPriv_CreateDirectory(ReplayDirectory) ||
+       !VIZPriv_RemovePreviousReplays(ReplayDirectory))
     {
         return false;
     }
@@ -371,13 +398,8 @@ bool VIZ_WriteReplay(
     std::ostringstream FileNameStream;
     FileNameStream << std::put_time(&LocalTime, "%Y-%m-%d_%H-%M");
 
-    std::string ReplayPath =
+    const std::string ReplayPath =
         ReplayDirectory + "/" + FileNameStream.str() + ".bin";
-    for(u64 Suffix = 1; std::filesystem::exists(ReplayPath); Suffix++)
-    {
-        ReplayPath = ReplayDirectory + "/" + FileNameStream.str() +
-            "_" + std::to_string(Suffix) + ".bin";
-    }
     FILE* File = fopen(ReplayPath.c_str(), "wb");
     if(File == nullptr)
     {

@@ -48,6 +48,20 @@ int main()
     Require(fs::is_regular_file("old-output/saved.txt"), "locked output preserved");
     fs::permissions("old-output", fs::perms::owner_all);
     Require(VIZPriv_ResetOutputDirectory("old-output"), "writable output reset");
+    fs::create_directories("replays/nested");
+    std::ofstream("replays/old.bin") << "old replay";
+    std::ofstream("replays/old_1.bin") << "another old replay";
+    std::ofstream("replays/notes.txt") << "preserve";
+    std::ofstream("replays/nested/keep.bin") << "preserve";
+    fs::permissions("replays", fs::perms::owner_read | fs::perms::owner_exec);
+    Require(!VIZPriv_RemovePreviousReplays("replays"), "cleanup refuses save when old binaries cannot be deleted");
+    Require(fs::is_regular_file("replays/old.bin"), "failed cleanup leaves old replay intact");
+    fs::permissions("replays", fs::perms::owner_all);
+    Require(VIZPriv_RemovePreviousReplays("replays"), "old replays removed before saving");
+    Require(!fs::exists("replays/old.bin") && !fs::exists("replays/old_1.bin"), "all accumulated binaries removed");
+    Require(fs::is_regular_file("replays/notes.txt") && fs::is_regular_file("replays/nested/keep.bin"),
+            "cleanup preserves unrelated files and nested directories");
+    Require(VIZPriv_RemovePreviousReplays("replays"), "empty replay cleanup succeeds");
     std::ofstream Probe("old-output/new.txt");
     Require(Probe.good(), "replacement output is writable");
     Probe.close();
