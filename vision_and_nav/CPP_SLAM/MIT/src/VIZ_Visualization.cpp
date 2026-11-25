@@ -384,8 +384,7 @@ bool VIZ_WriteReplay(
                 return A->ID < B->ID;
             });
 
-    const std::string ReplayDirectory =
-        std::string(PANTO_COLMAP_PATH) + "/full_binaries";
+    const std::string ReplayDirectory = std::string(PANTO_COLMAP_PATH) + "/full_binaries";
     if(!VIZPriv_CreateDirectory(ReplayDirectory) ||
        !VIZPriv_RemovePreviousReplays(ReplayDirectory))
     {
@@ -398,8 +397,7 @@ bool VIZ_WriteReplay(
     std::ostringstream FileNameStream;
     FileNameStream << std::put_time(&LocalTime, "%Y-%m-%d_%H-%M");
 
-    const std::string ReplayPath =
-        ReplayDirectory + "/" + FileNameStream.str() + ".bin";
+    const std::string ReplayPath = ReplayDirectory + "/" + FileNameStream.str() + ".bin";
     FILE* File = fopen(ReplayPath.c_str(), "wb");
     if(File == nullptr)
     {

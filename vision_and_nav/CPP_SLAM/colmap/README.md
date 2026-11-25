@@ -12,6 +12,8 @@ one full replay is kept. Move any replay you want to keep outside that directory
 before saving another run.
 
 Open the saved replay with dense points (the default):
+=======
+Open the newest replay in `colmap/output/full_binaries` with dense points (the default):
 
 ```sh
 python colmap/vis_replay.py colmap/output

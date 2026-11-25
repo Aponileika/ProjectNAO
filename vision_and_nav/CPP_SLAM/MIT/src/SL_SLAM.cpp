@@ -19,7 +19,6 @@
 #include <functional>
 #include <fstream>
 #include <memory>
-#include <optional>
 #include <thread>
 #include <unordered_set>
 
