@@ -1,0 +1,128 @@
+What to do next:
+make viser not exit
+    - (DONE) Finish local mapping pipeline, Matching with DBoW3 feature vectors and feature + ep constraint check.
+
+    - (DONE) Finish GRAPH_UpdateCovisibility function, should iterate and sort covisibility scores, needs to search for each keyframe what their current score
+      is first, after this the general pipeline is similar, except single thread, and a bit simplified. We use same tracking and mapping local map.
+
+    - (DONE) Something is off, dont see any typeCamera creations, make sure timestamps are set, currently something is weird. 
+
+    - (DONE) Add real timestamps to frame so i can calculate velocity. 
+
+    - (DONE) Fuzzy keyframe decision, solve scale ambiguity by using local map as reference, calculate median depth and normalize by that, meaning calculate
+      distances and velocity difference and divide them by the median depth, this gives them in units of local map units, so distance is how many local map units
+      have been travelled, and velocity diff is in scale map unit / s.
+
+    - (DONE W/ NOTE) Fuzzy Inference, Right now parameters are based on heuristic bootstrap learning (means), in the future construct a cost fuction like:
+     J(k) = TrackingError + a * NumInsertedKF + b * TrackingLosses
+     TrackingError can be SO(3) distance if GT available (usually is), think about NumInsertedKF and TrackingLosses are calculated
+     (they all need to be normalized to 0-1)
+
+    - (DONE) Chirality check for 3d point insertion, same as slam orb baseline / median depth > 0.01f, so baseline larger than 1% of median scene depth.
+
+    - (DONE) Implement initialization, see paper that uses historical data, next step ST-RANSAC, see algorithm 1 of paper.
+
+    - (DONE) Check implamentation of PT_MatchMapPointsToKeyFrame, bugged after change of structure of keyframe cellblock thingy
+
+    - (DONE) Keep debugging, can compile, run and see what goes wrong.
+
+    - (DONE) MAP_CreateLocalMap, make sure local mappoints are only added once, currently they are
+      added several times
+
+    - (DONE) Recreate viz, viser visualization, preferably live one, starts localhost server when SLAM starts.
+
+    - (DONE) Update Descriptors of mappoints. 
+
+    - (DONE) Check if previous frame mappoints works as expected, i think it does now but not sure. 
+
+    - (DONE) Integrate typePantoVector everywhere things are expected to be deleted at some point, eg. keyframes, 3d points,
+      connections between 3d points with keyframes and 2d points.
+
+    - (DONE) Currently far too many mappoints are created and never culled, add slam orb style culling of new mappoints and keyframes.
+
+    - (DONE) Vizer currently bugged:
+    [VISER] Reading cameras.bin
+    [VISER] Failed to load snapshot 26: unpack requires a buffer of 8 bytes
+    [VISER] Reading cameras.bin
+    [VISER] Failed to load snapshot 26: unpack requires a buffer of 8 bytes
+        most likely a bug in how global map keyframes etc are handled, ie. when preliminary frames are removed are they removed properly?
+
+    - (DONE) Make code runnable for a full sequence so without inuput arguments default should be run until all frames processed.
+
+    - (DONE) Separate tracking local map and local mapping local map (local mapping map == map created after frame is accepted as a keyframe),
+      make use of the covisibility graph in local map creation.
+
+    - (DONE) Add KeyFrame culling.
+
+    - (DONE) Culling of points, currently get alot of bad 3d points.
+
+    - (DONE) Separate the logs filewise into DBG, DATA, and ERROR, make the DATA more extensive, so data about mappoints created / culled etc,
+      right now it is too hard to navigate the logs in any reasonable way.
+
+    - (DONE) Make the tracking path visible in viser, right now only keyframes which is a bit misleading / not fully informative.
+
+    - (DONE) Add min num of 3d points for reconstruction.
+
+    - (DONE) Optimize KeyGetKeyFrame, investigate what is taking time, getting descriptors -> detect and compute? anything else? Probably alter
+      opencv AKAZE code so nonlinear scale space is not thrown away. So make a "custom" version that just caches the nonlinear scale space,
+      like detect and compute does, easy, just add a local private variable in AKAZE_impl that stores upyr and keeps track if it is current or not
+      so if a detect -> compute has been called in order, upyr is saved for compute, when compute is called the upyr must be marked as invalid.
+
+    - Look over how BA can mess up queued frames.
+
+    - In general the current locking mechanism is very bad, locking is far too restrictive, should go to locking individual things instead of the entire
+      global map all the time. SPSC queue that is transferred from tracking -> local. tracking should never mutate the global map, tracking consumes once at
+      the start then commits changes to local mapping. Use a visibility that tracking commits every loop, local mapping consumes the entire queue before 
+      recent mappoint culling. Evaluate how this change affects recentmappoint culling, will lead to less points being culled.
+
+      Published snapshot: mapping constructs the tracking snapshot privately and atomically replaces a shared_ptr<const Snapshot>. 
+      Tracking only performs an atomic pointer load, so its snapshot acquisition is effectively lock-free.
+
+    - Tracking should always be able to write, so writing from tracking shouldnt be blocked by localmapping, and for reading of global state use shared_mutex
+
+    - Benchmark: AKAZE + M_LDB, AKAZE + Teblid, ORB + ORB, CLAHE + ORB + ORB, CLAHE + ORB + Teblid, ORB + Teblid. Again, use or replicate 
+      slam orbs orb implementation.
+
+    - Deferred triangulation.
+
+    - Actually implement a robust fuzzy keyframe decision maker.
+
+    - Clean up the code a bit, right now it is a bit ugly, things are passed everywhere, work with pointers to objects or something like that,
+      right now it is very messy to add anything to the code, probably change from ID -> pointer, but again not sure about this point, but the 
+      code has to be restructured, also make logging / timing not take up so much space in text, annoying to read the code and see what
+      is actually happening.
+
+    - Add visualization of covisbility graph.
+
+    - train vocab with fixed number of features, with spatial distribution enforced. Bags of Binary Words for Fast Place Recognition in SLAM?
+
+    - Add loop closure using DBoW3 bag of words vectors with physical constraint.
+
+    - Add learned parameters for fuzzy keyframe insertion
+     J(k) = TrackingError + a * NumInsertedKF + b * TrackingLosses
+     TrackingError can be SO(3) distance if GT available (usually is), think about NumInsertedKF and TrackingLosses are calculated
+     (they all need to be normalized to 0-1), think about scale ambiguity when calculating errors, since for different scenes scale will be different,
+     use metric scale by just correcting the first two frames to metric scale based on ground truth, this should not affect optimization since it happens
+     after the init so wont make a difference. So just find the optimal pair -> read GT -> set second selected frame to gt R and t -> retriangulate points.
+     Note that this requires the algorithm in general to be visual inertial since it always needs to be in metric scale. Maybe bootstrapping isnt so bad.
+
+    - Implement threading, use same structure as orb, tracking <-> local mapping <-> global mapping threads. std::jthread / thread? 
+      How to handle atomicity? I assume as soon as keyframe is inserted -> abort global BA.
+
+
+create video from sequence, after renaming
+ffmpeg \
+    -framerate 30 \
+    -i rgb_ordered/frame%d.png \
+    -c:v libx264 \
+    -pix_fmt yuv420p \
+    <insertname>.mp4
+
+timestamped:
+ffmpeg \
+    -framerate 30 \
+    -pattern_type glob \
+    -i '<insertdirectoryname>/*.png' \
+    -c:v libx264 \
+    -pix_fmt yuv420p \
+    <insertname>.mp4
